@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { getCookie } from 'typescript-cookie'
-import { DefaultParams, PathPattern, Route, Switch } from 'wouter'
+import { DefaultParams, PathPattern, Route, Switch, useLocation } from 'wouter'
 import Footer from './components/footer'
 import { Header } from './components/header'
 import { Padding } from './components/padding'
@@ -27,6 +27,7 @@ import { useTranslation } from 'react-i18next'
 function App() {
   const ref = useRef(false)
   const { t } = useTranslation()
+  const [location] = useLocation()
   const [profile, setProfile] = useState<Profile | undefined>()
   const [config, setConfig] = useState<ConfigWrapper>(new ConfigWrapper({}, new Map()))
   useEffect(() => {
@@ -63,7 +64,7 @@ function App() {
   }, [])
   const favicon = useMemo(() => config.get<string>("favicon"), [config])
   return (
-    <>
+    <div className={`site-shell ${location === '/' ? 'site-shell--home' : 'site-shell--inner'}`}>
       <ClientConfigContext.Provider value={config}>
         <ProfileContext.Provider value={profile}>
           <Helmet>
@@ -165,7 +166,7 @@ function App() {
           </Switch>
         </ProfileContext.Provider>
       </ClientConfigContext.Provider>
-    </>
+    </div>
   )
 }
 

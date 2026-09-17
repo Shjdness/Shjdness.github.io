@@ -18,6 +18,93 @@ body {
   font-family: Cantarell, "Source Han Serif CN VF" !important;
 }
 
+.site-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.site-shell::before,
+.site-shell::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+}
+
+.site-shell::before {
+  z-index: -2;
+  inset: -18px;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(6px);
+  transform: scale(1.025);
+}
+
+.site-shell--home::before {
+  background-image: url("/background-home.jpg");
+  background-position: 42% center;
+}
+
+.site-shell--inner::before {
+  background-image: url("/background-inner.jpg");
+  background-position: center center;
+}
+
+.site-shell::after {
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(248 250 252 / 0.28) 0%,
+    rgb(248 250 252 / 0.42) 56%,
+    rgb(248 250 252 / 0.58) 100%
+  );
+}
+
+[data-color-mode="dark"] .site-shell::after {
+  background: linear-gradient(
+    180deg,
+    rgb(7 12 24 / 0.48) 0%,
+    rgb(10 15 28 / 0.58) 56%,
+    rgb(12 17 29 / 0.72) 100%
+  );
+}
+
+.site-shell .bg-w {
+  border-color: rgb(255 255 255 / 0.42);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.34);
+}
+
+[data-color-mode="dark"] .site-shell .bg-w {
+  border-color: rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.site-shell .glass-panel {
+  border: 1px solid rgb(255 255 255 / 0.48);
+  box-shadow:
+    0 18px 50px rgb(31 41 55 / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.36);
+}
+
+[data-color-mode="dark"] .site-shell .glass-panel {
+  border-color: rgb(255 255 255 / 0.1);
+  box-shadow:
+    0 18px 50px rgb(0 0 0 / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+@media (max-width: 640px) {
+  .site-shell--home::before {
+    background-position: 38% center;
+  }
+
+  .site-shell--inner::before {
+    background-position: 50% center;
+  }
+}
+
 textarea:focus {
   outline: none;
 }

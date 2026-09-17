@@ -37,7 +37,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
                             <div
                                 className="w-full md:w-max transition-all duration-500 md:absolute md:left-1/2 md:translate-x-[-50%] flex-row justify-center items-center">
                                 <div
-                                    className="flex flex-row items-center bg-w t-primary rounded-full px-2 shadow-xl shadow-light">
+                                    className="glass-panel flex flex-row items-center bg-w t-primary rounded-full px-2 shadow-xl shadow-light">
                                     <Link aria-label={t('home')} href="/"
                                         className="visible opacity-100 md:hidden md:opacity-0 duration-300 mr-auto flex flex-row items-center py-2">
                                         <img src={process.env.AVATAR} alt="Avatar"

@@ -411,7 +411,7 @@ export function WritingPage({ id }: { id?: number }) {
       </Helmet>
       <div className="grid grid-cols-1 md:grid-cols-3 t-primary mt-2">
         <div className="col-span-2 pb-8">
-          <div className="bg-w rounded-2xl shadow-xl shadow-light p-4">
+          <div className="glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4">
             {MetaInput({ className: "visible md:hidden mb-8" })}
             <div className="flex flex-col mx-4 my-2 md:mx-0 md:my-0 gap-2">
               <div className="flex flex-row space-x-2">
@@ -501,7 +501,7 @@ export function WritingPage({ id }: { id?: number }) {
           </div>
         </div>
         <div className="hidden md:visible max-w-96 md:flex flex-col">
-          {MetaInput({ className: "bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
+          {MetaInput({ className: "glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="flex flex-row justify-center mt-8">
             <button
               onClick={publishButton}
@@ -522,4 +522,3 @@ export function WritingPage({ id }: { id?: number }) {
 
   );
 }
-

@@ -3,7 +3,7 @@
 @tailwind utilities;
 @layer base {
     .bg-w {
-      @apply bg-white dark:bg-dark;
+      @apply bg-white/70 dark:bg-dark/70 backdrop-blur-xl backdrop-saturate-150;
     }
   
     .bg-secondary {
