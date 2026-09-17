@@ -40,6 +40,9 @@ jobs:
             *) echo "GitHub OAuth entry returned HTTP $oauth_status" >&2; exit 1 ;;
           esac
 
+      - name: Check Rin server types
+        run: bunx tsc --noEmit --project server/tsconfig.json
+
       - name: Build Rin frontend
         run: bun run b
         env:

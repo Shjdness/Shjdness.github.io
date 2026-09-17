@@ -88,6 +88,10 @@ export function UserService() {
                     query: t.Object({
                         state: t.String(),
                         code: t.String(),
+                        // GitHub includes its authorization-server issuer in
+                        // OAuth callbacks. Older Rin versions rejected this
+                        // standards-based parameter before exchanging the code.
+                        iss: t.Optional(t.String()),
                     })
                 })
                 .get('/profile', async ({ set, uid }) => {
