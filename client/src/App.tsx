@@ -10,7 +10,7 @@ import { client } from './main'
 import { CallbackPage } from './page/callback'
 import { FeedPage, TOCHeader } from './page/feed'
 import { FeedsPage } from './page/feeds'
-import { FriendsPage } from './page/friends'
+import { GalleryPage } from './page/gallery'
 import { HashtagPage } from './page/hashtag.tsx'
 import { HashtagsPage } from './page/hashtags.tsx'
 import { Settings } from "./page/settings.tsx"
@@ -81,12 +81,12 @@ function App() {
             </RouteMe>
 
 
-            <RouteMe path="/friends">
-              <FriendsPage />
-            </RouteMe>
-
             <RouteMe path="/hashtags">
               <HashtagsPage />
+            </RouteMe>
+
+            <RouteMe path="/gallery">
+              <GalleryPage />
             </RouteMe>
 
             <RouteMe path="/hashtag/:name">
@@ -122,6 +122,14 @@ function App() {
             <RouteMe path="/callback" >
               <CallbackPage />
             </RouteMe>
+
+            <Route path="/friends">
+              <LegacyRedirect />
+            </Route>
+
+            <Route path="/about">
+              <LegacyRedirect />
+            </Route>
 
             <RouteWithIndex path="/feed/:id">
               {(params, TOC, clean) => {
@@ -201,3 +209,13 @@ function RouteWithIndex({ path, children }:
 }
 
 export default App
+
+function LegacyRedirect() {
+  const [, setLocation] = useLocation()
+
+  useEffect(() => {
+    setLocation('/', { replace: true })
+  }, [setLocation])
+
+  return null
+}

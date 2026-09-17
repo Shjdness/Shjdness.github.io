@@ -42,9 +42,23 @@ export function TimelinePage() {
             <Waiting for={feeds}>
                 <main className="w-full flex flex-col justify-center items-center mb-8 ani-show">
                     <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
-                        <p>
-                            {t('timeline')}
-                        </p>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                            <p>{t('timeline')}</p>
+                            <Link
+                                href="/gallery"
+                                className="gallery-entry group"
+                                aria-label="浏览全部图片"
+                            >
+                                <span className="gallery-entry__icon" aria-hidden="true">
+                                    <i className="ri-gallery-view-2" />
+                                </span>
+                                <span>
+                                    <span className="block text-sm font-semibold">影集 Gallery</span>
+                                    <span className="block text-xs font-normal opacity-70">按时间浏览全部图片</span>
+                                </span>
+                                <i className="ri-arrow-right-up-line text-base transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" aria-hidden="true" />
+                            </Link>
+                        </div>
                         <div className="flex flex-row justify-between">
                             <p className="text-sm mt-4 text-neutral-500 font-normal">
                                 {t('article.total$count', { count: length })}
