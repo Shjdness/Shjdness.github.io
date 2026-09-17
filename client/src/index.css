@@ -58,7 +58,7 @@ h3,
 }
 
 .site-shell--home::before {
-  background-image: url("/background-home.jpg");
+  background-image: url("/background-home-v2.jpg");
   background-position: 42% center;
 }
 
