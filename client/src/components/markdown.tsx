@@ -19,6 +19,13 @@ import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 import { useColorMode } from "../utils/darkModeUtils";
 
+const LEGACY_ASSET_ORIGIN = "https://shjdbucket.shjdshy.cc";
+const CURRENT_ASSET_ORIGIN =
+  "https://pub-6b7dbaf76cfd4a81a8445a368adad8ad.r2.dev";
+
+const normalizeAssetUrl = (url: string | undefined) =>
+  url?.replace(LEGACY_ASSET_ORIGIN, CURRENT_ASSET_ORIGIN);
+
 
 const countNewlinesBeforeNode = (text: string, offset: number) => {
   let newlinesBefore = 0;
@@ -65,6 +72,7 @@ export function Markdown({ content }: { content: string }) {
       rehypePlugins={[rehypeKatex, rehypeRaw]}
       components={{
         img({ node, src, ...props }) {
+          const normalizedSrc = normalizeAssetUrl(src);
           const offset = node!.position!.start.offset!;
           const previousContent = content.slice(0, offset);
           const newlinesBefore = countNewlinesBeforeNode(
@@ -79,10 +87,10 @@ export function Markdown({ content }: { content: string }) {
             scale: string;
           }) => (
             <img
-              src={src}
+              src={normalizedSrc}
               {...props}
               onClick={() => {
-                show(src)
+                show(normalizedSrc)
               }}
               className={`mx-auto ${rounded ? "rounded-xl" : ""}`}
               style={{ zoom: scale }}
