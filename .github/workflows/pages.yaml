@@ -34,6 +34,11 @@ jobs:
         run: |
           test "$(curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "$API_URL/")" = "Hi"
           curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "$API_URL/feed?page=1&limit=1" > /dev/null
+          oauth_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --header 'Referer: https://shjdness.github.io/' "$API_URL/user/github")"
+          case "$oauth_status" in
+            301|302|303|307|308) ;;
+            *) echo "GitHub OAuth entry returned HTTP $oauth_status" >&2; exit 1 ;;
+          esac
 
       - name: Build Rin frontend
         run: bun run b
