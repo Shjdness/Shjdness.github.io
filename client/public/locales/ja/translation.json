@@ -82,21 +82,6 @@
     "published$time": "{{time}} に公開",
     "updated$time": "{{time}} に更新"
   },
-  "footer": {
-    "rss": "RSS 購読リンク"
-  },
-  "friends": {
-    "apply": "友人リンクを申請",
-    "create": "友人リンクを作成",
-    "left": "一時的に離脱",
-    "my_apply": "私の申請",
-    "review": {
-      "accepted": "承認されました",
-      "rejected": "拒否されました",
-      "waiting": "審査待ち"
-    },
-    "title": "友人"
-  },
   "github_login": "Github ログイン",
   "hashtags": "ラベル",
   "home": "ホーム",
@@ -128,67 +113,6 @@
   },
   "reload": "再試行",
   "save": "保存",
-  "settings": {
-    "cache": {
-      "clear": {
-        "confirm": {
-          "desc": "キャッシュはデータベースへのアクセス頻度を減らすために使用されます。キャッシュエラーが発生した場合のみクリアしてください。",
-          "title": "キャッシュをクリアしてもよろしいですか？"
-        },
-        "desc": "すべてのキャッシュファイルをクリアする",
-        "title": "キャッシュをクリア"
-      },
-      "clear_failed$message": "キャッシュのクリアに失敗しました: {{message}}"
-    },
-    "counter": {
-      "enable": {
-        "desc": "記事の PV と UV 機能を有効にする",
-        "title": "アクセス数統計を有効にする"
-      }
-    },
-    "favicon": {
-      "desc": "ブラウザのアドレスバーに表示されるアイコン（ファビコン）を設定します。",
-      "title": "ファビコン"
-    },
-    "footer": {
-      "desc": "サイトのフッターコンテンツを設定する（HTML）",
-      "title": "フッター"
-    },
-    "friend": {
-      "apply": {
-        "desc": "他のユーザーが友人リンクを申請できるようにする（審査が必要）",
-        "title": "友人リンク申請"
-      },
-      "health": {
-        "desc": "友人リンクのアクセスチェックを有効にする",
-        "title": "友人リンクの健康モニタリング",
-        "ua": {
-          "desc": "友人リンクのアクセスチェックに使用するUser-Agentを設定します。デフォルトは 'Rin-Check/1.0'",
-          "title": "友人リンクの健康モニタリング User-Agent"
-        }
-      },
-      "title": "友リンク設定"
-    },
-    "get_config_failed$message": "設定の取得に失敗しました: {{message}}",
-    "import_failed$message": "インポートに失敗しました: {{message}}",
-    "import_result": "インポート結果",
-    "import_skipped": "インポートをスキップ",
-    "import_skipped_item$title$reason": "《{{title}}》- {{reason}}",
-    "import_success$success$skipped": "インポートに成功しました。{{success}} 記事がインポートされ、{{skipped}} 記事がスキップされました",
-    "other": {
-      "title": "その他の設定"
-    },
-    "rss": {
-      "desc": "サイトフッターにRSS購読リンクを有効にする",
-      "title": "RSS 購読リンク"
-    },
-    "title": "設定",
-    "update_failed$message": "更新に失敗しました: {{message}}",
-    "wordpress": {
-      "desc": "WordPressからエクスポートされたXMLファイルをアップロードする",
-      "title": "WordPressからインポート"
-    }
-  },
   "sitename": "サイト名",
   "status": "ステータス",
   "summary": "概要",

@@ -4,13 +4,6 @@ const defaultFavicon = process.env.AVATAR ? `//wsrv.nl/?url=${encodeURIComponent
 export const defaultClientConfig = new Map(Object.entries({
     "favicon": defaultFavicon,
     "counter.enabled": true,
-    "friend_apply_enable": true,
-}))
-
-export const defaultServerConfig = new Map(Object.entries({
-    "friend_apply_auto_accept": false,
-    "friend_crontab": true,
-    "friend_ua": "Rin-Check/0.1.0"
 }))
 
 export class ConfigWrapper {
@@ -35,7 +28,5 @@ export class ConfigWrapper {
 }
 
 export const defaultClientConfigWrapper = new ConfigWrapper({}, defaultClientConfig);
-export const defaultServerConfigWrapper = new ConfigWrapper({}, defaultServerConfig);
 
 export const ClientConfigContext = createContext<ConfigWrapper>(defaultClientConfigWrapper);
-export const ServerConfigContext = createContext<ConfigWrapper>(defaultServerConfigWrapper);

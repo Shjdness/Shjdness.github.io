@@ -27,8 +27,6 @@ const S3_FOLDER = renv("S3_FOLDER", 'images/')
 const S3_REGION = renv("S3_REGION", "auto")
 const S3_FORCE_PATH_STYLE = env("S3_FORCE_PATH_STYLE", "false")
 const WEBHOOK_URL = env("WEBHOOK_URL", "")
-const RSS_TITLE = env("RSS_TITLE", "")
-const RSS_DESCRIPTION = env("RSS_DESCRIPTION", "")
 
 // Secrets
 const accessKeyId = env("S3_ACCESS_KEY_ID")
@@ -45,9 +43,6 @@ compatibility_date = "2024-05-29"
 # compatibility_flags = ["nodejs_compat"]
 node_compat = true
 
-[triggers]
-crons = ["*/20 * * * *"]
-
 [vars]
 FRONTEND_URL = "${FRONTEND_URL}"
 S3_FOLDER = "${S3_FOLDER}"
@@ -58,8 +53,6 @@ S3_ACCESS_HOST = "${S3_ACCESS_HOST}"
 S3_BUCKET = "${S3_BUCKET}"
 S3_FORCE_PATH_STYLE = "${S3_FORCE_PATH_STYLE}"
 WEBHOOK_URL = "${WEBHOOK_URL}"
-RSS_TITLE = "${RSS_TITLE}"
-RSS_DESCRIPTION = "${RSS_DESCRIPTION}"
 
 [placement]
 mode = "smart"

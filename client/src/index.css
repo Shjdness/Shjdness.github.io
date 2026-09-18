@@ -149,32 +149,30 @@ textarea:focus {
 .gallery-entry {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: space-between;
+  gap: 1.15rem;
   width: fit-content;
-  padding: 0.65rem 0.8rem;
-  border: 1px solid rgb(255 255 255 / 0.36);
-  border-radius: 1rem;
-  background: rgb(255 255 255 / 0.34);
+  padding: 0.68rem 1rem;
+  border: 1px solid rgb(255 255 255 / 0.3);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.25);
   color: rgb(30 41 59);
-  box-shadow: 0 12px 32px rgb(15 23 42 / 0.08);
-  backdrop-filter: blur(12px) saturate(145%);
-  transition: transform 250ms ease, background 250ms ease, border-color 250ms ease;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.06);
+  backdrop-filter: blur(10px) saturate(135%);
+  transition: background 220ms ease, border-color 220ms ease;
 }
 
 .gallery-entry:hover {
-  transform: translateY(-2px);
-  background: rgb(255 255 255 / 0.5);
-  border-color: rgb(255 255 255 / 0.62);
+  background: rgb(255 255 255 / 0.42);
+  border-color: rgb(255 255 255 / 0.54);
 }
 
-.gallery-entry__icon {
-  display: grid;
-  width: 2.35rem;
-  height: 2.35rem;
-  place-items: center;
-  border-radius: 0.8rem;
-  background: linear-gradient(135deg, rgb(252 70 107 / 0.92), rgb(151 32 56 / 0.8));
-  color: white;
+.gallery-entry > i {
+  transition: transform 220ms ease;
+}
+
+.gallery-entry:hover > i {
+  transform: translateX(0.25rem);
 }
 
 [data-color-mode="dark"] .gallery-entry {
@@ -186,6 +184,20 @@ textarea:focus {
 
 [data-color-mode="dark"] .gallery-entry:hover {
   background: rgb(16 29 48 / 0.62);
+}
+
+.feed-scroll-card {
+  opacity: 0;
+  filter: blur(2px);
+  transform: translate3d(0, 2rem, 0) scale(0.985);
+  transition: opacity 480ms ease, transform 560ms cubic-bezier(0.22, 1, 0.36, 1), filter 420ms ease;
+  will-change: opacity, transform, filter;
+}
+
+.feed-scroll-card.is-visible {
+  opacity: 1;
+  filter: blur(0);
+  transform: translate3d(0, 0, 0) scale(1);
 }
 
 .gallery-page {
@@ -412,6 +424,14 @@ textarea:focus {
   .gallery-entry,
   .gallery-back,
   .gallery-card__open {
+    transition: none;
+  }
+
+  .feed-scroll-card,
+  .feed-scroll-card.is-visible {
+    opacity: 1;
+    filter: none;
+    transform: none;
     transition: none;
   }
 }

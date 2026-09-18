@@ -1,7 +1,5 @@
 import { and, count, desc, eq, like, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
-import { XMLParser } from "fast-xml-parser";
-import html2md from 'html-to-md';
 import type { DB } from "../_worker";
 import { feeds, visits } from "../db/schema";
 import { setup } from "../setup";
@@ -378,100 +376,6 @@ export function FeedService() {
                 limit: t.Optional(t.Numeric()),
             })
         })
-        .post('wp', async ({ set, admin, body: { data } }) => {
-            if (!admin) {
-                set.status = 403;
-                return 'Permission denied';
-            }
-            if (!data) {
-                set.status = 400;
-                return 'Data is required';
-            }
-            const xml = await data.text();
-            const parser = new XMLParser();
-            const result = await parser.parse(xml)
-            const items = result.rss.channel.item;
-            if (!items) {
-                set.status = 404;
-                return 'No items found';
-            }
-            const feedItems: FeedItem[] = items?.map((item: any) => {
-                const createdAt = new Date(item?.['wp:post_date']);
-                const updatedAt = new Date(item?.['wp:post_modified']);
-                const draft = item?.['wp:status'] !== 'publish';
-                const contentHtml = item?.['content:encoded'];
-                const content = html2md(contentHtml);
-                const summary = content.length > 100 ? content.slice(0, 100) : content;
-                let tags = item?.['category'];
-                if (tags && Array.isArray(tags)) {
-                    tags = tags.map((tag: any) => tag + '');
-                } else if (tags && typeof tags === 'string') {
-                    tags = [tags];
-                }
-                return {
-                    title: item.title,
-                    summary,
-                    content,
-                    draft,
-                    createdAt,
-                    updatedAt,
-                    tags
-                };
-            });
-            let success = 0;
-            let skipped = 0;
-            let skippedList: { title: string, reason: string }[] = [];
-            for (const item of feedItems) {
-                if (!item.content) {
-                    skippedList.push({ title: item.title, reason: "no content" });
-                    skipped++;
-                    continue;
-                }
-                const exist = await db.query.feeds.findFirst({
-                    where: eq(feeds.content, item.content)
-                });
-                if (exist) {
-                    skippedList.push({ title: item.title, reason: "content exists" });
-                    skipped++;
-                    continue;
-                }
-                const result = await db.insert(feeds).values({
-                    title: item.title,
-                    content: item.content,
-                    summary: item.summary,
-                    uid: 1,
-                    listed: 1,
-                    draft: item.draft ? 1 : 0,
-                    createdAt: item.createdAt,
-                    updatedAt: item.updatedAt
-                }).returning({ insertedId: feeds.id });
-                if (item.tags) {
-                    await bindTagToPost(db, result[0].insertedId, item.tags);
-                }
-                success++;
-            }
-            PublicCache().deletePrefix('feeds_');
-            return {
-                success,
-                skipped,
-                skippedList
-            };
-        }, {
-            body: t.Object({
-                data: t.File()
-            })
-        })
-}
-
-
-type FeedItem = {
-    title: string;
-    summary: string;
-    content: string;
-    draft: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-    tags?: string[];
 }
 
 async function clearFeedCache(id: number, alias: string | null, newAlias: string | null) {

@@ -32,20 +32,6 @@ CREATE TABLE IF NOT EXISTS `feeds` (
 	FOREIGN KEY (`uid`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `friends` (
-	`id` integer PRIMARY KEY NOT NULL,
-	`name` text NOT NULL,
-	`desc` text,
-	`avatar` text NOT NULL,
-	`url` text NOT NULL,
-	`uid` integer NOT NULL,
-	`accepted` integer DEFAULT 0 NOT NULL,
-	`health` text DEFAULT '' NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`uid`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `hashtags` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

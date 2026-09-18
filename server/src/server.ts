@@ -3,8 +3,6 @@ import { serverTiming } from '@elysiajs/server-timing';
 import { Elysia } from 'elysia';
 import { CommentService } from './services/comments';
 import { FeedService } from './services/feed';
-import { FriendService } from './services/friends';
-import { RSSService } from './services/rss';
 import { SEOService } from './services/seo';
 import { StorageService } from './services/storage';
 import { TagService } from './services/tag';
@@ -32,9 +30,7 @@ export const app = () => new Elysia({ aot: false })
     .use(CommentService())
     .use(TagService())
     .use(StorageService())
-    .use(FriendService())
     .use(SEOService())
-    .use(RSSService())
     .use(ConfigService())
     .get('/', () => `Hi`)
     .onError(({ path, params, code }) => {

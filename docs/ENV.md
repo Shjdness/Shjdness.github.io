@@ -9,7 +9,6 @@
 | NAME        | 是    | 网站左上角名称 & 标题                 | 无     | Xeu                                              |
 | DESCRIPTION | 否    | 网站左上角描述                      | 无     | 杂食动物                                             |
 | PAGE_SIZE   | 否    | 默认分页限制                       | 5     | 5                                                |
-| RSS_ENABLE  | 否    | 是否启用 RSS(启用后会在站点底部显示 RSS 链接) | false | true                                             |
 
 **部署环境变量列表**
 

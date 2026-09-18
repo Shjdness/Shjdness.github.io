@@ -2,7 +2,7 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { timeago } from "../utils/timeago";
 import { HashTag } from "./hashtag";
-import { useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 export function FeedCard({ id, title, avatar, draft, listed, top, summary, hashtags, createdAt, updatedAt }:
     {
         id: string, avatar?: string,
@@ -12,9 +12,32 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
         createdAt: Date, updatedAt: Date
     }) {
     const { t } = useTranslation()
-    return useMemo(() => (
-        <>
-            <Link href={`/feed/${id}`} target="_blank" className="glass-panel w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
+    const cardRef = useRef<HTMLDivElement>(null)
+    const [visible, setVisible] = useState(false)
+
+    useEffect(() => {
+        const card = cardRef.current
+        if (!card) return
+
+        if (!("IntersectionObserver" in window)) {
+            setVisible(true)
+            return
+        }
+
+        const observer = new IntersectionObserver(([entry]) => {
+            setVisible(entry.isIntersecting)
+        }, {
+            threshold: 0.14,
+            rootMargin: "0px 0px -6% 0px"
+        })
+
+        observer.observe(card)
+        return () => observer.disconnect()
+    }, [])
+
+    return (
+        <div ref={cardRef} className={`feed-scroll-card w-full ${visible ? "is-visible" : ""}`}>
+            <Link href={`/feed/${id}`} target="_blank" className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
                 {avatar &&
                     <div className="flex flex-row items-center mb-2 rounded-xl overflow-clip">
                         <img src={avatar} alt=""
@@ -52,6 +75,6 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
                 }
 
             </Link>
-        </>
-    ), [id, title, avatar, draft, listed, top, summary, hashtags, createdAt, updatedAt])
+        </div>
+    )
 }

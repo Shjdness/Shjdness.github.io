@@ -82,21 +82,6 @@
     "published$time": "Published at {{time}}",
     "updated$time": "Updated at {{time}}"
   },
-  "footer": {
-    "rss": "RSS Subscription Link"
-  },
-  "friends": {
-    "apply": "Apply for Friend Link",
-    "create": "Create Friend Link",
-    "left": "Left temporarily",
-    "my_apply": "My Applications",
-    "review": {
-      "accepted": "Accepted",
-      "rejected": "Rejected",
-      "waiting": "Pending review"
-    },
-    "title": "Friends"
-  },
   "github_login": "Github Login",
   "hashtags": "Hashtags",
   "home": "Home",
@@ -128,67 +113,6 @@
   },
   "reload": "Retry",
   "save": "Save",
-  "settings": {
-    "cache": {
-      "clear": {
-        "confirm": {
-          "desc": "Cache is used to reduce database access frequency, please try clearing cache only if there are cache errors.",
-          "title": "Confirm to clear cache?"
-        },
-        "desc": "Clear all cache files",
-        "title": "Clear Cache"
-      },
-      "clear_failed$message": "Failed to clear cache: {{message}}"
-    },
-    "counter": {
-      "enable": {
-        "desc": "Enable statistics for article PV and UV",
-        "title": "Enable traffic statistics"
-      }
-    },
-    "favicon": {
-      "desc": "Set the icon (Favicon) displayed in the browser's address bar",
-      "title": "Favicon"
-    },
-    "footer": {
-      "desc": "Set the footer content of the site (HTML)",
-      "title": "Footer"
-    },
-    "friend": {
-      "apply": {
-        "desc": "Allow other users to apply for friend links (requires review)",
-        "title": "Friend Link Application"
-      },
-      "health": {
-        "desc": "Enable accessibility check for friends' links",
-        "title": "Friend Link Health Monitoring",
-        "ua": {
-          "desc": "Set the User-Agent used for friend link accessibility check, default 'Rin-Check/1.0'",
-          "title": "Friend Link Health Monitoring User-Agent"
-        }
-      },
-      "title": "Friend Link Settings"
-    },
-    "get_config_failed$message": "Failed to get configuration, {{message}}",
-    "import_failed$message": "Import failed, {{message}}",
-    "import_result": "Import Result",
-    "import_skipped": "Import Skipped",
-    "import_skipped_item$title$reason": "《{{title}}》- {{reason}}",
-    "import_success$success$skipped": "Import successful, {{success}} articles imported, {{skipped}} articles skipped",
-    "other": {
-      "title": "Other Settings"
-    },
-    "rss": {
-      "desc": "Enable RSS subscription link at the site footer",
-      "title": "RSS Subscription Link"
-    },
-    "title": "Settings",
-    "update_failed$message": "Update failed: {{message}}",
-    "wordpress": {
-      "desc": "Upload the XML file exported from WordPress",
-      "title": "Import from WordPress"
-    }
-  },
   "sitename": "Site Name",
   "status": "Status",
   "summary": "Summary",
