@@ -39,6 +39,11 @@ h3,
   isolation: isolate;
   min-height: 100vh;
   min-height: 100svh;
+  --background-blur: 2px;
+  --background-brightness: 1;
+  --background-saturation: 1;
+  --glass-opacity: 0.5;
+  --glass-blur: 18px;
 }
 
 .site-shell::before,
@@ -53,7 +58,7 @@ h3,
   inset: -8px;
   background-repeat: no-repeat;
   background-size: cover;
-  filter: blur(2px);
+  filter: blur(var(--background-blur)) brightness(var(--background-brightness)) saturate(var(--background-saturation));
   transform: scale(1.01);
 }
 
@@ -88,16 +93,20 @@ h3,
 }
 
 .site-shell .bg-w {
+  background-color: rgb(255 255 255 / var(--glass-opacity));
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   border-color: rgb(255 255 255 / 0.32);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.24);
 }
 
 [data-color-mode="dark"] .site-shell .bg-w {
+  background-color: rgb(2 6 23 / var(--glass-opacity));
   border-color: rgb(255 255 255 / 0.1);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
 }
 
 .site-shell .glass-panel {
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   border: 1px solid rgb(255 255 255 / 0.34);
   box-shadow:
     0 18px 50px rgb(31 41 55 / 0.09),
@@ -109,6 +118,136 @@ h3,
   box-shadow:
     0 18px 50px rgb(0 0 0 / 0.28),
     inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+/* Appearance settings */
+
+.appearance-page {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 2.25rem 0 4rem;
+}
+
+.appearance-panel {
+  width: min(100%, 46rem);
+  padding: clamp(1.35rem, 4vw, 2.3rem);
+  border: 1px solid rgb(255 255 255 / 0.34);
+  border-radius: 1.6rem;
+  background: rgb(255 255 255 / var(--glass-opacity));
+  box-shadow: 0 20px 52px rgb(15 23 42 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  color: rgb(30 41 59);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+}
+
+.appearance-kicker {
+  color: #e11d62;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.appearance-panel h1 {
+  margin-top: 0.35rem;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 800;
+}
+
+.appearance-intro,
+.appearance-empty > p:not(.appearance-kicker) {
+  margin-top: 0.55rem;
+  color: rgb(71 85 105);
+  line-height: 1.75;
+}
+
+.appearance-controls {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.75rem;
+}
+
+.appearance-control {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.2);
+}
+
+.appearance-control-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.appearance-control-heading strong,
+.appearance-control-heading small {
+  display: block;
+}
+
+.appearance-control-heading strong {
+  font-size: 0.95rem;
+}
+
+.appearance-control-heading small {
+  margin-top: 0.2rem;
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.appearance-control-heading b {
+  color: #e11d62;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.appearance-control input[type="range"] {
+  width: 100%;
+  accent-color: #e11d62;
+}
+
+.appearance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+
+.appearance-message {
+  margin-top: 0.9rem;
+  color: rgb(71 85 105);
+  font-size: 0.85rem;
+}
+
+.appearance-link {
+  display: inline-flex;
+  margin-top: 1.25rem;
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  background: #e11d62;
+  color: white;
+}
+
+[data-color-mode="dark"] .appearance-panel {
+  border-color: rgb(255 255 255 / 0.12);
+  background: rgb(5 12 25 / var(--glass-opacity));
+  box-shadow: 0 20px 52px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  color: #eaf2ff;
+}
+
+[data-color-mode="dark"] .appearance-intro,
+[data-color-mode="dark"] .appearance-empty > p:not(.appearance-kicker),
+[data-color-mode="dark"] .appearance-control-heading small,
+[data-color-mode="dark"] .appearance-message {
+  color: #b7c5d8;
+}
+
+[data-color-mode="dark"] .appearance-control {
+  border-color: rgb(255 255 255 / 0.09);
+  background: rgb(8 17 31 / 0.3);
 }
 
 [data-color-mode="dark"] .site-shell .dark\:text-white {

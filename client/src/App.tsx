@@ -22,6 +22,8 @@ import { tryInt } from './utils/int'
 import { SearchPage } from './page/search.tsx'
 import { Tips, TipsPage } from './components/tips.tsx'
 import { useTranslation } from 'react-i18next'
+import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppearance } from './state/appearance.tsx'
+import { AppearancePage } from './page/appearance.tsx'
 
 function App() {
   const ref = useRef(false)
@@ -29,6 +31,9 @@ function App() {
   const [location] = useLocation()
   const [profile, setProfile] = useState<Profile | undefined>()
   const [config, setConfig] = useState<ConfigWrapper>(new ConfigWrapper({}, new Map()))
+  const [appearanceDefaults, setAppearanceDefaults] = useState<AppearanceSettings>(DEFAULT_APPEARANCE)
+  const [personalAppearance, setPersonalAppearance] = useState<AppearanceSettings | null>(null)
+  const [appearancePreview, setAppearancePreview] = useState<AppearanceSettings | null>(null)
   useEffect(() => {
     if (ref.current) return
     if (getCookie('token')?.length ?? 0 > 0) {
@@ -63,16 +68,61 @@ function App() {
     }
     ref.current = true
   }, [])
+  useEffect(() => {
+    client.appearance.default.get().then(({ data }) => {
+      if (data && typeof data !== 'string') {
+        setAppearanceDefaults(data.settings)
+      }
+    })
+  }, [])
+  useEffect(() => {
+    if (!profile) {
+      setPersonalAppearance(null)
+      setAppearancePreview(null)
+      return
+    }
+    client.appearance.index.get({ headers: headersWithAuth() }).then(({ data }) => {
+      if (data && typeof data !== 'string') {
+        setPersonalAppearance(data.settings)
+        setAppearancePreview(null)
+      }
+    })
+  }, [profile?.id])
   const favicon = useMemo(() => config.get<string>("favicon"), [config])
+  const appearance = appearancePreview || mergeAppearance(appearanceDefaults, personalAppearance)
+  const appearanceStyle = useMemo(() => ({
+    '--background-blur': `${appearance.backgroundBlur}px`,
+    '--background-brightness': String(appearance.backgroundBrightness),
+    '--background-saturation': String(appearance.backgroundSaturation),
+    '--glass-opacity': String(appearance.glassOpacity),
+    '--glass-blur': `${appearance.glassBlur}px`,
+  } as React.CSSProperties), [appearance])
   return (
-    <div className={`site-shell ${location === '/' ? 'site-shell--home' : 'site-shell--inner'}`}>
+    <div className={`site-shell ${location === '/' ? 'site-shell--home' : 'site-shell--inner'}`} style={appearanceStyle}>
       <ClientConfigContext.Provider value={config}>
         <ProfileContext.Provider value={profile}>
-          <Helmet>
-            {favicon &&
-              <link rel="icon" href={favicon} />}
-          </Helmet>
-          <Switch>
+          <AppearanceContext.Provider value={{
+            settings: appearance,
+            defaults: appearanceDefaults,
+            setPreview: setAppearancePreview,
+            savePersonal: (settings) => {
+              setPersonalAppearance(settings)
+              setAppearancePreview(null)
+            },
+            saveDefaults: (settings) => {
+              setAppearanceDefaults(settings)
+              setAppearancePreview(null)
+            },
+            clearPersonal: () => {
+              setPersonalAppearance(null)
+              setAppearancePreview(null)
+            },
+          }}>
+            <Helmet>
+              {favicon &&
+                <link rel="icon" href={favicon} />}
+            </Helmet>
+            <Switch>
             <RouteMe path="/">
               <FeedsPage />
             </RouteMe>
@@ -113,6 +163,10 @@ function App() {
                   <WritingPage id={id_num} />
                 )
               }}
+            </RouteMe>
+
+            <RouteMe path="/appearance" paddingClassName='mx-4'>
+              <AppearancePage />
             </RouteMe>
 
             <RouteMe path="/callback" >
@@ -159,7 +213,8 @@ function App() {
 
             {/* Default route in a switch */}
             <Route>404: No such page!</Route>
-          </Switch>
+            </Switch>
+          </AppearanceContext.Provider>
         </ProfileContext.Provider>
       </ClientConfigContext.Provider>
     </div>

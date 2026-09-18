@@ -59,6 +59,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
                             <div className="ml-auto hidden opacity-0 md:opacity-100 duration-300 md:flex flex-row items-center space-x-2">
                                 <SearchButton />
                                 <LanguageSwitch />
+                                <AppearanceButton profile={profile} />
                                 <UserAvatar profile={profile} />
                             </div>
                         </div>
@@ -122,15 +123,26 @@ function Menu() {
                 overlayStyle={{ background: "rgba(0,0,0,0.3)" }}
             >
                 <div className="flex flex-col bg-w rounded-xl p-2 mt-4 w-[50vw]">
-                    <div className="flex flex-row justify-end space-x-2">
-                        <SearchButton onClose={onClose} />
-                        <LanguageSwitch />
-                        <UserAvatar profile={profile} />
+                        <div className="flex flex-row justify-end space-x-2">
+                            <SearchButton onClose={onClose} />
+                            <LanguageSwitch />
+                            <AppearanceButton profile={profile} onClose={onClose} />
+                            <UserAvatar profile={profile} />
                     </div>
                     <NavBar menu={true} onClick={onClose} />
                 </div>
             </Popup>
         </div>
+    )
+}
+
+function AppearanceButton({ profile, onClose }: { profile?: Profile, onClose?: () => void }) {
+    if (!profile) return null
+    return (
+        <Link href="/appearance" onClick={onClose} title="外观设置" aria-label="外观设置"
+            className="flex rounded-full border dark:border-neutral-600 px-2 bg-w aspect-[1] items-center justify-center t-primary bg-button">
+            <i className="ri-palette-line" />
+        </Link>
     )
 }
 

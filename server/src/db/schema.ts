@@ -40,6 +40,20 @@ export const users = sqliteTable("users", {
     updatedAt: updated_at,
 });
 
+/**
+ * A small, user-owned preference store for the appearance controls.  This is
+ * deliberately separate from the public client configuration: a visitor's
+ * view can retain the site default while each signed-in person keeps their own
+ * visual preferences across devices.
+ */
+export const appearancePreferences = sqliteTable("appearance_preferences", {
+    id: integer("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+    settings: text("settings").notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
 export const comments = sqliteTable("comments", {
     id: integer("id").primaryKey(),
     feedId: integer("feed_id").references(() => feeds.id, { onDelete: 'cascade' }).notNull(),
