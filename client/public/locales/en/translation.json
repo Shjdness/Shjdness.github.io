@@ -84,6 +84,12 @@
   },
   "github_login": "Github Login",
   "hashtags": "Hashtags",
+  "heatmap": {
+    "posts": "posts",
+    "subtitle": "A year of writing, arranged by publication date",
+    "title": "Writing activity",
+    "year": "Select year"
+  },
   "home": "Home",
   "index": {
     "back": "Back to Home",
@@ -94,6 +100,16 @@
   },
   "listed": "Listed in articles",
   "login": {
+    "guest": {
+      "action": "Continue as guest",
+      "code": "Enter guest access code",
+      "invalid": "The access code is incorrect",
+      "name": "Guest · 悲若兮",
+      "not_configured": "Guest access is not configured yet",
+      "rate_limited": "Too many attempts. Try again in fifteen minutes.",
+      "scope": "This account can only manage content created by 悲若兮."
+    },
+    "owner": "Owner account",
     "oauth_only": "Please log in to continue",
     "password": {
       "placeholder": "Please enter your password"
@@ -110,6 +126,10 @@
   "publish": {
     "success": "Publish successful",
     "title": "Publish"
+  },
+  "random_wander": "Random wander",
+  "reading": {
+    "stats": "{{count}} characters · about {{minutes}} min"
   },
   "reload": "Retry",
   "save": "Save",
@@ -144,5 +164,8 @@
     "self_only": "Visible to self only"
   },
   "writing": "Writing",
+  "writing_help": {
+    "heading": "Apply heading level {{level}}"
+  },
   "year$year": "{{year}}"
 }

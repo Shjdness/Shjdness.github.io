@@ -305,7 +305,7 @@ export function Markdown({ content }: { content: string }) {
         },
         p({ children, node, ...props }) {
           return (
-            <p className="mt-2 py-1" {...props}>
+            <p className="mt-2 py-1 whitespace-pre-line" {...props}>
               {children}
             </p>
           );

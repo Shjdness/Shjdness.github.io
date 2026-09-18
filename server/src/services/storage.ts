@@ -25,7 +25,7 @@ export function StorageService() {
         .use(setup())
         .group('/storage', (group) =>
             group
-                .post('/', async ({ uid, set, body: { key, file } }) => {
+                .post('/', async ({ uid, writer, set, body: { key, file } }) => {
 
                     if (!endpoint) {
                         set.status = 500;
@@ -43,9 +43,17 @@ export function StorageService() {
                         set.status = 500;
                         return 'S3_BUCKET is not defined'
                     }
-                    if (!uid) {
+                    if (!uid || !writer) {
                         set.status = 401;
                         return 'Unauthorized';
+                    }
+                    if (!file.type.startsWith('image/')) {
+                        set.status = 400;
+                        return 'Only image uploads are allowed';
+                    }
+                    if (file.size > 5 * 1024 * 1024) {
+                        set.status = 413;
+                        return 'Image size must not exceed 5 MB';
                     }
                     const suffix = key.includes(".") ? key.split('.').pop() : "";
                     const hashArray = await crypto.subtle.digest(

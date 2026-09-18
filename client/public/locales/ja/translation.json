@@ -84,6 +84,12 @@
   },
   "github_login": "Github ログイン",
   "hashtags": "ラベル",
+  "heatmap": {
+    "posts": "件",
+    "subtitle": "公開日で振り返る一年の執筆記録",
+    "title": "年間執筆ヒートマップ",
+    "year": "年を選択"
+  },
   "home": "ホーム",
   "index": {
     "back": "ホームに戻る",
@@ -94,6 +100,16 @@
   },
   "listed": "記事にリスト",
   "login": {
+    "guest": {
+      "action": "ゲストとしてログイン",
+      "code": "ゲストアクセスコードを入力",
+      "invalid": "アクセスコードが正しくありません",
+      "name": "ゲスト · 悲若兮",
+      "not_configured": "ゲストログインはまだ設定されていません",
+      "rate_limited": "試行回数が多すぎます。15分後に再試行してください。",
+      "scope": "悲若兮が作成したコンテンツのみ管理できます。"
+    },
+    "owner": "管理者アカウント",
     "oauth_only": "続行するにはログインしてください",
     "password": {
       "placeholder": "パスワードを入力してください"
@@ -110,6 +126,10 @@
   "publish": {
     "success": "公開に成功しました",
     "title": "公開"
+  },
+  "random_wander": "ランダム散策",
+  "reading": {
+    "stats": "{{count}} 文字 · 約 {{minutes}} 分"
   },
   "reload": "再試行",
   "save": "保存",
@@ -144,5 +164,8 @@
     "self_only": "自分のみ可視"
   },
   "writing": "執筆",
+  "writing_help": {
+    "heading": "見出しレベル {{level}} を適用"
+  },
   "year$year": "{{year}} 年"
 }

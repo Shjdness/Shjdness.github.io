@@ -18,6 +18,7 @@ import { Button } from "../components/button";
 import { Tips } from "../components/tips";
 import { useLoginModal } from "../hooks/useLoginModal";
 import mermaid from "mermaid";
+import { readingStats } from "../utils/reading";
 
 type Feed = {
   id: number;
@@ -50,6 +51,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
   const { showAlert, AlertUI } = useAlert();
   const { showConfirm, ConfirmUI } = useConfirm();
   const [top, setTop] = useState<number>(0);
+  const [readingProgress, setReadingProgress] = useState(0);
   const config = useContext(ClientConfigContext);
   const counterEnabled = config.get<boolean>('counter.enabled');
   function deleteFeed() {
@@ -149,8 +151,27 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
     })
   }, [feed]);
 
+  useEffect(() => {
+    const updateProgress = () => {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      setReadingProgress(scrollable > 0 ? Math.min(100, Math.max(0, window.scrollY / scrollable * 100)) : 0);
+    };
+    updateProgress();
+    window.addEventListener('scroll', updateProgress, { passive: true });
+    window.addEventListener('resize', updateProgress);
+    return () => {
+      window.removeEventListener('scroll', updateProgress);
+      window.removeEventListener('resize', updateProgress);
+    };
+  }, [feed]);
+
+  const stats = readingStats(feed?.content || "");
+
   return (
     <Waiting for={feed || error}>
+      <div className="reading-progress" aria-hidden="true">
+        <span style={{ width: `${readingProgress}%` }} />
+      </div>
       {feed && (
         <Helmet>
           <title>{`${feed.title ?? "Unnamed"} - ${process.env.NAME}`}</title>
@@ -239,6 +260,9 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
                         {feed.uv}
                       </span>
                     </p>}
+                    <p className="text-[12px] text-gray-400 font-normal">
+                      {t('reading.stats', { count: stats.characters, minutes: stats.minutes })}
+                    </p>
                     <div className="flex flex-row items-center">
                       <h1 className="text-2xl font-bold t-primary break-all">
                         {feed.title}
@@ -247,15 +271,17 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
                     </div>
                   </div>
                   <div className="pt-2">
-                    {profile?.permission && (
+                    {(profile?.permission || (profile?.canWrite && profile.id === feed.uid)) && (
                       <div className="flex gap-2">
-                        <button
-                          aria-label={top > 0 ? t("untop.title") : t("top.title")}
-                          onClick={topFeed}
-                          className={`flex-1 flex flex-col items-end justify-center px-2 py rounded-full transition ${top > 0 ? "bg-theme text-white hover:bg-theme-hover active:bg-theme-active" : "bg-secondary bg-button dark:text-neutral-400"}`}
-                        >
-                          <i className="ri-skip-up-line" />
-                        </button>
+                        {profile?.permission && (
+                          <button
+                            aria-label={top > 0 ? t("untop.title") : t("top.title")}
+                            onClick={topFeed}
+                            className={`flex-1 flex flex-col items-end justify-center px-2 py rounded-full transition ${top > 0 ? "bg-theme text-white hover:bg-theme-hover active:bg-theme-active" : "bg-secondary bg-button dark:text-neutral-400"}`}
+                          >
+                            <i className="ri-skip-up-line" />
+                          </button>
+                        )}
                         <Link
                           aria-label={t("edit")}
                           href={`/writing/${feed.id}`}

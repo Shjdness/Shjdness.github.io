@@ -40,6 +40,8 @@ function App() {
             id: data.id,
             avatar: data.avatar || '',
             permission: data.permission,
+            canWrite: data.canWrite,
+            role: data.role,
             name: data.username
           })
         }

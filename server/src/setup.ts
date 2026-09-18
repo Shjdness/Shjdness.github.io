@@ -68,6 +68,7 @@ export function setup() {
                 uid: user.id,
                 username: user.username,
                 admin: user.permission === 1,
+                writer: user.permission === 1 || user.permission === 2,
             }
         })
 }

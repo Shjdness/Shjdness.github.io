@@ -200,6 +200,117 @@ textarea:focus {
   transform: translate3d(0, 0, 0) scale(1);
 }
 
+.reading-progress {
+  position: fixed;
+  z-index: 80;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  pointer-events: none;
+}
+
+.reading-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(90deg, #fb7185, #f43f5e, #a855f7);
+  box-shadow: 0 0 12px rgb(244 63 94 / 0.45);
+  transition: width 80ms linear;
+}
+
+.editor-heading-button {
+  min-width: 2rem;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid rgb(148 163 184 / 0.28);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18);
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.editor-heading-button:hover {
+  border-color: rgb(244 63 94 / 0.5);
+  background: rgb(244 63 94 / 0.1);
+}
+
+.heatmap-panel {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  border: 1px solid rgb(255 255 255 / 0.26);
+  border-radius: 1.25rem;
+  background: rgb(255 255 255 / 0.2);
+  box-shadow: 0 14px 35px rgb(15 23 42 / 0.07);
+  color: rgb(30 41 59);
+  backdrop-filter: blur(10px);
+}
+
+.heatmap-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.heatmap-heading h2 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.heatmap-heading p {
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+}
+
+.heatmap-heading select,
+.gallery-filters select {
+  border: 1px solid rgb(148 163 184 / 0.28);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.38);
+  padding: 0.38rem 0.75rem;
+  color: inherit;
+  font-size: 0.75rem;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-auto-columns: 0.68rem;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 0.68rem);
+  gap: 0.2rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  scrollbar-width: thin;
+}
+
+.heatmap-day {
+  width: 0.68rem;
+  height: 0.68rem;
+  border-radius: 0.18rem;
+  background: rgb(148 163 184 / 0.2);
+}
+
+.heatmap-day.level-1 { background: rgb(251 113 133 / 0.38); }
+.heatmap-day.level-2 { background: rgb(251 113 133 / 0.58); }
+.heatmap-day.level-3 { background: rgb(244 63 94 / 0.78); }
+.heatmap-day.level-4 { background: rgb(225 29 72 / 0.98); }
+.heatmap-day.is-empty { background: transparent; }
+
+[data-color-mode="dark"] .heatmap-panel {
+  border-color: rgb(255 255 255 / 0.1);
+  background: rgb(8 17 31 / 0.42);
+  color: #e8f0fb;
+}
+
+[data-color-mode="dark"] .heatmap-heading select,
+[data-color-mode="dark"] .gallery-filters select {
+  background: rgb(8 17 31 / 0.58);
+  color: #e8f0fb;
+}
+
 .gallery-page {
   color: rgb(30 41 59);
 }
@@ -265,6 +376,57 @@ textarea:focus {
   color: rgb(146 64 14);
   font-size: 0.8rem;
   backdrop-filter: blur(10px);
+}
+
+.gallery-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 1.1rem;
+  background: rgb(255 255 255 / 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.gallery-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: rgb(100 116 139);
+  font-size: 0.68rem;
+}
+
+.gallery-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.48rem 0.8rem;
+  border: 1px solid rgb(244 63 94 / 0.25);
+  border-radius: 999px;
+  background: rgb(244 63 94 / 0.1);
+  color: rgb(190 24 93);
+  font-size: 0.75rem;
+}
+
+.gallery-filters button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.gallery-result-count {
+  margin-left: auto;
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+}
+
+.gallery-empty {
+  grid-column: 1 / -1;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: rgb(100 116 139);
 }
 
 .gallery-grid {
@@ -341,6 +503,16 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.gallery-card__tags {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  overflow: hidden;
+  font-size: 0.65rem;
+  opacity: 0.76;
+  white-space: nowrap;
+}
+
 .gallery-card__open {
   position: absolute;
   top: 0.85rem;
@@ -402,6 +574,15 @@ textarea:focus {
   color: #f7d795;
 }
 
+[data-color-mode="dark"] .gallery-filters {
+  border-color: rgb(255 255 255 / 0.1);
+  background: rgb(8 17 31 / 0.42);
+}
+
+[data-color-mode="dark"] .gallery-filters button {
+  color: #fda4af;
+}
+
 @keyframes gallery-spin {
   to { transform: rotate(360deg); }
 }
@@ -416,6 +597,11 @@ textarea:focus {
   .gallery-card:nth-child(n) {
     grid-column: 1 / -1;
     aspect-ratio: 4 / 3;
+  }
+
+  .gallery-result-count {
+    width: 100%;
+    margin-left: 0;
   }
 }
 

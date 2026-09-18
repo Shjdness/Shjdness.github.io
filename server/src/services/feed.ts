@@ -14,8 +14,9 @@ export function FeedService() {
         .use(setup())
         .group('/feed', (group) =>
             group
-                .get('/', async ({ admin, set, query: { page, limit, type } }) => {
-                    if ((type === 'draft' || type === 'unlisted') && !admin) {
+                .get('/', async ({ admin, writer, uid, set, query: { page, limit, type } }) => {
+                    const privateList = type === 'draft' || type === 'unlisted';
+                    if (privateList && !writer) {
                         set.status = 403;
                         return 'Permission denied';
                     }
@@ -23,11 +24,16 @@ export function FeedService() {
                     const page_num = (page ? page > 0 ? page : 1 : 1) - 1;
                     const limit_num = limit ? +limit > 50 ? 50 : +limit : 20;
                     const cacheKey = `feeds_${type}_${page_num}_${limit_num}`;
-                    const cached = await cache.get(cacheKey);
-                    if (cached) {
-                        return cached;
+                    if (!privateList) {
+                        const cached = await cache.get(cacheKey);
+                        if (cached) return cached;
                     }
-                    const where = type === 'draft' ? eq(feeds.draft, 1) : type === 'unlisted' ? and(eq(feeds.draft, 0), eq(feeds.listed, 0)) : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                    const visibility = type === 'draft'
+                        ? eq(feeds.draft, 1)
+                        : type === 'unlisted'
+                            ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
+                            : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                    const where = privateList && !admin ? and(visibility, eq(feeds.uid, uid!)) : visibility;
                     const size = await db.select({ count: count() }).from(feeds).where(where);
                     if (size[0].count === 0) {
                         return {
@@ -38,7 +44,7 @@ export function FeedService() {
                     }
                     const feed_list = (await db.query.feeds.findMany({
                         where: where,
-                        columns: admin ? undefined : {
+                        columns: admin || privateList ? undefined : {
                             draft: false,
                             listed: false
                         },
@@ -77,7 +83,7 @@ export function FeedService() {
                         data: feed_list,
                         hasNext
                     }
-                    if (type === undefined || type === 'normal' || type === '')
+                    if (!privateList)
                         await cache.set(cacheKey, data);
                     return data
                 }, {
@@ -99,8 +105,8 @@ export function FeedService() {
                         orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
                     }))
                 })
-                .post('/', async ({ admin, set, uid, body: { title, alias, listed, content, summary, draft, tags, createdAt } }) => {
-                    if (!admin) {
+                .post('/', async ({ writer, set, uid, body: { title, alias, listed, content, summary, draft, tags, createdAt } }) => {
+                    if (!writer || !uid) {
                         set.status = 403;
                         return 'Permission denied';
                     }
@@ -215,6 +221,7 @@ export function FeedService() {
                 })
                 .post('/:id', async ({
                     admin,
+                    writer,
                     set,
                     uid,
                     params: { id },
@@ -228,7 +235,7 @@ export function FeedService() {
                         set.status = 404;
                         return 'Not found';
                     }
-                    if (feed.uid !== uid && !admin) {
+                    if (!admin && (!writer || feed.uid !== uid)) {
                         set.status = 403;
                         return 'Permission denied';
                     }
@@ -237,7 +244,7 @@ export function FeedService() {
                         content,
                         summary,
                         alias,
-                        top,
+                        top: admin ? top : undefined,
                         listed: listed ? 1 : 0,
                         draft: draft ? 1 : 0,
                         createdAt: createdAt ? new Date(createdAt) : undefined,
@@ -264,10 +271,13 @@ export function FeedService() {
                 .post('/top/:id', async ({
                     admin,
                     set,
-                    uid,
                     params: { id },
                     body: { top }
                 }) => {
+                    if (!admin) {
+                        set.status = 403;
+                        return 'Permission denied';
+                    }
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
                         where: eq(feeds.id, id_num)
@@ -275,10 +285,6 @@ export function FeedService() {
                     if (!feed) {
                         set.status = 404;
                         return 'Not found';
-                    }
-                    if (feed.uid !== uid && !admin) {
-                        set.status = 403;
-                        return 'Permission denied';
                     }
                     await db.update(feeds).set({
                         top
@@ -290,7 +296,7 @@ export function FeedService() {
                         top: t.Integer()
                     })
                 })
-                .delete('/:id', async ({ admin, set, uid, params: { id } }) => {
+                .delete('/:id', async ({ admin, writer, set, uid, params: { id } }) => {
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
                         where: eq(feeds.id, id_num)
@@ -299,7 +305,7 @@ export function FeedService() {
                         set.status = 404;
                         return 'Not found';
                     }
-                    if (feed.uid !== uid && !admin) {
+                    if (!admin && (!writer || feed.uid !== uid)) {
                         set.status = 403;
                         return 'Permission denied';
                     }

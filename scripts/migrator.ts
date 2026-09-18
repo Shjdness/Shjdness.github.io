@@ -34,6 +34,7 @@ const secretAccessKey = env("S3_SECRET_ACCESS_KEY")
 const jwtSecret = env("JWT_SECRET")
 const githubClientId = env("RIN_GITHUB_CLIENT_ID")
 const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
+const guestAccessCode = env("GUEST_ACCESS_CODE")
 
 Bun.write('wrangler.toml', stripIndent(`
 #:schema node_modules/wrangler/config-schema.json
@@ -152,6 +153,7 @@ await putSecret('S3_SECRET_ACCESS_KEY', secretAccessKey)
 await putSecret('RIN_GITHUB_CLIENT_ID', githubClientId)
 await putSecret('RIN_GITHUB_CLIENT_SECRET', githubClientSecret)
 await putSecret('JWT_SECRET', jwtSecret)
+await putSecret('GUEST_ACCESS_CODE', guestAccessCode)
 
 console.log(`Put Done.`)
 console.log(`----------------------------`)

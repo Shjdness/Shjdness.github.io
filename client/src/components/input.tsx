@@ -1,7 +1,8 @@
 
-export function Input({ autofocus, value, setValue, className, placeholder, onSubmit }:
-    { autofocus?: boolean, value: string, className?: string, placeholder: string, id?: number, setValue: (v: string) => void, onSubmit?: () => void }) {
+export function Input({ autofocus, value, setValue, className, placeholder, onSubmit, type = 'text' }:
+    { autofocus?: boolean, value: string, className?: string, placeholder: string, id?: number, setValue: (v: string) => void, onSubmit?: () => void, type?: React.HTMLInputTypeAttribute }) {
     return (<input
+        type={type}
         autoFocus={autofocus}
         placeholder={placeholder}
         value={value}

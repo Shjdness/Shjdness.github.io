@@ -19,6 +19,7 @@ type GalleryImage = {
   createdAt: Date
   feedId?: number
   order: number
+  tags: string[]
 }
 
 type FeedSummary = {
@@ -47,12 +48,14 @@ const featuredImages: GalleryImage[] = [
     title: "首页 · 花园",
     createdAt: new Date("2026-09-18T00:00:00+08:00"),
     order: 0,
+    tags: ["首页", "背景"],
   },
   {
     src: "/background-inner.jpg",
     title: "内页 · 海与晨昏",
     createdAt: new Date("2026-09-17T00:00:00+08:00"),
     order: 1,
+    tags: ["内页", "背景"],
   },
 ]
 
@@ -61,6 +64,8 @@ export function GalleryPage() {
   const [loading, setLoading] = useState(true)
   const [backendUnavailable, setBackendUnavailable] = useState(false)
   const [openIndex, setOpenIndex] = useState(-1)
+  const [selectedYear, setSelectedYear] = useState("all")
+  const [selectedTag, setSelectedTag] = useState("all")
 
   useEffect(() => {
     let cancelled = false
@@ -96,6 +101,7 @@ export function GalleryPage() {
               createdAt: new Date(data.createdAt),
               feedId: data.id,
               order,
+              tags: data.hashtags.map(({ name }) => name),
             }))
           }),
         )
@@ -125,15 +131,33 @@ export function GalleryPage() {
       })
   }, [remoteImages])
 
-  const slides = images.map(({ src, title, createdAt }) => ({
+  const years = useMemo(() => [...new Set(images.map(({ createdAt }) => createdAt.getFullYear()))].sort((a, b) => b - a), [images])
+  const tags = useMemo(() => [...new Set(images.flatMap(image => image.tags))].sort((a, b) => a.localeCompare(b, "zh-CN")), [images])
+  const filteredImages = useMemo(() => images.filter(image =>
+    (selectedYear === "all" || image.createdAt.getFullYear() === Number(selectedYear)) &&
+    (selectedTag === "all" || image.tags.includes(selectedTag))
+  ), [images, selectedTag, selectedYear])
+
+  const slides = filteredImages.map(({ src, title, createdAt, tags }) => ({
     src,
     title,
-    description: createdAt.toLocaleDateString("zh-CN", {
+    description: `${createdAt.toLocaleDateString("zh-CN", {
       year: "numeric",
       month: "long",
       day: "numeric",
-    }),
+    })}${tags.length ? ` · ${tags.map(tag => `#${tag}`).join(" ")}` : ""}`,
   }))
+
+  function openRandomImage() {
+    if (filteredImages.length === 0) return
+    if (filteredImages.length === 1) {
+      setOpenIndex(0)
+      return
+    }
+    let next = openIndex
+    while (next === openIndex) next = Math.floor(Math.random() * filteredImages.length)
+    setOpenIndex(next)
+  }
 
   return (
     <>
@@ -161,8 +185,30 @@ export function GalleryPage() {
           <p className="gallery-notice">文章图片暂时未能载入，站点背景仍可正常浏览。</p>
         )}
 
+        <div className="gallery-filters">
+          <label>
+            <span>年份</span>
+            <select value={selectedYear} onChange={(event) => { setSelectedYear(event.target.value); setOpenIndex(-1) }}>
+              <option value="all">全部年份</option>
+              {years.map(year => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>标签</span>
+            <select value={selectedTag} onChange={(event) => { setSelectedTag(event.target.value); setOpenIndex(-1) }}>
+              <option value="all">全部标签</option>
+              {tags.map(tag => <option key={tag} value={tag}>#{tag}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={openRandomImage} disabled={filteredImages.length === 0}>
+            <i className="ri-shuffle-line" aria-hidden="true" />
+            随机查看
+          </button>
+          <span className="gallery-result-count">{filteredImages.length} 张</span>
+        </div>
+
         <section className="gallery-grid" aria-busy={loading} aria-label="图片集合">
-          {images.map((image, index) => (
+          {filteredImages.map((image, index) => (
             <button
               key={`${image.src}-${image.feedId ?? "featured"}`}
               className="gallery-card group"
@@ -180,12 +226,21 @@ export function GalleryPage() {
                   })}
                 </span>
                 <span className="gallery-card__title">{image.title}</span>
+                {image.tags.length > 0 && (
+                  <span className="gallery-card__tags">
+                    {image.tags.slice(0, 3).map(tag => <span key={tag}>#{tag}</span>)}
+                  </span>
+                )}
               </span>
               <span className="gallery-card__open" aria-hidden="true">
                 <i className="ri-expand-diagonal-line" />
               </span>
             </button>
           ))}
+
+          {!loading && filteredImages.length === 0 && (
+            <p className="gallery-empty">当前筛选条件下还没有图片。</p>
+          )}
 
           {loading && (
             <div className="gallery-card gallery-card--loading" aria-label="正在载入文章图片">

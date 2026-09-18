@@ -18,6 +18,7 @@ import { Cache, useCache } from '../utils/cache';
 import { siteName } from "../utils/constants";
 import { useColorMode } from "../utils/darkModeUtils";
 import mermaid from 'mermaid';
+import { readingStats } from '../utils/reading';
 
 async function publish({
   title,
@@ -172,6 +173,26 @@ export function WritingPage({ id }: { id?: number }) {
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const { showAlert, AlertUI } = useAlert()
+  const stats = readingStats(content)
+
+  function applyHeading(level: 1 | 2 | 3) {
+    const currentEditor = editorRef.current
+    const selection = currentEditor?.getSelection()
+    const model = currentEditor?.getModel()
+    if (!currentEditor || !selection || !model) return
+    const line = selection.startLineNumber
+    const currentText = model.getLineContent(line).replace(/^#{1,6}\s*/, '')
+    currentEditor.executeEdits('heading-toolbar', [{
+      range: {
+        startLineNumber: line,
+        startColumn: 1,
+        endLineNumber: line,
+        endColumn: model.getLineMaxColumn(line),
+      },
+      text: `${'#'.repeat(level)} ${currentText}`,
+    }])
+    currentEditor.focus()
+  }
   function publishButton() {
     if (publishing) return;
     const tagsplit =
@@ -414,10 +435,25 @@ export function WritingPage({ id }: { id?: number }) {
           <div className="glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4">
             {MetaInput({ className: "visible md:hidden mb-8" })}
             <div className="flex flex-col mx-4 my-2 md:mx-0 md:my-0 gap-2">
-              <div className="flex flex-row space-x-2">
+              <div className="flex flex-row flex-wrap items-center gap-2">
                 <button className={`${preview === 'edit' ? "text-theme" : ""}`} onClick={() => setPreview('edit')}> {t("edit")} </button>
                 <button className={`${preview === 'preview' ? "text-theme" : ""}`} onClick={() => setPreview('preview')}> {t("preview")} </button>
                 <button className={`${preview === 'comparison' ? "text-theme" : ""}`} onClick={() => setPreview('comparison')}> {t("comparison")} </button>
+                <span className="h-4 w-px bg-neutral-400/40" aria-hidden="true" />
+                {[1, 2, 3].map(level => (
+                  <button
+                    key={level}
+                    type="button"
+                    className="editor-heading-button"
+                    title={t('writing_help.heading', { level })}
+                    onClick={() => applyHeading(level as 1 | 2 | 3)}
+                  >
+                    {'#'.repeat(level)}
+                  </button>
+                ))}
+                <span className="text-xs t-secondary">
+                  {t('reading.stats', { count: stats.characters, minutes: stats.minutes })}
+                </span>
                 <div className="flex-grow" />
                 {uploading &&
                   <div className="flex flex-row space-x-2 items-center">
