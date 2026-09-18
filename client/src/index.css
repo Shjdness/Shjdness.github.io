@@ -250,6 +250,154 @@ h3,
   background: rgb(8 17 31 / 0.3);
 }
 
+/* Private Life shell */
+
+.life-page {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 2.25rem 0 4rem;
+}
+
+.life-panel {
+  width: min(100%, 54rem);
+  padding: clamp(1.4rem, 4vw, 2.4rem);
+  border: 1px solid rgb(255 255 255 / 0.34);
+  border-radius: 1.6rem;
+  background: rgb(255 255 255 / var(--glass-opacity));
+  box-shadow: 0 20px 52px rgb(15 23 42 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  color: rgb(30 41 59);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+}
+
+.life-kicker {
+  color: #e11d62;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.life-panel h1 {
+  margin-top: 0.35rem;
+  font-size: clamp(1.85rem, 4vw, 2.55rem);
+  font-weight: 800;
+}
+
+.life-panel > p:not(.life-kicker),
+.life-intro {
+  margin-top: 0.65rem;
+  color: rgb(71 85 105);
+  line-height: 1.75;
+}
+
+.life-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1.75rem;
+}
+
+.life-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 6.6rem;
+  padding: 1rem;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 1.1rem;
+  background: rgb(255 255 255 / 0.2);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.life-card:hover {
+  transform: translateY(-0.15rem);
+  border-color: rgb(225 29 98 / 0.45);
+  background: rgb(255 255 255 / 0.36);
+}
+
+.life-card > i:first-child {
+  display: grid;
+  width: 2.3rem;
+  height: 2.3rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: rgb(225 29 98 / 0.13);
+  color: #e11d62;
+  font-size: 1.1rem;
+}
+
+.life-card span strong,
+.life-card span small {
+  display: block;
+}
+
+.life-card span strong {
+  font-size: 1rem;
+}
+
+.life-card span small {
+  margin-top: 0.22rem;
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.life-card > i:last-child {
+  color: #e11d62;
+}
+
+.life-back,
+.life-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  color: #e11d62;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.life-coming-soon {
+  margin-top: 1.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: rgb(225 29 98 / 0.09);
+  color: rgb(136 19 55);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+[data-color-mode="dark"] .life-panel {
+  border-color: rgb(255 255 255 / 0.12);
+  background: rgb(5 12 25 / var(--glass-opacity));
+  box-shadow: 0 20px 52px rgb(0 0 0 / 0.32), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  color: #eaf2ff;
+}
+
+[data-color-mode="dark"] .life-panel > p:not(.life-kicker),
+[data-color-mode="dark"] .life-intro,
+[data-color-mode="dark"] .life-card span small {
+  color: #b7c5d8;
+}
+
+[data-color-mode="dark"] .life-card {
+  border-color: rgb(255 255 255 / 0.09);
+  background: rgb(8 17 31 / 0.3);
+}
+
+[data-color-mode="dark"] .life-card:hover {
+  background: rgb(15 27 46 / 0.5);
+}
+
+[data-color-mode="dark"] .life-coming-soon {
+  color: #fecdd3;
+}
+
+@media (max-width: 640px) {
+  .life-grid { grid-template-columns: 1fr; }
+}
+
 [data-color-mode="dark"] .site-shell .dark\:text-white {
   color: #edf4ff !important;
 }

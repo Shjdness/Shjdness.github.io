@@ -5,6 +5,7 @@ import type { DB } from "../_worker";
 import { info, users } from "../db/schema";
 import { setup } from "../setup";
 import { getDB, getEnv } from "../utils/di";
+import { roleForUser } from "../utils/roles";
 
 const GUEST_OPENID = "guest:beiruoxi";
 const GUEST_NAME = "悲若兮";
@@ -165,11 +166,12 @@ export function UserService() {
                             permission: 2,
                         }).returning({ insertedId: users.id });
                         guest = await db.query.users.findFirst({ where: eq(users.id, inserted[0].insertedId) });
-                    } else if (guest.permission !== 2 || guest.username !== GUEST_NAME || guest.avatar !== GUEST_AVATAR) {
+                    } else if (guest.permission !== 2 || guest.username !== GUEST_NAME || guest.avatar !== GUEST_AVATAR || guest.accessExpiresAt !== null) {
                         await db.update(users).set({
                             username: GUEST_NAME,
                             avatar: GUEST_AVATAR,
                             permission: 2,
+                            accessExpiresAt: null,
                             updatedAt: new Date(),
                         }).where(eq(users.id, guest.id));
                     }
@@ -204,8 +206,8 @@ export function UserService() {
                         username: user.username,
                         avatar: user.avatar,
                         permission: user.permission === 1,
-                        canWrite: user.permission === 1 || user.permission === 2,
-                        role: user.permission === 1 ? 'owner' : user.permission === 2 ? 'guest' : 'reader',
+                        canWrite: roleForUser(user) === 'owner' || roleForUser(user) === 'trusted',
+                        role: roleForUser(user),
                         createdAt: user.createdAt,
                         updatedAt: user.updatedAt,
                     }

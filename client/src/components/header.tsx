@@ -156,6 +156,8 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
                 selected={location === "/" || location.startsWith('/feed')} href="/" />
             <NavItem menu={menu} onClick={onClick} title={t('timeline')} selected={location === "/timeline"} href="/timeline" />
             <NavItem menu={menu} onClick={onClick} title={t('hashtags')} selected={location === "/hashtags"} href="/hashtags" />
+            <NavItem menu={menu} onClick={onClick} when={profile?.role === 'owner' || profile?.role === 'trusted'} title="生活"
+                selected={location === "/life" || location === "/habits" || location === "/calendar" || location === "/year" || location === "/rss"} href="/life" />
             <NavItem menu={menu} onClick={onClick} when={profile?.canWrite == true} title={t('writing')}
                 selected={location.startsWith("/writing")} href="/writing" />
         </>

@@ -24,6 +24,7 @@ import { Tips, TipsPage } from './components/tips.tsx'
 import { useTranslation } from 'react-i18next'
 import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppearance } from './state/appearance.tsx'
 import { AppearancePage } from './page/appearance.tsx'
+import { PrivateLifePage } from './page/life.tsx'
 
 function App() {
   const ref = useRef(false)
@@ -46,7 +47,7 @@ function App() {
             avatar: data.avatar || '',
             permission: data.permission,
             canWrite: data.canWrite,
-            role: data.role === 'owner' || data.role === 'guest' ? data.role : 'reader',
+            role: data.role === 'owner' || data.role === 'trusted' ? data.role : 'member',
             name: data.username
           })
         }
@@ -167,6 +168,26 @@ function App() {
 
             <RouteMe path="/appearance" paddingClassName='mx-4'>
               <AppearancePage />
+            </RouteMe>
+
+            <RouteMe path="/life" paddingClassName='mx-4'>
+              <PrivateLifePage section="life" />
+            </RouteMe>
+
+            <RouteMe path="/habits" paddingClassName='mx-4'>
+              <PrivateLifePage section="habits" />
+            </RouteMe>
+
+            <RouteMe path="/calendar" paddingClassName='mx-4'>
+              <PrivateLifePage section="calendar" />
+            </RouteMe>
+
+            <RouteMe path="/year" paddingClassName='mx-4'>
+              <PrivateLifePage section="year" />
+            </RouteMe>
+
+            <RouteMe path="/rss" paddingClassName='mx-4'>
+              <PrivateLifePage section="rss" />
             </RouteMe>
 
             <RouteMe path="/callback" >

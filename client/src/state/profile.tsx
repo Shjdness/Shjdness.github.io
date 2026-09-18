@@ -5,7 +5,7 @@ export type Profile = {
   avatar: string;
   permission: boolean;
   canWrite: boolean;
-  role: 'owner' | 'guest' | 'reader';
+  role: 'owner' | 'trusted' | 'member';
   name: string
 }
 

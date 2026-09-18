@@ -6,6 +6,7 @@ import type { Env } from "./db/db";
 import { users } from "./db/schema";
 import { getDB, getEnv } from "./utils/di";
 import jwt from "./utils/jwt";
+import { canAccessLife, roleForUser } from "./utils/roles";
 
 
 const anyUser = async (db: DB) => (await db.query.users.findMany())?.length > 0
@@ -64,11 +65,14 @@ export function setup() {
             if (!user) {
                 return {};
             }
+            const role = roleForUser(user);
             return {
                 uid: user.id,
                 username: user.username,
-                admin: user.permission === 1,
-                writer: user.permission === 1 || user.permission === 2,
+                role,
+                admin: role === 'owner',
+                writer: role === 'owner' || role === 'trusted',
+                lifeAccess: canAccessLife(role),
             }
         })
 }

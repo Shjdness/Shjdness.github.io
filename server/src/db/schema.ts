@@ -36,6 +36,9 @@ export const users = sqliteTable("users", {
     openid: text("openid").notNull(),
     avatar: text("avatar"),
     permission: integer("permission").default(0),
+    // A trusted invitation can later have a bounded lifetime without changing
+    // the role contract. Null means the access does not expire.
+    accessExpiresAt: integer("access_expires_at", { mode: 'timestamp' }),
     createdAt: created_at,
     updatedAt: updated_at,
 });
