@@ -30,6 +30,7 @@ async function secureEqual(left: string, right: string) {
 export function UserService() {
     const db: DB = getDB();
     const env = getEnv();
+    const ownerGithubId = env.OWNER_GITHUB_ID;
     return new Elysia({ aot: false })
         .use(setup())
         .group('/user', (group) =>
@@ -68,10 +69,14 @@ export function UserService() {
                         avatar: user.avatar_url,
                         permission: 0
                     };
+                    // GitHub's numeric ID is stable, unlike a display name. Updating
+                    // this record on sign-in also repairs an owner whose legacy row
+                    // was previously created with reader permissions.
+                    const isOwner = Boolean(ownerGithubId) && profile.openid === ownerGithubId;
                     await db.query.users.findFirst({ where: eq(users.openid, profile.openid) })
                         .then(async (user) => {
                             if (user) {
-                                profile.permission = user.permission
+                                profile.permission = isOwner ? 1 : user.permission
                                 await db.update(users).set(profile).where(eq(users.id, user.id));
                                 token.set({
                                     value: await jwt.sign({ id: user.id }),
@@ -79,9 +84,12 @@ export function UserService() {
                                     path: '/',
                                 })
                             } else {
+                                if (isOwner) {
+                                    profile.permission = 1
+                                }
                                 // if no user exists, set permission to 1
                                 // store.anyUser is a global state to cache the existence of any user
-                                if (!await store.anyUser(db)) {
+                                if (!isOwner && !ownerGithubId && !await store.anyUser(db)) {
                                     const realTimeCheck = (await db.query.users.findMany())?.length > 0
                                     if (!realTimeCheck) {
                                         profile.permission = 1

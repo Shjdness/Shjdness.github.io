@@ -18,6 +18,7 @@ const renv = (name: string, defaultValue?: string) => env(name, defaultValue, tr
 const DB_NAME = renv("DB_NAME", 'rin')
 const WORKER_NAME = renv("WORKER_NAME", 'rin-server')
 const FRONTEND_URL = env("FRONTEND_URL", "")
+const OWNER_GITHUB_ID = env("OWNER_GITHUB_ID", "")
 
 const S3_ENDPOINT = env("S3_ENDPOINT", "")
 const S3_ACCESS_HOST = env("S3_ACCESS_HOST", S3_ENDPOINT)
@@ -46,6 +47,7 @@ node_compat = true
 
 [vars]
 FRONTEND_URL = "${FRONTEND_URL}"
+OWNER_GITHUB_ID = "${OWNER_GITHUB_ID}"
 S3_FOLDER = "${S3_FOLDER}"
 S3_CACHE_FOLDER="${S3_CACHE_FOLDER}"
 S3_REGION = "${S3_REGION}"

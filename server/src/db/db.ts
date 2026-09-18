@@ -7,6 +7,8 @@ export interface Env {
     GITHUB_CLIENT_ID: string;
     GITHUB_CLIENT_SECRET: string;
     JWT_SECRET: string;
+    /** Immutable GitHub numeric ID of the site owner. */
+    OWNER_GITHUB_ID: string;
     FRONTEND_URL: string;
     S3_REGION: string,
     S3_ENDPOINT: string,
