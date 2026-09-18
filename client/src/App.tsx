@@ -41,7 +41,7 @@ function App() {
             avatar: data.avatar || '',
             permission: data.permission,
             canWrite: data.canWrite,
-            role: data.role,
+            role: data.role === 'owner' || data.role === 'guest' ? data.role : 'reader',
             name: data.username
           })
         }
