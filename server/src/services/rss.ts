@@ -113,7 +113,7 @@ async function refreshSubscription(db: ReturnType<typeof getDB>, ownerId: number
 
 export function RssService() {
   const db = getDB();
-  const requireLife = ({ uid, lifeAccess, set }: { uid?: number; lifeAccess?: boolean; set: { status?: number } }) => {
+  const requireLife = ({ uid, lifeAccess, set }: { uid?: number; lifeAccess?: boolean; set: { status?: number | string } }) => {
     if (!uid || !lifeAccess) { set.status = 403; return false; }
     return true;
   };
