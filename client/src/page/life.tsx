@@ -89,8 +89,8 @@ export function PrivateLifePage({ section }: { section: LifeSection }) {
   );
 }
 
-type RssSubscription = { id: number; feedUrl: string; title: string; siteUrl: string; favicon: string; lastFetchedAt: string | null; lastError: string };
-type RssItem = { id: number; subscriptionId: number; title: string; url: string; summary: string; author: string; publishedAt: string; read: number; starred: number };
+type RssSubscription = { id: number; feedUrl: string; title: string; siteUrl: string; favicon: string; lastFetchedAt: Date | null; lastError: string };
+type RssItem = { id: number; subscriptionId: number; title: string; url: string; summary: string; author: string; publishedAt: Date; read: number; starred: number };
 type RssData = { subscriptions: RssSubscription[]; items: RssItem[]; counts: { all: number; unread: number; starred: number } };
 type RssFilter = 'all' | 'unread' | 'starred';
 
