@@ -80,6 +80,39 @@ export const habitLogs = sqliteTable("habit_logs", {
     updatedAt: updated_at,
 });
 
+/** Private RSS reader: subscriptions and entries are always owned by one Life user. */
+export const rssSubscriptions = sqliteTable("rss_subscriptions", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    feedUrl: text("feed_url").notNull(),
+    title: text("title").default("").notNull(),
+    siteUrl: text("site_url").default("").notNull(),
+    favicon: text("favicon").default("").notNull(),
+    active: integer("active").default(1).notNull(),
+    etag: text("etag").default("").notNull(),
+    lastModified: text("last_modified").default("").notNull(),
+    lastFetchedAt: integer("last_fetched_at", { mode: 'timestamp' }),
+    lastError: text("last_error").default("").notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
+export const rssItems = sqliteTable("rss_items", {
+    id: integer("id").primaryKey(),
+    subscriptionId: integer("subscription_id").references(() => rssSubscriptions.id, { onDelete: 'cascade' }).notNull(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    externalId: text("external_id").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    summary: text("summary").default("").notNull(),
+    author: text("author").default("").notNull(),
+    publishedAt: integer("published_at", { mode: 'timestamp' }).notNull(),
+    read: integer("read").default(0).notNull(),
+    starred: integer("starred").default(0).notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
 export const comments = sqliteTable("comments", {
     id: integer("id").primaryKey(),
     feedId: integer("feed_id").references(() => feeds.id, { onDelete: 'cascade' }).notNull(),

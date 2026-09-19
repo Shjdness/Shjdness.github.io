@@ -55,6 +55,7 @@ export function PrivateLifePage({ section }: { section: LifeSection }) {
   if (sectionInfo) {
     if (section === 'habits') return <HabitView />;
     if (section === 'calendar' || section === 'year') return <CalendarView year={section === 'year'} />;
+    if (section === 'rss') return <RssView />;
     return (
       <main className="life-page">
         <Helmet><title>{sectionInfo.title} - {process.env.NAME}</title></Helmet>
@@ -86,6 +87,30 @@ export function PrivateLifePage({ section }: { section: LifeSection }) {
       </section>
     </main>
   );
+}
+
+type RssSubscription = { id: number; feedUrl: string; title: string; siteUrl: string; favicon: string; lastFetchedAt: string | null; lastError: string };
+type RssItem = { id: number; subscriptionId: number; title: string; url: string; summary: string; author: string; publishedAt: string; read: number; starred: number };
+type RssData = { subscriptions: RssSubscription[]; items: RssItem[]; counts: { all: number; unread: number; starred: number } };
+type RssFilter = 'all' | 'unread' | 'starred';
+
+function RssView() {
+  const [data, setData] = useState<RssData | null>(null); const [filter, setFilter] = useState<RssFilter>('all');
+  const [feedUrl, setFeedUrl] = useState(''); const [label, setLabel] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
+  const load = async (next = filter) => { const { data } = await client.rss.index.get({ query: { filter: next }, headers: headersWithAuth() }); if (data && typeof data !== 'string') setData(data as RssData); };
+  useEffect(() => { void load(filter); }, [filter]);
+  const subscribe = async () => { if (!feedUrl.trim() || busy) return; setBusy(true); setMessage('正在读取订阅源…'); const { error } = await client.rss.subscriptions.post({ feedUrl: feedUrl.trim(), title: label.trim() || undefined }, { headers: headersWithAuth() }); setBusy(false); if (error) { setMessage(typeof error.value === 'string' ? error.value : '订阅失败，请检查地址。'); return; } setFeedUrl(''); setLabel(''); setMessage('订阅已添加并完成首次更新。'); await load(); };
+  const refreshAll = async () => { if (busy) return; setBusy(true); setMessage('正在更新全部订阅…'); const { data, error } = await client.rss.refresh.post(undefined, { headers: headersWithAuth() }); const result = data as { refreshed?: number; added?: number } | null; setBusy(false); setMessage(error ? '更新失败，请稍后再试。' : `已更新 ${result?.refreshed || 0} 个订阅，发现 ${result?.added || 0} 篇新内容。`); await load(); };
+  const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }, open = false) => { await client.rss.items({ id: item.id }).post(patch, { headers: headersWithAuth() }); if (open) window.open(item.url, '_blank', 'noopener,noreferrer'); await load(); };
+  const remove = async (subscription: RssSubscription) => { if (!window.confirm(`取消订阅「${subscription.title || subscription.feedUrl}」？其中的本地阅读记录也会删除。`)) return; await client.rss.subscriptions({ id: subscription.id }).delete(undefined, { headers: headersWithAuth() }); setMessage('已取消订阅。'); await load(); };
+  const subscriptions = data?.subscriptions || []; const items = data?.items || []; const counts = data?.counts || { all: 0, unread: 0, starred: 0 };
+  return <LifeLayout title="RSS" intro="把愿意持续关注的信息收进同一个安静的阅读入口。订阅、更新与阅读状态都只保存在你的 Life 空间中。">
+    <div className="rss-subscribe"><div><input value={feedUrl} inputMode="url" placeholder="粘贴公开 HTTPS RSS / Atom / JSON Feed 地址" onChange={e => setFeedUrl(e.target.value)} /><input value={label} placeholder="备注名称（可选）" onChange={e => setLabel(e.target.value)} /></div><button onClick={subscribe} disabled={busy || !feedUrl.trim()}><i className="ri-add-line" /> 订阅</button></div>
+    <div className="rss-toolbar"><div className="rss-filters">{([['all', '全部', counts.all], ['unread', '未读', counts.unread], ['starred', '收藏', counts.starred]] as Array<[RssFilter, string, number]>).map(([key, name, count]) => <button key={key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{name}<b>{count}</b></button>)}</div><button className="rss-refresh" onClick={refreshAll} disabled={busy || !subscriptions.length}><i className="ri-refresh-line" /> 更新订阅</button></div>
+    {message && <p className="rss-message" role="status">{message}</p>}
+    <div className="rss-layout"><aside className="rss-sources"><div className="rss-source-head"><strong>订阅源</strong><small>{subscriptions.length} 个</small></div>{subscriptions.length === 0 ? <p>还没有订阅源。可以从喜欢的博客、刊物或网站开始。</p> : subscriptions.map(subscription => <div className="rss-source" key={subscription.id}><div><img src={subscription.favicon || '/avatar.png'} alt="" /><span><a href={subscription.siteUrl || subscription.feedUrl} target="_blank" rel="noreferrer">{subscription.title || subscription.feedUrl}</a><small>{subscription.lastError || (subscription.lastFetchedAt ? `上次更新 ${new Date(subscription.lastFetchedAt).toLocaleString()}` : '等待首次更新')}</small></span></div><button aria-label={`取消订阅 ${subscription.title || subscription.feedUrl}`} title="取消订阅" onClick={() => remove(subscription)}><i className="ri-close-line" /></button></div>)}</aside>
+      <section className="rss-items" aria-live="polite">{items.length === 0 ? <p className="life-coming-soon">{subscriptions.length ? '这个筛选下暂时没有内容。' : '添加订阅后，新的文章会显示在这里。'}</p> : items.map(item => <article className={`rss-item ${item.read ? 'is-read' : ''}`} key={item.id}><button className="rss-item-main" onClick={() => updateItem(item, { read: true }, true)}><span className="rss-item-meta">{item.author || '订阅文章'} · {new Date(item.publishedAt).toLocaleDateString()}</span><strong>{item.title}</strong>{item.summary && <p>{item.summary}</p>}</button><div className="rss-item-actions"><button title={item.read ? '标记为未读' : '标记为已读'} onClick={() => updateItem(item, { read: !item.read })}><i className={item.read ? 'ri-mail-unread-line' : 'ri-mail-open-line'} /></button><button title={item.starred ? '取消收藏' : '收藏'} className={item.starred ? 'starred' : ''} onClick={() => updateItem(item, { starred: !item.starred })}><i className={item.starred ? 'ri-star-fill' : 'ri-star-line'} /></button></div></article>)}</section></div>
+  </LifeLayout>;
 }
 
 type Habit = { id: number; name: string; description: string; color: string; active: number };

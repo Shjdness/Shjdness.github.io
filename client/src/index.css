@@ -1173,6 +1173,42 @@ a.toc-link {
   width: 2px;
 }
 
+/* Private RSS reader */
+.rss-subscribe, .rss-toolbar, .rss-source, .rss-item, .rss-item-actions { display: flex; align-items: center; gap: .7rem; }
+.rss-subscribe { margin: 1.8rem 0 1rem; align-items: stretch; }
+.rss-subscribe > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .42fr); gap: .6rem; flex: 1; }
+.rss-subscribe input, .calendar-tools input, .calendar-tools select { min-width: 0; border: 1px solid rgba(177, 202, 234, .26); border-radius: .85rem; background: rgba(7, 20, 47, .48); color: #e7f0ff; padding: .72rem .85rem; }
+.rss-subscribe button, .rss-refresh { border: 0; border-radius: .85rem; padding: .7rem 1rem; background: #ee3f78; color: white; font-weight: 700; white-space: nowrap; }
+.rss-subscribe button:disabled, .rss-refresh:disabled { cursor: not-allowed; opacity: .55; }
+.rss-toolbar { justify-content: space-between; margin: .8rem 0; }
+.rss-filters { display: flex; gap: .35rem; flex-wrap: wrap; }
+.rss-filters button { color: #bbcae4; padding: .45rem .68rem; border: 1px solid rgba(177, 202, 234, .18); border-radius: 999px; background: rgba(7, 20, 47, .28); }
+.rss-filters button.active { background: rgba(238, 63, 120, .2); color: #ffe2eb; border-color: rgba(238, 63, 120, .55); }
+.rss-filters b { margin-left: .35rem; font-size: .72rem; }
+.rss-message { margin: .65rem 0 1.1rem; color: #ffd0dc; font-size: .92rem; }
+.rss-layout { display: grid; grid-template-columns: minmax(220px, .55fr) minmax(0, 1.45fr); gap: 1rem; align-items: start; }
+.rss-sources, .rss-items { border: 1px solid rgba(177, 202, 234, .16); border-radius: 1.1rem; background: rgba(5, 15, 38, .32); overflow: hidden; }
+.rss-source-head { display: flex; justify-content: space-between; padding: 1rem; color: #e8f1ff; border-bottom: 1px solid rgba(177, 202, 234, .13); }
+.rss-source-head small, .rss-source small, .rss-item-meta { color: #aebed8; }
+.rss-sources > p { padding: 1rem; margin: 0; color: #aebed8; line-height: 1.7; font-size: .9rem; }
+.rss-source { justify-content: space-between; padding: .8rem 1rem; border-bottom: 1px solid rgba(177, 202, 234, .1); }
+.rss-source > div { display: flex; gap: .65rem; min-width: 0; align-items: center; }
+.rss-source img { width: 1.65rem; height: 1.65rem; border-radius: .45rem; object-fit: cover; background: #14264a; }
+.rss-source span { min-width: 0; display: grid; gap: .15rem; }
+.rss-source a { color: #e8f1ff; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rss-source small { font-size: .7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rss-source > button, .rss-item-actions button { color: #adc0de; background: transparent; border: 0; padding: .35rem; }
+.rss-source > button:hover, .rss-item-actions button:hover, .rss-item-actions button.starred { color: #ffcf58; }
+.rss-item { align-items: stretch; padding: 1rem; border-bottom: 1px solid rgba(177, 202, 234, .11); transition: background .2s ease; }
+.rss-item:hover { background: rgba(104, 141, 195, .1); }
+.rss-item.is-read { opacity: .62; }
+.rss-item-main { display: grid; gap: .32rem; min-width: 0; flex: 1; background: transparent; border: 0; text-align: left; color: inherit; }
+.rss-item-main strong { color: #edf4ff; line-height: 1.42; }
+.rss-item-main p { margin: .08rem 0 0; color: #bdcce5; font-size: .9rem; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rss-item-meta { font-size: .75rem; }
+.rss-item-actions { align-self: center; }
+@media (max-width: 760px) { .rss-subscribe { flex-direction: column; } .rss-subscribe > div { grid-template-columns: 1fr; } .rss-layout { grid-template-columns: 1fr; } .rss-toolbar { align-items: flex-start; flex-direction: column; } .rss-refresh { width: 100%; } }
+
 .is-active-link::before {
   @apply bg-theme;
 }
