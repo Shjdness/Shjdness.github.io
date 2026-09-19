@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS `habits` (`id` integer PRIMARY KEY NOT NULL, `owner_id` integer NOT NULL, `name` text NOT NULL, `description` text DEFAULT '' NOT NULL, `color` text DEFAULT '#e11d62' NOT NULL, `active` integer DEFAULT 1 NOT NULL, `created_at` integer DEFAULT (unixepoch()) NOT NULL, `updated_at` integer DEFAULT (unixepoch()) NOT NULL, FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON DELETE cascade);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `habit_logs` (`id` integer PRIMARY KEY NOT NULL, `habit_id` integer NOT NULL, `owner_id` integer NOT NULL, `date` text NOT NULL, `completed` integer DEFAULT 1 NOT NULL, `note` text DEFAULT '' NOT NULL, `source` text DEFAULT 'manual' NOT NULL, `created_at` integer DEFAULT (unixepoch()) NOT NULL, `updated_at` integer DEFAULT (unixepoch()) NOT NULL, UNIQUE(`habit_id`, `date`), FOREIGN KEY (`habit_id`) REFERENCES `habits`(`id`) ON DELETE cascade, FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON DELETE cascade);
+--> statement-breakpoint
+INSERT INTO `info` (`key`, `value`) VALUES ('migration_version', '5') ON CONFLICT(`key`) DO UPDATE SET `value` = '5';

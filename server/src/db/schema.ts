@@ -57,6 +57,29 @@ export const appearancePreferences = sqliteTable("appearance_preferences", {
     updatedAt: updated_at,
 });
 
+export const habits = sqliteTable("habits", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text("name").notNull(),
+    description: text("description").default("").notNull(),
+    color: text("color").default("#e11d62").notNull(),
+    active: integer("active").default(1).notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
+export const habitLogs = sqliteTable("habit_logs", {
+    id: integer("id").primaryKey(),
+    habitId: integer("habit_id").references(() => habits.id, { onDelete: 'cascade' }).notNull(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: text("date").notNull(),
+    completed: integer("completed").default(1).notNull(),
+    note: text("note").default("").notNull(),
+    source: text("source").default("manual").notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
 export const comments = sqliteTable("comments", {
     id: integer("id").primaryKey(),
     feedId: integer("feed_id").references(() => feeds.id, { onDelete: 'cascade' }).notNull(),

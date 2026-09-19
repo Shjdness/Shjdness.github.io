@@ -10,6 +10,7 @@ import { UserService } from './services/user';
 import { ConfigService } from './services/config';
 import { AppearanceService } from './services/appearance';
 import { LifeService } from './services/life';
+import { HabitService } from './services/habit';
 
 export const app = () => new Elysia({ aot: false })
     .use(cors({
@@ -36,6 +37,7 @@ export const app = () => new Elysia({ aot: false })
     .use(ConfigService())
     .use(AppearanceService())
     .use(LifeService())
+    .use(HabitService())
     .get('/', () => `Hi`)
     .onError(({ path, params, code }) => {
         if (code === 'NOT_FOUND')
