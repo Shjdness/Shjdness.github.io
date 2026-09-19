@@ -96,7 +96,7 @@ const monthNow = () => today().slice(0, 7);
 function HabitView() {
   const [habits, setHabits] = useState<Habit[]>([]); const [name, setName] = useState(''); const [busy, setBusy] = useState(false);
   const load = () => client.habit.index.get({ headers: headersWithAuth() }).then(({ data }) => { if (data && typeof data !== 'string') setHabits(data as Habit[]); });
-  useEffect(load, []);
+  useEffect(() => { void load(); }, []);
   const create = async () => { if (!name.trim() || busy) return; setBusy(true); await client.habit.index.post({ name: name.trim() }, { headers: headersWithAuth() }); setName(''); setBusy(false); load(); };
   const toggle = async (habit: Habit) => { await client.habit({ id: habit.id }).toggle.post({ date: today(), completed: true }, { headers: headersWithAuth() }); load(); };
   return <LifeLayout title="习惯" intro="每天留下一次轻巧的确认，不把生活变成 KPI。">
