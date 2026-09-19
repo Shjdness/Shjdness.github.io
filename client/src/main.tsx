@@ -12,14 +12,12 @@ import './index.css'
 import './components.css'
 import { siteName } from './utils/constants'
 import { listenSystemMode } from './utils/darkModeUtils'
-import LanguageDetector from 'i18next-browser-languagedetector';
 export const endpoint = process.env.API_URL || 'http://localhost:3001'
 export const oauth_url = process.env.API_URL + '/user/github'
 export const client = treaty<Server>(endpoint)
 listenSystemMode()
 i18n
   .use(Backend)
-  .use(LanguageDetector)
   .use(initReactI18next) // passes i18n down to react-i18next
   .init({
     backend: {
@@ -28,8 +26,8 @@ i18n
     // the translations
     // (tip move them in a JSON file and import them,
     // or even better, manage them via a UI: https://react.i18next.com/guides/multiple-translation-files#manage-your-translations-with-a-management-gui)
-    load: 'languageOnly',
-    fallbackLng: "en",
+    lng: 'zh',
+    fallbackLng: 'zh',
     interpolation: {
       escapeValue: false // react already safes from xss => https://www.i18next.com/translation-function/interpolation#unescape
     }

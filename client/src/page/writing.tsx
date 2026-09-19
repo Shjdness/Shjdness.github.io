@@ -164,6 +164,8 @@ export function WritingPage({ id }: { id?: number }) {
   const [title, setTitle] = cache.useCache("title", "");
   const [summary, setSummary] = cache.useCache("summary", "");
   const [tags, setTags] = cache.useCache("tags", "");
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState('');
   const [alias, setAlias] = cache.useCache("alias", "");
   const [draft, setDraft] = useState(false);
   const [listed, setListed] = useState(true);
@@ -174,6 +176,23 @@ export function WritingPage({ id }: { id?: number }) {
   const [publishing, setPublishing] = useState(false)
   const { showAlert, AlertUI } = useAlert()
   const stats = readingStats(content)
+
+  const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
+  const saveTagNames = (names: string[]) => {
+    const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(Boolean))];
+    setTags(unique.map(name => `#${name}`).join(' '));
+  };
+  const toggleTag = (name: string) => {
+    saveTagNames(selectedTagNames.includes(name)
+      ? selectedTagNames.filter(tag => tag !== name)
+      : [...selectedTagNames, name]);
+  };
+  const addTypedTag = () => {
+    const name = tagQuery.trim().replace(/^#/, '');
+    if (!name) return;
+    saveTagNames([...selectedTagNames, name]);
+    setTagQuery('');
+  };
 
   function applyHeading(level: 1 | 2 | 3) {
     const currentEditor = editorRef.current
@@ -308,6 +327,9 @@ export function WritingPage({ id }: { id?: number }) {
     )
   }
   useEffect(() => {
+    client.tag.index.get().then(({ data }) => {
+      if (data && typeof data !== 'string') setAvailableTags(data.map(tag => tag.name));
+    });
     if (id) {
       client
         .feed({ id })
@@ -371,13 +393,27 @@ export function WritingPage({ id }: { id?: number }) {
             placeholder={t("summary")}
             className="mt-4"
           />
-          <Input
-            id={id}
-            value={tags}
-            setValue={setTags}
-            placeholder={t("tags")}
-            className="mt-4"
-          />
+          <div className="tag-picker mt-4">
+            <div className="tag-picker-heading">
+              <span>{t('tags')}</span>
+              <small>可多选；输入新词条后按回车即可创建</small>
+            </div>
+            <div className="tag-picker-options">
+              {availableTags.map(name => (
+                <button type="button" key={name} onClick={() => toggleTag(name)}
+                  className={selectedTagNames.includes(name) ? 'is-selected' : ''}>
+                  #{name}
+                </button>
+              ))}
+              {availableTags.length === 0 && <span className="tag-picker-empty">还没有已有标签</span>}
+            </div>
+            <div className="tag-picker-create">
+              <input value={tagQuery} placeholder="输入新标签" onChange={event => setTagQuery(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTypedTag(); } }} />
+              <button type="button" onClick={addTypedTag} disabled={!tagQuery.trim()}>添加</button>
+            </div>
+            {selectedTagNames.length > 0 && <p className="tag-picker-selected">已选：{selectedTagNames.map(name => `#${name}`).join('  ')}</p>}
+          </div>
           <Input
             id={id}
             value={alias}

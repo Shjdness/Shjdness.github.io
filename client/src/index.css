@@ -398,6 +398,94 @@ h3,
   .life-grid { grid-template-columns: 1fr; }
 }
 
+/* Writing tags */
+
+.tag-picker {
+  padding: 0.8rem;
+  border: 1px solid rgb(148 163 184 / 0.24);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.14);
+}
+
+.tag-picker-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-bottom: 0.6rem;
+  padding: 0 0.15rem;
+  font-size: 0.87rem;
+  font-weight: 700;
+}
+
+.tag-picker-heading small,
+.tag-picker-selected,
+.tag-picker-empty {
+  color: rgb(100 116 139);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.tag-picker-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  max-height: 8.6rem;
+  overflow: auto;
+}
+
+.tag-picker-options button {
+  border: 1px solid rgb(148 163 184 / 0.26);
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  color: inherit;
+  font-size: 0.76rem;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.tag-picker-options button:hover,
+.tag-picker-options button.is-selected {
+  border-color: rgb(225 29 98 / 0.52);
+  background: rgb(225 29 98 / 0.12);
+  color: #e11d62;
+}
+
+.tag-picker-create {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.tag-picker-create input {
+  min-width: 0;
+  flex: 1;
+  border-radius: 0.6rem;
+  padding: 0.38rem 0.58rem;
+  background: rgb(255 255 255 / 0.26);
+}
+
+.tag-picker-create button {
+  border-radius: 0.6rem;
+  padding: 0.38rem 0.62rem;
+  background: rgb(225 29 98 / 0.13);
+  color: #e11d62;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.tag-picker-create button:disabled { opacity: 0.48; }
+.tag-picker-selected { margin-top: 0.65rem; }
+
+[data-color-mode="dark"] .tag-picker {
+  border-color: rgb(255 255 255 / 0.1);
+  background: rgb(8 17 31 / 0.3);
+}
+
+[data-color-mode="dark"] .tag-picker-heading small,
+[data-color-mode="dark"] .tag-picker-selected,
+[data-color-mode="dark"] .tag-picker-empty { color: #b7c5d8; }
+
+[data-color-mode="dark"] .tag-picker-create input { background: rgb(8 17 31 / 0.56); }
+
 [data-color-mode="dark"] .site-shell .dark\:text-white {
   color: #edf4ff !important;
 }

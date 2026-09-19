@@ -58,7 +58,6 @@ export function Header({ children }: { children?: React.ReactNode }) {
                             </div>
                             <div className="ml-auto hidden opacity-0 md:opacity-100 duration-300 md:flex flex-row items-center space-x-2">
                                 <SearchButton />
-                                <LanguageSwitch />
                                 <AppearanceButton profile={profile} />
                                 <UserAvatar profile={profile} />
                             </div>
@@ -125,7 +124,6 @@ function Menu() {
                 <div className="flex flex-col bg-w rounded-xl p-2 mt-4 w-[50vw]">
                         <div className="flex flex-row justify-end space-x-2">
                             <SearchButton onClose={onClose} />
-                            <LanguageSwitch />
                             <AppearanceButton profile={profile} onClose={onClose} />
                             <UserAvatar profile={profile} />
                     </div>
@@ -161,41 +159,6 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
             <NavItem menu={menu} onClick={onClick} when={profile?.canWrite == true} title={t('writing')}
                 selected={location.startsWith("/writing")} href="/writing" />
         </>
-    )
-}
-
-function LanguageSwitch({ className }: { className?: string }) {
-    const { i18n } = useTranslation()
-    const label = 'Languages'
-    const languages = [
-        { code: 'en', name: 'English' },
-        { code: 'zh', name: '简体中文' },
-        { code: 'ja', name: '日本語' }
-    ]
-    return (
-        <div className={className + " flex flex-row items-center"}>
-            <Popup trigger={
-                <button title={label} aria-label={label}
-                    className="flex rounded-full border dark:border-neutral-600 px-2 bg-w aspect-[1] items-center justify-center t-primary bg-button">
-                    <i className="ri-translate-2"></i>
-                </button>
-            }
-                position="bottom right"
-                arrow={false}
-                closeOnDocumentClick
-            >
-                <div className="border-card">
-                    <p className='font-bold t-primary'>
-                        Languages
-                    </p>
-                    {languages.map(({ code, name }) => (
-                        <button key={code} onClick={() => i18n.changeLanguage(code)}>
-                            {name}
-                        </button>
-                    ))}
-                </div>
-            </Popup>
-        </div>
     )
 }
 
