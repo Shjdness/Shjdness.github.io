@@ -56,6 +56,10 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
     return !error;
   }
   if (item.entity === 'pomodoro' && item.action === 'create') {
+    const payload = item.payload as { startedAt: string };
+    const month = payload.startedAt.slice(0, 7);
+    const existing = await withTimeout<any>(client.pomodoro.sessions.get({ query: { month }, headers: headersWithAuth() }) as Promise<any>);
+    if (Array.isArray(existing.data) && existing.data.some((session: PomodoroSession) => new Date(session.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) return true;
     const { error } = await withTimeout<any>(client.pomodoro.sessions.post(item.payload as never, { headers: headersWithAuth() }) as Promise<any>);
     return !error;
   }
