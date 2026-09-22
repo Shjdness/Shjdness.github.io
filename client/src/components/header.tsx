@@ -250,6 +250,7 @@ function UserAvatar({ className, profile, onClose }: { className?: string, profi
                 <div className="z-50 absolute left-0 top-0 w-10 h-8 opacity-0 hover:opacity-100 duration-300">
                     <IconSmall label={t('logout')} name="ri-logout-circle-line" onClick={() => {
                         removeCookie("token")
+                        localStorage.removeItem('shjdshy-life-profile')
                         window.location.reload()
                     }} hover={false} />
                 </div>

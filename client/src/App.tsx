@@ -28,12 +28,19 @@ import { PrivateLifePage } from './page/life.tsx'
 import { HomePage } from './page/home.tsx'
 import { BlogHomePage } from './page/blog_home.tsx'
 import { DiaryPage } from './page/diary.tsx'
+import { GuidePage } from './page/guide.tsx'
+
+const LIFE_PROFILE_CACHE = 'shjdshy-life-profile';
+const cachedProfile = () => {
+  if (!(getCookie('token')?.length ?? 0)) return undefined;
+  try { return JSON.parse(localStorage.getItem(LIFE_PROFILE_CACHE) || 'null') as Profile | undefined; } catch { return undefined; }
+};
 
 function App() {
   const ref = useRef(false)
   const { t } = useTranslation()
   const [location] = useLocation()
-  const [profile, setProfile] = useState<Profile | undefined>()
+  const [profile, setProfile] = useState<Profile | undefined>(cachedProfile)
   const [config, setConfig] = useState<ConfigWrapper>(new ConfigWrapper({}, new Map()))
   const [appearanceDefaults, setAppearanceDefaults] = useState<AppearanceSettings>(DEFAULT_APPEARANCE)
   const [personalAppearance, setPersonalAppearance] = useState<AppearanceSettings | null>(null)
@@ -45,14 +52,16 @@ function App() {
         headers: headersWithAuth()
       }).then(({ data }) => {
         if (data && typeof data !== 'string') {
-          setProfile({
+          const nextProfile: Profile = {
             id: data.id,
             avatar: data.avatar || '',
             permission: data.permission,
             canWrite: data.canWrite,
             role: data.role === 'owner' || data.role === 'trusted' ? data.role : 'member',
             name: data.username
-          })
+          };
+          setProfile(nextProfile)
+          localStorage.setItem(LIFE_PROFILE_CACHE, JSON.stringify(nextProfile))
         }
       })
     }
@@ -177,6 +186,7 @@ function App() {
             <RouteMe path="/life/year" paddingClassName='mx-4'><PrivateLifePage section="year" /></RouteMe>
             <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>
             <RouteMe path="/life/rss" paddingClassName='mx-4'><PrivateLifePage section="rss" /></RouteMe>
+            <RouteMe path="/life/guide" paddingClassName='mx-4'><GuidePage /></RouteMe>
 
             <Route path="/habits"><Redirect to="/life/habits" /></Route>
             <Route path="/calendar"><Redirect to="/life/calendar" /></Route>

@@ -1,0 +1,14 @@
+{
+  "name": "Shjdshy · Blog & Life",
+  "short_name": "Shjdshy",
+  "description": "文字、生活记录与本地优先的私人空间",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#061a35",
+  "theme_color": "#071f41",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -43,6 +43,9 @@ jobs:
       - name: Check Rin server types
         run: bunx tsc --noEmit --project server/tsconfig.json
 
+      - name: Refresh static Life Guide
+        run: node scripts/build-life-guide.mjs
+
       - name: Build Rin frontend
         run: bun run b
         env:

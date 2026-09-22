@@ -4,6 +4,8 @@ import { Link } from 'wouter';
 import { client } from '../main';
 import { ProfileContext } from '../state/profile';
 import { headersWithAuth } from '../utils/auth';
+import { TodayAdviceCard } from './guide';
+import { enqueueMutation, flushSyncQueue, getCached, getSyncQueue, onLocalChange, setCached, withTimeout } from '../data/local-first';
 
 type LifeSection = 'life' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
 type Habit = { id: number; name: string; description: string; color: string; active: number };
@@ -14,6 +16,7 @@ type RssItem = { id: number; subscriptionId: number; title: string; url: string;
 type RssData = { subscriptions: RssSubscription[]; items: RssItem[]; counts: { all: number; unread: number; starred: number } };
 type RssFilter = 'all' | 'unread' | 'starred';
 type RssActivity = { id: number; title: string; url: string; readAt: Date | null; starredAt: Date | null };
+type CalendarData = { habits: Habit[]; logs: Log[]; sessions: PomodoroSession[]; rss: RssActivity[] };
 type LifeOverviewData = {
   summary: { habits: number; completed: number; focusMinutes: number; rounds: number; unread: number };
   habits: Array<{ id: number; name: string; days: string[] }>;
@@ -42,8 +45,42 @@ function LifeDenied() {
 
 function LifeLayout({ section: _section, title, intro, children }: { section: LifeSection; title: string; intro: string; children: React.ReactNode }) {
   return <main className="life-page"><Helmet><title>{title} - {process.env.NAME}</title></Helmet><section className="life-panel life-section">
-    <p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1><p className="life-intro">{intro}</p>{children}
+    <div className="life-title-row"><div><p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1></div><LifeSyncStatus /></div><p className="life-intro">{intro}</p>{children}
   </section></main>;
+}
+
+async function sendQueuedMutation(item: { entity: string; action: string; payload: unknown }) {
+  if (item.entity === 'habit' && item.action === 'toggle') {
+    const payload = item.payload as { id: number; date: string; completed: boolean };
+    const { error } = await withTimeout<any>(client.habit({ id: payload.id }).toggle.post({ date: payload.date, completed: payload.completed }, { headers: headersWithAuth() }) as Promise<any>);
+    return !error;
+  }
+  if (item.entity === 'pomodoro' && item.action === 'create') {
+    const { error } = await withTimeout<any>(client.pomodoro.sessions.post(item.payload as never, { headers: headersWithAuth() }) as Promise<any>);
+    return !error;
+  }
+  if (item.entity === 'rss' && item.action === 'update') {
+    const payload = item.payload as { id: number; patch: { read?: boolean; starred?: boolean } };
+    const { error } = await withTimeout<any>(client.rss.items({ id: payload.id }).post(payload.patch, { headers: headersWithAuth() }) as Promise<any>);
+    return !error;
+  }
+  return true;
+}
+
+function LifeSyncStatus() {
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pending, setPending] = useState(0);
+  const refresh = async () => setPending((await getSyncQueue()).length);
+  const sync = async () => { if (navigator.onLine) await flushSyncQueue(sendQueuedMutation); await refresh(); };
+  useEffect(() => {
+    void sync();
+    const handleOnline = () => { setOnline(true); void sync(); };
+    const handleOffline = () => setOnline(false);
+    window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+    const unsubscribe = onLocalChange(() => { void refresh(); });
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); unsubscribe(); };
+  }, []);
+  return <button className={`life-sync-status ${online ? 'online' : 'offline'}`} onClick={() => void sync()} title="点击重试本地待同步操作"><i className={online ? 'ri-cloud-line' : 'ri-cloud-off-line'} /><span>{online ? (pending ? `${pending} 项待同步` : '本地已同步') : `${pending} 项离线保存`}</span></button>;
 }
 
 function LifeOverview() {
@@ -52,27 +89,29 @@ function LifeOverview() {
     const start = mondayOf(); const end = addDays(start, 6);
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = addDays(dayStart, 1);
-    client.life.overview.get({
+    const key = `life:overview:${isoDay(dayStart)}:${isoDay(start)}`;
+    void getCached<LifeOverviewData>(key).then(cached => cached && setOverview(cached.value));
+    void withTimeout<any>(client.life.overview.get({
       query: { dayStart: dayStart.toISOString(), dayEnd: dayEnd.toISOString(), weekStart: isoDay(start), weekEnd: isoDay(end) },
       headers: headersWithAuth(),
-    }).then(({ data }) => {
-      if (data && typeof data !== 'string') setOverview(data as LifeOverviewData);
-    });
+    }) as Promise<any>, 3000).then(({ data }) => { if (data && typeof data !== 'string') { const next = data as LifeOverviewData; setOverview(next); void setCached(key, next); } }).catch(() => undefined);
   }, []);
   const summary = overview?.summary || { habits: 0, completed: 0, focusMinutes: 0, rounds: 0, unread: 0 };
   return <LifeLayout section="life" title="Life" intro="习惯、专注、阅读与时间，在这里汇成同一条生活轨迹。">
     <div className="life-summary-grid"><Link href="/life/pomodoro"><small>TODAY FOCUS</small><strong>{summary.focusMinutes} min</strong><span>{summary.rounds} 轮专注</span></Link><Link href="/life/habits"><small>THIS WEEK</small><strong>{summary.completed}</strong><span>{summary.habits} 项习惯</span></Link><Link href="/life/calendar"><small>CALENDAR</small><strong>{new Date().getDate()}</strong><span>{new Date().toLocaleDateString('zh-CN', { month: 'long', weekday: 'long' })}</span></Link><Link href="/life/rss"><small>RSS</small><strong>{summary.unread}</strong><span>篇未读</span></Link></div>
     {overview && <div className="life-overview-detail"><section><h2>本周习惯</h2>{overview.habits.map(habit => <p key={habit.id}><strong>{habit.name}</strong><span>{Array.from({ length: 7 }, (_, index) => { const date = isoDay(addDays(mondayOf(), index)); return <i key={date} className={habit.days.includes(date) ? 'done' : ''} title={date} />; })}</span></p>)}</section><section><h2>最近订阅</h2>{overview.recentRss.length ? overview.recentRss.map(item => <Link href="/life/rss" key={item.id}>{item.title}</Link>) : <p>还没有订阅内容</p>}</section></div>}
+    <TodayAdviceCard />
   </LifeLayout>;
 }
 
 function HabitView() {
   const [weekStart, setWeekStart] = useState(mondayOf()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [name, setName] = useState(''); const [busy, setBusy] = useState(false);
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const load = async () => { const { data } = await client.habit.range.get({ query: { from: isoDay(days[0]), to: isoDay(days[6]) }, headers: headersWithAuth() }); if (data && typeof data !== 'string') { setHabits(data.habits as Habit[]); setLogs(data.logs as Log[]); } };
+  const cacheKey = `life:habits:${isoDay(days[0])}:${isoDay(days[6])}`;
+  const load = async () => { const cached = await getCached<{ habits: Habit[]; logs: Log[] }>(cacheKey); if (cached) { setHabits(cached.value.habits); setLogs(cached.value.logs); } try { const { data } = await withTimeout<any>(client.habit.range.get({ query: { from: isoDay(days[0]), to: isoDay(days[6]) }, headers: headersWithAuth() }) as Promise<any>, 3000); if (data && typeof data !== 'string') { const next = { habits: data.habits as Habit[], logs: data.logs as Log[] }; setHabits(next.habits); setLogs(next.logs); await setCached(cacheKey, next); } } catch {} };
   useEffect(() => { void load(); }, [weekStart.getTime()]);
   const create = async () => { if (!name.trim() || busy) return; setBusy(true); await client.habit.index.post({ name: name.trim() }, { headers: headersWithAuth() }); setName(''); setBusy(false); await load(); };
-  const toggle = async (habitId: number, date: string) => { const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); setLogs(current => completed ? current.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...current.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]); await client.habit({ id: habitId }).toggle.post({ date, completed: !completed }, { headers: headersWithAuth() }); };
+  const toggle = async (habitId: number, date: string) => { const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); const nextLogs = completed ? logs.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...logs.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]; setLogs(nextLogs); void setCached(cacheKey, { habits, logs: nextLogs }); const payload = { id: habitId, date, completed: !completed }; try { const { error } = await withTimeout<any>(client.habit({ id: habitId }).toggle.post({ date, completed: !completed }, { headers: headersWithAuth() }) as Promise<any>, 3000); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('habit', 'toggle', payload); } };
   return <LifeLayout section="habits" title="习惯" intro="以一周为单位留下轻巧的确认，不把生活变成 KPI。"><div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => <span key={isoDay(day)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></span>)}</div>{habits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} onClick={() => toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} placeholder="添加一个想长期坚持的习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create}>添加</button></div></LifeLayout>;
 }
 
@@ -99,7 +138,10 @@ function PomodoroView() {
       const actualMinutes = Math.max(1, Math.ceil((endedAt.getTime() - new Date(timer.startedAt).getTime()) / 60000));
       const session = { startedAt: timer.startedAt, endedAt: endedAt.toISOString(), focusMinutes: completedEarly ? actualMinutes : focusMinutes, breakMinutes, roundIndex: timer.round, completed: true, taskName: timer.taskName.trim(), completedEarly };
       setTimer({ mode: 'break', round: timer.round, remaining: breakMinutes * 60, targetAt: Date.now() + breakMinutes * 60 * 1000, startedAt: null, taskName: timer.taskName });
-      try { await client.pomodoro.sessions.post(session, { headers: headersWithAuth() }); } finally { finishing.current = false; }
+      const calendarKey = `life:calendar:${session.startedAt.slice(0, 7)}`;
+      const cached = await getCached<{ habits: Habit[]; logs: Log[]; sessions: PomodoroSession[]; rss: RssActivity[] }>(calendarKey);
+      if (cached) await setCached(calendarKey, { ...cached.value, sessions: [...cached.value.sessions, { ...session, id: -Date.now(), startedAt: new Date(session.startedAt), endedAt, completed: 1, completedEarly: completedEarly ? 1 : 0 } as PomodoroSession] });
+      try { const { error } = await withTimeout<any>(client.pomodoro.sessions.post(session, { headers: headersWithAuth() }) as Promise<any>, 3000); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('pomodoro', 'create', session); } finally { finishing.current = false; }
       return;
     } else {
       const nextRound = timer.round >= rounds ? 1 : timer.round + 1;
@@ -116,7 +158,7 @@ function PomodoroView() {
 
 function CalendarView({ year }: { year: boolean }) {
   const [month, setMonth] = useState(monthNow()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [sessions, setSessions] = useState<PomodoroSession[]>([]); const [rssActivity, setRssActivity] = useState<RssActivity[]>([]); const [focused, setFocused] = useState<number | null>(null); const [selected, setSelected] = useState(isoDay());
-  useEffect(() => { const [yearNumber, monthNumber] = month.split('-').map(Number); const start = new Date(yearNumber, monthNumber - 1, 1); const end = new Date(yearNumber, monthNumber, 1); client.life.calendar.get({ query: { month, start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }).then(({ data }) => { if (data && typeof data !== 'string') { setHabits(data.habits as Habit[]); setLogs(data.logs as Log[]); setSessions(data.sessions as PomodoroSession[]); setRssActivity(data.rss as RssActivity[]); } }); }, [month]);
+  useEffect(() => { const key = `life:calendar:${month}`; const apply = (value: CalendarData) => { setHabits(value.habits); setLogs(value.logs); setSessions(value.sessions); setRssActivity(value.rss); }; void getCached<CalendarData>(key).then(cached => { if (cached) apply(cached.value); }); const [yearNumber, monthNumber] = month.split('-').map(Number); const start = new Date(yearNumber, monthNumber - 1, 1); const end = new Date(yearNumber, monthNumber, 1); void withTimeout<any>(client.life.calendar.get({ query: { month, start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }) as Promise<any>, 3000).then(({ data }) => { if (data && typeof data !== 'string') { const next = { habits: data.habits as Habit[], logs: data.logs as Log[], sessions: data.sessions as PomodoroSession[], rss: data.rss as RssActivity[] }; apply(next); void setCached(key, next); } }).catch(() => undefined); }, [month]);
   if (year) return <YearView />;
   const first = new Date(`${month}-01T00:00:00`); const dayCount = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(); const blanks = (first.getDay() + 6) % 7; const days = Array.from({ length: dayCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`); const done = (date: string) => logs.filter(log => log.date === date && log.completed && (!focused || log.habitId === focused)).length; const focusFor = (date: string) => sessions.filter(session => isoDay(new Date(session.startedAt)) === date && session.completed); const rssFor = (date: string) => rssActivity.filter(item => (item.readAt && isoDay(new Date(item.readAt)) === date) || (item.starredAt && isoDay(new Date(item.starredAt)) === date)); const chosenSessions = focusFor(selected); const chosenLogs = logs.filter(log => log.date === selected && log.completed); const chosenRss = rssFor(selected);
   return <LifeLayout section="calendar" title="日历" intro="习惯、专注和阅读在同一条时间线上汇合。"><div className="calendar-tools"><input type="month" value={month} onChange={e => { setMonth(e.target.value); setSelected(`${e.target.value}-01`); }} /><select value={focused || ''} onChange={e => setFocused(e.target.value ? Number(e.target.value) : null)}><option value="">全部习惯</option>{habits.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select><Link href="/life/year">全年视图</Link></div><div className="calendar-weekdays">{['一','二','三','四','五','六','日'].map(day => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{Array.from({ length: blanks }, (_, i) => <span key={`blank-${i}`} />)}{days.map(date => <button key={date} onClick={() => setSelected(date)} className={`calendar-day ${done(date) ? 'done' : focused && date <= isoDay() ? 'missed' : ''} ${selected === date ? 'selected' : ''}`}><b>{Number(date.slice(-2))}</b><span>{done(date) ? `${done(date)} 项习惯` : ''}</span><em>{focusFor(date).length ? `${focusFor(date).length} 🍅` : ''}{rssFor(date).length ? ` · ${rssFor(date).length} 阅读` : ''}</em></button>)}</div><section className="calendar-detail"><h2>{new Date(`${selected}T00:00:00`).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</h2><div><article><strong>习惯</strong>{chosenLogs.length ? chosenLogs.map(log => <p key={log.habitId}>✓ {habits.find(h => h.id === log.habitId)?.name}</p>) : <p>没有完成记录</p>}</article><article><strong>专注</strong><p>{chosenSessions.length} 轮 · {chosenSessions.reduce((sum, item) => sum + item.focusMinutes, 0)} 分钟</p>{chosenSessions.map(item => <p key={item.id}>{new Date(item.startedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(item.endedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</p>)}</article><article><strong>阅读</strong>{chosenRss.length ? chosenRss.map(item => <p key={item.id}>{item.starredAt && isoDay(new Date(item.starredAt)) === selected ? '★' : '✓'} <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></p>) : <p>没有阅读记录</p>}</article></div></section></LifeLayout>;
@@ -124,17 +166,17 @@ function CalendarView({ year }: { year: boolean }) {
 
 function YearView() {
   const [year, setYear] = useState(new Date().getFullYear()); const [activity, setActivity] = useState<Record<string, number>>({});
-  useEffect(() => { const start = new Date(year, 0, 1); const end = new Date(year + 1, 0, 1); client.life.year.get({ query: { year: String(year), start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }).then(({ data }) => { if (!data || typeof data === 'string') return; const next: Record<string, number> = {}; data.logs.forEach(log => { if (log.completed) next[log.date] = (next[log.date] || 0) + 1; }); data.sessions.forEach(session => { if (session.completed) { const date = isoDay(new Date(session.startedAt)); next[date] = (next[date] || 0) + 1; } }); data.rss.forEach(item => { [item.readAt, item.starredAt].forEach(value => { if (value) { const date = isoDay(new Date(value)); next[date] = (next[date] || 0) + 1; } }); }); setActivity(next); }); }, [year]);
+  useEffect(() => { const key = `life:year:${year}`; void getCached<Record<string, number>>(key).then(cached => cached && setActivity(cached.value)); const start = new Date(year, 0, 1); const end = new Date(year + 1, 0, 1); void withTimeout<any>(client.life.year.get({ query: { year: String(year), start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }) as Promise<any>, 3000).then(({ data }) => { if (!data || typeof data === 'string') return; const next: Record<string, number> = {}; (data.logs as Log[]).forEach(log => { if (log.completed) next[log.date] = (next[log.date] || 0) + 1; }); (data.sessions as PomodoroSession[]).forEach(session => { if (session.completed) { const date = isoDay(new Date(session.startedAt)); next[date] = (next[date] || 0) + 1; } }); (data.rss as RssActivity[]).forEach(item => { [item.readAt, item.starredAt].forEach(value => { if (value) { const date = isoDay(new Date(value)); next[date] = (next[date] || 0) + 1; } }); }); setActivity(next); void setCached(key, next); }).catch(() => undefined); }, [year]);
   const start = new Date(year, 0, 1); const cells = Array.from({ length: 371 }, (_, index) => { const date = addDays(start, index - ((start.getDay() + 6) % 7)); return date.getFullYear() === year ? isoDay(date) : ''; });
   return <LifeLayout section="calendar" title="年历" intro="全年生活轨迹；颜色越深，代表当天留下的习惯、专注与阅读记录越多。"><div className="year-tools"><button onClick={() => setYear(year - 1)}>←</button><strong>{year}</strong><button onClick={() => setYear(year + 1)}>→</button></div><div className="life-year-grid">{cells.map((date, index) => <span key={`${date}-${index}`} className={!date ? 'empty' : `level-${Math.min(4, activity[date] || 0)}`} title={date ? `${date} · ${activity[date] || 0} 条记录` : ''} />)}</div></LifeLayout>;
 }
 
 function RssView() {
   const [data, setData] = useState<RssData | null>(null); const [filter, setFilter] = useState<RssFilter>('all'); const [sourceId, setSourceId] = useState<number | null>(null); const [selectedItem, setSelectedItem] = useState<RssItem | null>(null); const [panel, setPanel] = useState<'add' | 'source' | 'reader'>('add'); const [feedUrl, setFeedUrl] = useState(''); const [label, setLabel] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
-  const load = async (next = filter) => { const { data } = await client.rss.index.get({ query: { filter: next }, headers: headersWithAuth() }); if (data && typeof data !== 'string') setData(data as RssData); }; useEffect(() => { void load(filter); }, [filter]);
+  const load = async (next = filter) => { const key = `life:rss:${next}`; const cached = await getCached<RssData>(key); if (cached) setData(cached.value); try { const { data } = await withTimeout<any>(client.rss.index.get({ query: { filter: next }, headers: headersWithAuth() }) as Promise<any>, 3000); if (data && typeof data !== 'string') { const value = data as RssData; setData(value); await setCached(key, value); } } catch {} }; useEffect(() => { void load(filter); }, [filter]);
   const subscribe = async () => { if (!feedUrl.trim() || busy) return; setBusy(true); setMessage('正在读取订阅源…'); const { error } = await client.rss.subscriptions.post({ feedUrl: feedUrl.trim(), title: label.trim() || undefined }, { headers: headersWithAuth() }); setBusy(false); if (error) { setMessage(typeof error.value === 'string' ? error.value : '订阅失败，请检查地址。'); return; } setFeedUrl(''); setLabel(''); setMessage('订阅已添加并完成首次更新。'); await load(); };
   const refreshAll = async () => { if (busy) return; setBusy(true); const { data, error } = await client.rss.refresh.post(undefined, { headers: headersWithAuth() }); const result = data as { refreshed?: number; added?: number } | null; setBusy(false); setMessage(error ? '更新失败，请稍后再试。' : `已更新 ${result?.refreshed || 0} 个订阅，发现 ${result?.added || 0} 篇新内容。`); await load(); };
-  const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }) => { await client.rss.items({ id: item.id }).post(patch, { headers: headersWithAuth() }); setSelectedItem(current => current?.id === item.id ? { ...current, ...(patch.read === undefined ? {} : { read: patch.read ? 1 : 0 }), ...(patch.starred === undefined ? {} : { starred: patch.starred ? 1 : 0 }) } : current); await load(); };
+  const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }) => { const update = (value: RssItem) => ({ ...value, ...(patch.read === undefined ? {} : { read: patch.read ? 1 : 0 }), ...(patch.starred === undefined ? {} : { starred: patch.starred ? 1 : 0 }) }); setSelectedItem(current => current?.id === item.id ? update(current) : current); setData(current => { if (!current) return current; const next = { ...current, items: current.items.map(value => value.id === item.id ? update(value) : value) }; void setCached(`life:rss:${filter}`, next); return next; }); try { const { error } = await withTimeout<any>(client.rss.items({ id: item.id }).post(patch, { headers: headersWithAuth() }) as Promise<any>, 3000); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('rss', 'update', { id: item.id, patch }); } };
   const openReader = async (item: RssItem) => { setSelectedItem(item); setPanel('reader'); if (!item.read) await updateItem(item, { read: true }); };
   const remove = async (subscription: RssSubscription) => { if (!window.confirm(`取消订阅「${subscription.title || subscription.feedUrl}」？`)) return; await client.rss.subscriptions({ id: subscription.id }).delete(undefined, { headers: headersWithAuth() }); if (sourceId === subscription.id) { setSourceId(null); setPanel('add'); } await load(); };
   const subscriptions = data?.subscriptions || []; const items = data?.items || []; const counts = data?.counts || { all: 0, unread: 0, starred: 0 };
