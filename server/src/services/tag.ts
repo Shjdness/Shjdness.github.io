@@ -34,7 +34,7 @@ export function TagService() {
                         }
                     })
                 })
-                .get('/:name', async ({ set, params: { name } }) => {
+                .get('/:name', async ({ admin, writer, uid, set, params: { name } }) => {
                     const nameDecoded = decodeURI(name)
                     const tag = await db.query.hashtags.findFirst({
                         where: eq(hashtags.name, nameDecoded),
@@ -42,7 +42,7 @@ export function TagService() {
                             feeds: {
                                 with: {
                                     feed: {
-                                        columns: { id: true, title: true, summary: true, content: true, createdAt: true, updatedAt: true },
+                                        columns: { id: true, uid: true, title: true, summary: true, content: true, draft: true, listed: true, createdAt: true, updatedAt: true },
                                         with: {
                                             user: {
                                                 columns: { id: true, username: true, avatar: true }
@@ -66,7 +66,8 @@ export function TagService() {
                             ...tag.feed,
                             hashtags: tag.feed.hashtags.map((tag) => tag.hashtag)
                         }
-                    }).sort((left, right) => nameDecoded === '日记'
+                    }).filter(feed => (feed.draft === 0 && feed.listed === 1) || admin || (writer && feed.uid === uid))
+                    .sort((left, right) => nameDecoded === '日记'
                         ? journalTimestamp(right.title, right.createdAt) - journalTimestamp(left.title, left.createdAt)
                         : new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
                     if (!tag) {

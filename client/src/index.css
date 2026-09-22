@@ -1280,3 +1280,18 @@ a.toc-link {
 .is-active-link::before {
   @apply bg-theme;
 }
+
+.tag-results .feed-scroll-card h1 { font-size:clamp(1rem,1.6vw,1.35rem); line-height:1.35; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.blog-home,.diary-page { width:min(100%,54rem); margin:1.5rem auto 4rem; }
+.blog-home>header,.diary-page>header { margin-bottom:1.5rem; padding:clamp(1.2rem,4vw,2.2rem); border:1px solid rgb(255 255 255 / .25); border-radius:1.5rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .72)); backdrop-filter:blur(var(--glass-blur)); }
+.blog-home>header>p,.diary-page>header>p { color:#e11d62; font-size:.7rem; font-weight:800; letter-spacing:.22em; }
+.blog-home>header h1,.diary-page>header h1 { font-size:clamp(2rem,6vw,3.4rem); font-weight:800; }
+.blog-home>header span,.diary-page>header span { color:#64748b; }
+.blog-home>section { margin-top:2rem; }
+.blog-section-heading { display:flex; align-items:center; justify-content:space-between; padding:0 .3rem; }
+.blog-section-heading h2 { font-size:1.2rem; font-weight:800; }
+.blog-section-heading a { color:#e11d62; font-size:.85rem; font-weight:700; }
+.pomodoro-task { display:grid; gap:.45rem; margin-top:1.5rem; color:#64748b; font-size:.78rem; font-weight:700; }
+.pomodoro-task input { padding:.85rem 1rem; border:1px solid rgb(148 163 184 / .22); border-radius:1rem; background:rgb(255 255 255 / .1); color:inherit; font-size:1rem; }
+.pomodoro-toggle { grid-column:1/-1; display:flex!important; grid-template-columns:1fr auto!important; align-items:center; }
+.pomodoro-toggle input { width:1.15rem!important; height:1.15rem; accent-color:#e11d62; }

@@ -15,6 +15,8 @@ import { Padding } from "./padding";
 export function Header({ children }: { children?: React.ReactNode }) {
     const profile = useContext(ProfileContext);
     const { t } = useTranslation()
+    const [location] = useLocation()
+    const isBlog = location.startsWith('/blog')
 
     return useMemo(() => (
         <>
@@ -23,7 +25,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
                     <Padding className="mx-4 mt-4">
                         <div className="w-full flex justify-between items-center">
                             <Link aria-label={t('home')} href="/"
-                                className="hidden opacity-0 md:opacity-100 duration-300 mr-auto md:flex flex-row items-center">
+                                className="hidden opacity-0 xl:opacity-100 duration-300 mr-auto xl:flex flex-row items-center">
                                 <img src={process.env.AVATAR} alt="Avatar" className="w-12 h-12 rounded-2xl border-2" />
                                 <div className="flex flex-col justify-center items-start mx-4">
                                     <p className="text-xl font-bold dark:text-white">
@@ -57,7 +59,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
                                 </div>
                             </div>
                             <div className="ml-auto hidden opacity-0 md:opacity-100 duration-300 md:flex flex-row items-center space-x-2">
-                                <SearchButton />
+                                {isBlog && <SearchButton />}
                                 <AppearanceButton profile={profile} />
                                 <UserAvatar profile={profile} />
                             </div>
@@ -67,7 +69,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
             </div>
             <div className="h-20"></div>
         </>
-    ), [profile, children])
+    ), [profile, children, isBlog, t])
 }
 
 function NavItem({ menu, title, selected, href, when = true, onClick }: {
@@ -82,7 +84,7 @@ function NavItem({ menu, title, selected, href, when = true, onClick }: {
         <>
             {when &&
                 <Link href={href}
-                    className={`${menu ? "" : "hidden"} md:block cursor-pointer hover:text-theme duration-300 px-2 py-4 md:p-4 text-sm ${selected ? "text-theme" : "dark:text-white"}`}
+                    className={`${menu ? "" : "hidden"} md:block cursor-pointer hover:text-theme duration-300 px-2 py-4 md:px-2.5 lg:px-4 text-xs lg:text-sm ${selected ? "text-theme" : "dark:text-white"}`}
                     state={{ animate: true }}
                     onClick={onClick}
                 >
@@ -95,6 +97,7 @@ function NavItem({ menu, title, selected, href, when = true, onClick }: {
 function Menu() {
     const profile = useContext(ProfileContext);
     const [isOpen, setOpen] = useState(false)
+    const [location] = useLocation()
 
     function onClose() {
         document.body.style.overflow = "auto"
@@ -123,7 +126,7 @@ function Menu() {
             >
                 <div className="flex flex-col bg-w rounded-xl p-2 mt-4 w-[50vw]">
                         <div className="flex flex-row justify-end space-x-2">
-                            <SearchButton onClose={onClose} />
+                            {location.startsWith('/blog') && <SearchButton onClose={onClose} />}
                             <AppearanceButton profile={profile} onClose={onClose} />
                             <UserAvatar profile={profile} />
                     </div>
@@ -147,24 +150,31 @@ function AppearanceButton({ profile, onClose }: { profile?: Profile, onClose?: (
 function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     const profile = useContext(ProfileContext);
     const [location] = useLocation();
-    const { t } = useTranslation()
-    const isBlogArticle = location === "/blog" || location.startsWith('/blog/feed/') || (
-        location.startsWith('/blog/')
-        && !['/blog/timeline', '/blog/tags', '/blog/gallery', '/blog/writing'].some(path => location === path || location.startsWith(`${path}/`))
-        && !location.startsWith('/blog/tag/')
-        && !location.startsWith('/blog/search/')
+    const isBlog = location.startsWith('/blog');
+    const isLife = location.startsWith('/life');
+    const knownBlogSections = ['/blog/articles', '/blog/timeline', '/blog/diary', '/blog/tags', '/blog/gallery', '/blog/writing'];
+    const isArticle = location === '/blog/articles' || location.startsWith('/blog/feed/') || location.startsWith('/blog/search/') || (
+        location.startsWith('/blog/') && !knownBlogSections.some(path => location === path || location.startsWith(`${path}/`)) && !location.startsWith('/blog/tag/')
     );
     return (
         <>
-            <NavItem menu={menu} onClick={onClick} title="首页" selected={location === "/"} href="/" />
-            <NavItem menu={menu} onClick={onClick} title={t('article.title')}
-                selected={isBlogArticle} href="/blog" />
-            <NavItem menu={menu} onClick={onClick} title={t('timeline')} selected={location === "/blog/timeline" || location === "/timeline"} href="/blog/timeline" />
-            <NavItem menu={menu} onClick={onClick} title={t('hashtags')} selected={location === "/blog/tags" || location === "/hashtags"} href="/blog/tags" />
-            <NavItem menu={menu} onClick={onClick} when={profile?.role === 'owner' || profile?.role === 'trusted'} title="生活"
-                selected={location.startsWith("/life") || location === "/habits" || location === "/calendar" || location === "/year" || location === "/rss"} href="/life" />
-            <NavItem menu={menu} onClick={onClick} when={profile?.canWrite == true} title={t('writing')}
-                selected={location.startsWith("/blog/writing") || location.startsWith("/writing")} href="/blog/writing" />
+            {!isBlog && !isLife && <NavItem menu={menu} onClick={onClick} title="首页" selected={location === "/"} href="/" />}
+            {isBlog && <>
+                <NavItem menu={menu} onClick={onClick} title="Blog 首页" selected={location === '/blog'} href="/blog" />
+                <NavItem menu={menu} onClick={onClick} title="文章" selected={isArticle} href="/blog/articles" />
+                <NavItem menu={menu} onClick={onClick} title="时间轴" selected={location === '/blog/timeline'} href="/blog/timeline" />
+                <NavItem menu={menu} onClick={onClick} title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
+                <NavItem menu={menu} onClick={onClick} title="标签" selected={location === '/blog/tags' || location.startsWith('/blog/tag/')} href="/blog/tags" />
+                <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
+            </>}
+            {isLife && <>
+                <NavItem menu={menu} onClick={onClick} title="总览" selected={location === '/life'} href="/life" />
+                <NavItem menu={menu} onClick={onClick} title="习惯" selected={location === '/life/habits'} href="/life/habits" />
+                <NavItem menu={menu} onClick={onClick} title="日历" selected={location === '/life/calendar'} href="/life/calendar" />
+                <NavItem menu={menu} onClick={onClick} title="年历" selected={location === '/life/year'} href="/life/year" />
+                <NavItem menu={menu} onClick={onClick} title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
+                <NavItem menu={menu} onClick={onClick} title="RSS" selected={location === '/life/rss'} href="/life/rss" />
+            </>}
         </>
     )
 }

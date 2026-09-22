@@ -9,6 +9,7 @@ import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { tryInt } from "../utils/int"
 import { useTranslation } from "react-i18next";
+import { getNormalPosts } from "../data/blog";
 
 type FeedsData = {
     size: number,
@@ -41,14 +42,15 @@ export function FeedsPage() {
             query: {
                 page: page,
                 limit: limit,
-                type: type
+                type: type,
+                contentType: type === 'normal' ? 'normal' : undefined
             },
             headers: headersWithAuth()
         }).then(({ data }) => {
             if (data && typeof data !== 'string') {
                 setFeeds({
                     ...feeds,
-                    [type]: data
+                    [type]: type === 'normal' ? { ...data, data: getNormalPosts(data.data) } : data
                 })
                 setStatus('idle')
             }
@@ -87,10 +89,10 @@ export function FeedsPage() {
                             </p>
                             {profile?.canWrite &&
                                 <div className="flex flex-row space-x-4">
-                                    <Link href={listState === 'draft' ? '/?type=normal' : '/?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
+                                    <Link href={listState === 'draft' ? '/blog/articles?type=normal' : '/blog/articles?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
                                         {t('draft_bin')}
                                     </Link>
-                                    <Link href={listState === 'unlisted' ? '/?type=normal' : '/?type=unlisted'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'unlisted' ? "text-theme" : ""}`}>
+                                    <Link href={listState === 'unlisted' ? '/blog/articles?type=normal' : '/blog/articles?type=unlisted'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'unlisted' ? "text-theme" : ""}`}>
                                         {t('unlisted')}
                                     </Link>
                                 </div>
@@ -105,14 +107,14 @@ export function FeedsPage() {
                         </div>
                         <div className="wauto flex flex-row items-center mt-4 ani-show">
                             {page > 1 &&
-                                <Link href={`/?type=${listState}&page=${(page - 1)}`}
+                                <Link href={`/blog/articles?type=${listState}&page=${(page - 1)}`}
                                     className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
                                     {t('previous')}
                                 </Link>
                             }
                             <div className="flex-1" />
                             {feeds[listState]?.hasNext &&
-                                <Link href={`/?type=${listState}&page=${(page + 1)}`}
+                                <Link href={`/blog/articles?type=${listState}&page=${(page + 1)}`}
                                     className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
                                     {t('next')}
                                 </Link>

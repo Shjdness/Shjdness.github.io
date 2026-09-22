@@ -89,6 +89,8 @@ export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
     breakMinutes: integer("break_minutes").default(5).notNull(),
     roundIndex: integer("round_index").default(1).notNull(),
     completed: integer("completed").default(1).notNull(),
+    taskName: text("task_name").default("").notNull(),
+    completedEarly: integer("completed_early").default(0).notNull(),
     createdAt: created_at,
     updatedAt: updated_at,
 });

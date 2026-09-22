@@ -1,7 +1,7 @@
-import { and, count, desc, eq, like, or } from "drizzle-orm";
+import { and, count, desc, eq, like, notExists, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
-import { feeds, visits } from "../db/schema";
+import { feedHashtags, feeds, hashtags, visits } from "../db/schema";
 import { setup } from "../setup";
 import { ClientConfig, PublicCache } from "../utils/cache";
 import { getDB } from "../utils/di";
@@ -14,7 +14,7 @@ export function FeedService() {
         .use(setup())
         .group('/feed', (group) =>
             group
-                .get('/', async ({ admin, writer, uid, set, query: { page, limit, type } }) => {
+                .get('/', async ({ admin, writer, uid, set, query: { page, limit, type, contentType } }) => {
                     const privateList = type === 'draft' || type === 'unlisted';
                     if (privateList && !writer) {
                         set.status = 403;
@@ -23,7 +23,7 @@ export function FeedService() {
                     const cache = PublicCache();
                     const page_num = (page ? page > 0 ? page : 1 : 1) - 1;
                     const limit_num = limit ? +limit > 50 ? 50 : +limit : 20;
-                    const cacheKey = `feeds_${type}_${page_num}_${limit_num}`;
+                    const cacheKey = `feeds_${type}_${contentType || 'all'}_${page_num}_${limit_num}`;
                     if (!privateList) {
                         const cached = await cache.get(cacheKey);
                         if (cached) return cached;
@@ -33,7 +33,12 @@ export function FeedService() {
                         : type === 'unlisted'
                             ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
                             : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
-                    const where = privateList && !admin ? and(visibility, eq(feeds.uid, uid!)) : visibility;
+                    const diaryTag = db.select({ id: feedHashtags.feedId }).from(feedHashtags)
+                        .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id))
+                        .where(and(eq(feedHashtags.feedId, feeds.id), eq(hashtags.name, '日记')));
+                    const contentFilter = contentType === 'normal' ? notExists(diaryTag) : undefined;
+                    const ownerFilter = privateList && !admin ? eq(feeds.uid, uid!) : undefined;
+                    const where = and(visibility, ownerFilter, contentFilter);
                     const size = await db.select({ count: count() }).from(feeds).where(where);
                     if (size[0].count === 0) {
                         return {
@@ -90,11 +95,15 @@ export function FeedService() {
                     query: t.Object({
                         page: t.Optional(t.Numeric()),
                         limit: t.Optional(t.Numeric()),
-                        type: t.Optional(t.String())
+                        type: t.Optional(t.String()),
+                        contentType: t.Optional(t.Literal('normal'))
                     })
                 })
                 .get('/timeline', async () => {
-                    const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                    const diaryTag = db.select({ id: feedHashtags.feedId }).from(feedHashtags)
+                        .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id))
+                        .where(and(eq(feedHashtags.feedId, feeds.id), eq(hashtags.name, '日记')));
+                    const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1), notExists(diaryTag));
                     return (await db.query.feeds.findMany({
                         where: where,
                         columns: {
@@ -102,8 +111,9 @@ export function FeedService() {
                             title: true,
                             createdAt: true,
                         },
+                        with: { hashtags: { columns: {}, with: { hashtag: { columns: { name: true } } } } },
                         orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
-                    }))
+                    })).map(({ hashtags, ...feed }) => ({ ...feed, hashtags: hashtags.map(({ hashtag }) => hashtag) }))
                 })
                 .post('/', async ({ writer, set, uid, body: { title, alias, listed, content, summary, draft, tags, createdAt } }) => {
                     if (!writer || !uid) {

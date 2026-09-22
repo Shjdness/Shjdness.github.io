@@ -25,6 +25,7 @@ export function PomodoroService() {
       const result = await db.insert(pomodoroSessions).values({
         ownerId: uid, startedAt, endedAt, focusMinutes: body.focusMinutes,
         breakMinutes: body.breakMinutes, roundIndex: body.roundIndex, completed: body.completed ? 1 : 0,
+        taskName: body.taskName || '', completedEarly: body.completedEarly ? 1 : 0,
       }).returning({ id: pomodoroSessions.id });
       return result[0];
     }, { body: t.Object({
@@ -33,6 +34,8 @@ export function PomodoroService() {
       breakMinutes: t.Integer({ minimum: 1, maximum: 60 }),
       roundIndex: t.Integer({ minimum: 1, maximum: 20 }),
       completed: t.Boolean(),
+      taskName: t.Optional(t.String({ maxLength: 160 })),
+      completedEarly: t.Optional(t.Boolean()),
     }) })
   );
 }

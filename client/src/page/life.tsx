@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { client } from '../main';
@@ -8,7 +8,7 @@ import { headersWithAuth } from '../utils/auth';
 type LifeSection = 'life' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
 type Habit = { id: number; name: string; description: string; color: string; active: number };
 type Log = { habitId: number; date: string; completed: number };
-type PomodoroSession = { id: number; startedAt: Date; endedAt: Date; focusMinutes: number; roundIndex: number; completed: number };
+type PomodoroSession = { id: number; startedAt: Date; endedAt: Date; focusMinutes: number; roundIndex: number; completed: number; taskName?: string; completedEarly?: number };
 type RssSubscription = { id: number; feedUrl: string; title: string; siteUrl: string; favicon: string; lastFetchedAt: Date | null; lastError: string };
 type RssItem = { id: number; subscriptionId: number; title: string; url: string; summary: string; author: string; publishedAt: Date; read: number; starred: number; readAt?: Date | null; starredAt?: Date | null };
 type RssData = { subscriptions: RssSubscription[]; items: RssItem[]; counts: { all: number; unread: number; starred: number } };
@@ -19,14 +19,6 @@ type LifeOverviewData = {
   habits: Array<{ id: number; name: string; days: string[] }>;
   recentRss: Array<{ id: number; title: string; url: string; publishedAt: Date; read: number }>;
 };
-
-const lifeNav = [
-  { id: 'life', title: '总览', href: '/life' },
-  { id: 'habits', title: '习惯', href: '/life/habits' },
-  { id: 'calendar', title: '日历', href: '/life/calendar' },
-  { id: 'pomodoro', title: '番茄钟', href: '/life/pomodoro' },
-  { id: 'rss', title: 'RSS', href: '/life/rss' },
-] as const;
 
 const mayAccessLife = (role?: string) => role === 'owner' || role === 'trusted';
 const isoDay = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -48,9 +40,8 @@ function LifeDenied() {
   return <main className="life-page"><section className="life-panel life-denied"><p className="life-kicker">PRIVATE LIFE</p><h1>这里是私人生活空间</h1><p>登录本身不等于私人访问权限。此区域仅向 Owner 与受信任账户开放。</p><Link className="life-link" href="/">返回公开首页</Link></section></main>;
 }
 
-function LifeLayout({ section, title, intro, children }: { section: LifeSection; title: string; intro: string; children: React.ReactNode }) {
+function LifeLayout({ section: _section, title, intro, children }: { section: LifeSection; title: string; intro: string; children: React.ReactNode }) {
   return <main className="life-page"><Helmet><title>{title} - {process.env.NAME}</title></Helmet><section className="life-panel life-section">
-    <nav className="life-nav" aria-label="Life 导航">{lifeNav.map(item => <Link key={item.id} className={section === item.id ? 'active' : ''} href={item.href}>{item.title}</Link>)}</nav>
     <p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1><p className="life-intro">{intro}</p>{children}
   </section></main>;
 }
@@ -85,20 +76,42 @@ function HabitView() {
   return <LifeLayout section="habits" title="习惯" intro="以一周为单位留下轻巧的确认，不把生活变成 KPI。"><div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => <span key={isoDay(day)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></span>)}</div>{habits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} onClick={() => toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} placeholder="添加一个想长期坚持的习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create}>添加</button></div></LifeLayout>;
 }
 
-type TimerState = { mode: 'focus' | 'break'; round: number; remaining: number; targetAt: number | null; startedAt: string | null };
+type TimerState = { mode: 'focus' | 'break'; round: number; remaining: number; targetAt: number | null; startedAt: string | null; taskName: string };
+type PomodoroPreferences = { focusMinutes: number; breakMinutes: number; rounds: number; autoStartFocus: boolean };
 const TIMER_KEY = 'rin-life-pomodoro';
+const POMODORO_PREFS_KEY = 'rin-life-pomodoro-preferences';
+const defaultPomodoroPreferences: PomodoroPreferences = { focusMinutes: 25, breakMinutes: 5, rounds: 4, autoStartFocus: false };
+const boundedNumber = (value: string, fallback: number, min: number, max: number) => { const parsed = Number(value); return Number.isFinite(parsed) && parsed >= min ? Math.min(max, Math.round(parsed)) : fallback; };
 function PomodoroView() {
-  const [focusMinutes, setFocusMinutes] = useState(25); const [breakMinutes, setBreakMinutes] = useState(5); const [rounds, setRounds] = useState(4);
-  const [timer, setTimer] = useState<TimerState>(() => { try { const saved = JSON.parse(localStorage.getItem(TIMER_KEY) || 'null') as TimerState | null; if (saved) return { ...saved, remaining: saved.targetAt ? Math.max(0, Math.ceil((saved.targetAt - Date.now()) / 1000)) : saved.remaining }; } catch {} return { mode: 'focus', round: 1, remaining: 25 * 60, targetAt: null, startedAt: null }; });
+  const [preferences, setPreferences] = useState<PomodoroPreferences>(() => { try { return { ...defaultPomodoroPreferences, ...JSON.parse(localStorage.getItem(POMODORO_PREFS_KEY) || '{}') }; } catch { return defaultPomodoroPreferences; } });
+  const [drafts, setDrafts] = useState(() => ({ focus: String(preferences.focusMinutes), break: String(preferences.breakMinutes), rounds: String(preferences.rounds) }));
+  const [timer, setTimer] = useState<TimerState>(() => { try { const saved = JSON.parse(localStorage.getItem(TIMER_KEY) || 'null') as TimerState | null; if (saved) return { ...saved, taskName: saved.taskName || '', remaining: saved.targetAt ? Math.max(0, Math.ceil((saved.targetAt - Date.now()) / 1000)) : saved.remaining }; } catch {} return { mode: 'focus', round: 1, remaining: preferences.focusMinutes * 60, targetAt: null, startedAt: null, taskName: '' }; });
+  const finishing = useRef(false);
+  const { focusMinutes, breakMinutes, rounds, autoStartFocus } = preferences;
   const running = timer.targetAt !== null;
   useEffect(() => { localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); }, [timer]);
+  useEffect(() => { localStorage.setItem(POMODORO_PREFS_KEY, JSON.stringify(preferences)); }, [preferences]);
   useEffect(() => { if (!timer.targetAt) return; const interval = window.setInterval(() => setTimer(current => current.targetAt ? { ...current, remaining: Math.max(0, Math.ceil((current.targetAt - Date.now()) / 1000)) } : current), 500); return () => clearInterval(interval); }, [timer.targetAt]);
-  const finishStage = async () => { if (timer.mode === 'focus' && timer.startedAt) await client.pomodoro.sessions.post({ startedAt: timer.startedAt, endedAt: new Date().toISOString(), focusMinutes, breakMinutes, roundIndex: timer.round, completed: true }, { headers: headersWithAuth() }); if (timer.mode === 'focus' && timer.round < rounds) setTimer({ mode: 'break', round: timer.round, remaining: breakMinutes * 60, targetAt: null, startedAt: null }); else if (timer.mode === 'break') setTimer({ mode: 'focus', round: timer.round + 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null }); else setTimer({ mode: 'focus', round: 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null }); };
+  const finishStage = async (completedEarly = false) => {
+    if (finishing.current) return; finishing.current = true;
+    const endedAt = new Date();
+    if (timer.mode === 'focus' && timer.startedAt) {
+      const actualMinutes = Math.max(1, Math.ceil((endedAt.getTime() - new Date(timer.startedAt).getTime()) / 60000));
+      const session = { startedAt: timer.startedAt, endedAt: endedAt.toISOString(), focusMinutes: completedEarly ? actualMinutes : focusMinutes, breakMinutes, roundIndex: timer.round, completed: true, taskName: timer.taskName.trim(), completedEarly };
+      setTimer({ mode: 'break', round: timer.round, remaining: breakMinutes * 60, targetAt: Date.now() + breakMinutes * 60 * 1000, startedAt: null, taskName: timer.taskName });
+      try { await client.pomodoro.sessions.post(session, { headers: headersWithAuth() }); } finally { finishing.current = false; }
+      return;
+    } else {
+      const nextRound = timer.round >= rounds ? 1 : timer.round + 1;
+      setTimer({ mode: 'focus', round: nextRound, remaining: focusMinutes * 60, targetAt: autoStartFocus ? Date.now() + focusMinutes * 60 * 1000 : null, startedAt: autoStartFocus ? new Date().toISOString() : null, taskName: timer.taskName });
+    }
+    finishing.current = false;
+  };
   useEffect(() => { if (timer.remaining === 0 && timer.targetAt) void finishStage(); }, [timer.remaining, timer.targetAt]);
-  const start = () => setTimer(current => ({ ...current, targetAt: Date.now() + current.remaining * 1000, startedAt: current.mode === 'focus' ? current.startedAt || new Date().toISOString() : null })); const pause = () => setTimer(current => ({ ...current, targetAt: null })); const stop = () => setTimer({ mode: 'focus', round: 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null });
-  const applySetting = (kind: 'focus' | 'break', value: number) => { if (running) return; if (kind === 'focus') { setFocusMinutes(value); if (timer.mode === 'focus') setTimer(current => ({ ...current, remaining: value * 60 })); } else { setBreakMinutes(value); if (timer.mode === 'break') setTimer(current => ({ ...current, remaining: value * 60 })); } };
+  const start = () => setTimer(current => ({ ...current, targetAt: Date.now() + current.remaining * 1000, startedAt: current.mode === 'focus' ? current.startedAt || new Date().toISOString() : null })); const pause = () => setTimer(current => ({ ...current, targetAt: null })); const stop = () => setTimer(current => ({ mode: 'focus', round: 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null, taskName: current.taskName }));
+  const commitSetting = (kind: 'focus' | 'break' | 'rounds') => { const limits = kind === 'focus' ? [1, 180] : kind === 'break' ? [1, 60] : [1, 20]; const key: 'focusMinutes' | 'breakMinutes' | 'rounds' = kind === 'focus' ? 'focusMinutes' : kind === 'break' ? 'breakMinutes' : 'rounds'; const value = boundedNumber(drafts[kind], preferences[key], limits[0], limits[1]); setDrafts(current => ({ ...current, [kind]: String(value) })); setPreferences(current => ({ ...current, [key]: value })); if (!timer.startedAt && ((kind === 'focus' && timer.mode === 'focus') || (kind === 'break' && timer.mode === 'break'))) setTimer(current => ({ ...current, remaining: value * 60 })); };
   const clock = `${String(Math.floor(timer.remaining / 60)).padStart(2, '0')}:${String(timer.remaining % 60).padStart(2, '0')}`;
-  return <LifeLayout section="pomodoro" title="番茄钟" intro="计时在浏览器本地运行；完成的专注轮次会保存到日历。"><div className="pomodoro"><p>{timer.mode === 'focus' ? 'FOCUS' : 'BREAK'}</p><strong>{clock}</strong><span>{timer.round} / {rounds}</span><div>{running ? <button onClick={pause}>暂停</button> : <button onClick={start}>{timer.remaining === (timer.mode === 'focus' ? focusMinutes : breakMinutes) * 60 ? '开始' : '继续'}</button>}<button className="secondary" onClick={stop}>停止</button></div></div><div className="pomodoro-settings"><label>专注时长<input type="number" min="1" max="180" value={focusMinutes} disabled={running} onChange={e => applySetting('focus', Number(e.target.value))} /></label><label>休息时长<input type="number" min="1" max="60" value={breakMinutes} disabled={running} onChange={e => applySetting('break', Number(e.target.value))} /></label><label>轮数<input type="number" min="1" max="20" value={rounds} disabled={running} onChange={e => setRounds(Number(e.target.value))} /></label></div></LifeLayout>;
+  return <LifeLayout section="pomodoro" title="番茄钟" intro="专注完成后自动开始休息；记录会连同任务名保存到日历。"><label className="pomodoro-task">当前任务<input value={timer.taskName} disabled={timer.mode === 'break'} placeholder="例如：阅读 PPD 论文" onChange={e => setTimer(current => ({ ...current, taskName: e.target.value }))} /></label><div className="pomodoro"><p>{timer.mode === 'focus' ? 'FOCUS' : 'BREAK'}</p><strong>{clock}</strong><span>第 {timer.round} / {rounds} 轮{timer.mode === 'break' ? ' · 休息会自动结束' : ''}</span><div>{running ? <button onClick={pause}>暂停</button> : <button onClick={start}>{timer.remaining === (timer.mode === 'focus' ? focusMinutes : breakMinutes) * 60 ? '开始' : '继续'}</button>}{timer.mode === 'focus' && timer.startedAt && <button onClick={() => void finishStage(true)}>提前完成</button>}<button className="secondary" onClick={stop}>停止</button></div></div><div className="pomodoro-settings"><label>专注时长<input inputMode="numeric" value={drafts.focus} disabled={Boolean(timer.startedAt)} onChange={e => setDrafts(current => ({ ...current, focus: e.target.value }))} onBlur={() => commitSetting('focus')} /></label><label>休息时长<input inputMode="numeric" value={drafts.break} disabled={Boolean(timer.startedAt)} onChange={e => setDrafts(current => ({ ...current, break: e.target.value }))} onBlur={() => commitSetting('break')} /></label><label>轮数<input inputMode="numeric" value={drafts.rounds} disabled={Boolean(timer.startedAt)} onChange={e => setDrafts(current => ({ ...current, rounds: e.target.value }))} onBlur={() => commitSetting('rounds')} /></label><label className="pomodoro-toggle"><span>下一轮专注自动开始</span><input type="checkbox" checked={autoStartFocus} onChange={e => setPreferences(current => ({ ...current, autoStartFocus: e.target.checked }))} /></label></div></LifeLayout>;
 }
 
 function CalendarView({ year }: { year: boolean }) {

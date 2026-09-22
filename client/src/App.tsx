@@ -26,6 +26,8 @@ import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppeara
 import { AppearancePage } from './page/appearance.tsx'
 import { PrivateLifePage } from './page/life.tsx'
 import { HomePage } from './page/home.tsx'
+import { BlogHomePage } from './page/blog_home.tsx'
+import { DiaryPage } from './page/diary.tsx'
 
 function App() {
   const ref = useRef(false)
@@ -127,12 +129,14 @@ function App() {
             <Switch>
             <Route path="/"><HomePage /></Route>
 
-            <RouteMe path="/blog"><FeedsPage /></RouteMe>
+            <RouteMe path="/blog"><BlogHomePage /></RouteMe>
+            <RouteMe path="/blog/articles"><FeedsPage /></RouteMe>
             <RouteMe path="/blog/timeline"><TimelinePage /></RouteMe>
+            <RouteMe path="/blog/diary"><DiaryPage /></RouteMe>
             <RouteMe path="/blog/tags"><HashtagsPage /></RouteMe>
             <RouteMe path="/blog/gallery"><GalleryPage /></RouteMe>
             <RouteMe path="/blog/tag/:name">
-              {params => <HashtagPage name={params.name || ""} />}
+              {params => decodeURIComponent(params.name || '') === '日记' ? <Redirect to="/blog/diary" /> : <HashtagPage name={params.name || ""} />}
             </RouteMe>
             <RouteMe path="/blog/search/:keyword">
               {params => <SearchPage keyword={params.keyword || ""} />}

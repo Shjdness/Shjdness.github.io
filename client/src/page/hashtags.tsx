@@ -6,16 +6,11 @@ import { client } from '../main';
 import { ProfileContext } from '../state/profile';
 import { headersWithAuth } from '../utils/auth';
 import { siteName } from '../utils/constants';
+import { useLocation } from 'wouter';
+import { getNormalPosts } from '../data/blog';
 
 type Hashtag = { id: number; name: string; feeds: number };
 type TaggedFeed = { id: number; title: string | null; summary: string; content: string; createdAt: Date; updatedAt: Date; hashtags: Array<{ id: number; name: string }>; user: { id: number; username: string; avatar: string | null } };
-
-function journalTimestamp(feed: TaggedFeed) {
-  const match = (feed.title || '').match(/(20\d{2})\D{0,3}(\d{1,2})\D{0,3}(\d{1,2})/);
-  if (!match) return new Date(feed.createdAt).getTime();
-  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
-  return Number.isFinite(parsed) ? parsed : new Date(feed.createdAt).getTime();
-}
 
 export function HashtagsPage() {
   const profile = useContext(ProfileContext);
@@ -24,23 +19,25 @@ export function HashtagsPage() {
   const [feeds, setFeeds] = useState<TaggedFeed[]>([]);
   const [loadingFeeds, setLoadingFeeds] = useState(false);
   const ref = useRef(false);
-  const loadTags = () => client.tag.index.get().then(({ data }) => { if (data && typeof data !== 'string') setHashtags(data as Hashtag[]); });
+  const [, setLocation] = useLocation();
+  const loadTags = () => client.tag.index.get().then(({ data }: any) => { if (data && typeof data !== 'string') setHashtags(data as Hashtag[]); });
 
   useEffect(() => { if (ref.current) return; void loadTags(); ref.current = true; }, []);
   useEffect(() => {
     if (!selected.length) { setFeeds([]); return; }
     setLoadingFeeds(true);
-    Promise.all(selected.map(name => client.tag({ name }).get({ headers: headersWithAuth() }))).then(results => {
-      const lists = results.map(result => result.data && typeof result.data !== 'string' ? (result.data.feeds || []) as TaggedFeed[] : []);
+    Promise.all(selected.map(name => client.tag({ name }).get({ headers: headersWithAuth() }))).then((results: any[]) => {
+      const lists: TaggedFeed[][] = results.map((result: any) => result.data && typeof result.data !== 'string' ? (result.data.feeds || []) as TaggedFeed[] : []);
       const common = lists[0]?.filter(feed => lists.every(list => list.some(candidate => candidate.id === feed.id))) || [];
-      setFeeds(common.sort((a, b) => selected.includes('日记')
-        ? journalTimestamp(b) - journalTimestamp(a)
-        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setFeeds(getNormalPosts(common).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoadingFeeds(false);
     });
   }, [selected.join('|')]);
 
-  const toggle = (name: string) => setSelected(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name]);
+  const toggle = (name: string) => {
+    if (name === '日记') { setLocation('/blog/diary'); return; }
+    setSelected(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name]);
+  };
   const remove = async (tag: Hashtag) => {
     if (!window.confirm(`标签「${tag.name}」关联 ${tag.feeds} 篇文章。删除只会移除标签关联，不会删除文章。继续吗？`)) return;
     await client.tag({ name: tag.name }).delete(undefined, { headers: headersWithAuth() });

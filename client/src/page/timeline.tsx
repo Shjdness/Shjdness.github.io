@@ -6,8 +6,9 @@ import { client } from "../main"
 import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { useTranslation } from "react-i18next";
+import { getNormalPosts } from "../data/blog";
 
-type TimelineFeed = { id: number; title: string | null; createdAt: Date }
+type TimelineFeed = { id: number; title: string | null; createdAt: Date; hashtags?: Array<{ name: string }> }
 
 export function TimelinePage() {
     const [feeds, setFeeds] = useState<Partial<Record<number, TimelineFeed[]>>>()
@@ -19,12 +20,17 @@ export function TimelinePage() {
     function fetchFeeds() {
         client.feed.timeline.get({
             headers: headersWithAuth()
-        }).then(({ data }) => {
+        }).then(({ data }: any) => {
             if (data && typeof data !== 'string') {
-                setLength(data.length)
-                const groups = Object.groupBy(data, ({ createdAt }) => new Date(createdAt).getFullYear())
+                const normalFeeds = getNormalPosts(data as TimelineFeed[])
+                setLength(normalFeeds.length)
+                const groups = normalFeeds.reduce<Partial<Record<number, TimelineFeed[]>>>((result, feed) => {
+                    const year = new Date(feed.createdAt).getFullYear()
+                    result[year] = [...(result[year] || []), feed]
+                    return result
+                }, {})
                 setFeeds(groups)
-                const latestYear = Math.max(...data.map(({ createdAt }) => new Date(createdAt).getFullYear()))
+                const latestYear = Math.max(...normalFeeds.map(({ createdAt }) => new Date(createdAt).getFullYear()))
                 if (Number.isFinite(latestYear)) setHeatmapYear(latestYear)
             }
         })
