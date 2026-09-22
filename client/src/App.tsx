@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { getCookie } from 'typescript-cookie'
-import { DefaultParams, PathPattern, Route, Switch, useLocation } from 'wouter'
+import { DefaultParams, PathPattern, Redirect, Route, Switch, useLocation } from 'wouter'
 import Footer from './components/footer'
 import { Header } from './components/header'
 import { Padding } from './components/padding'
@@ -130,44 +130,35 @@ function App() {
             <RouteMe path="/blog"><FeedsPage /></RouteMe>
             <RouteMe path="/blog/timeline"><TimelinePage /></RouteMe>
             <RouteMe path="/blog/tags"><HashtagsPage /></RouteMe>
-
-            <RouteMe path="/timeline">
-              <TimelinePage />
+            <RouteMe path="/blog/gallery"><GalleryPage /></RouteMe>
+            <RouteMe path="/blog/tag/:name">
+              {params => <HashtagPage name={params.name || ""} />}
             </RouteMe>
-
-
-            <RouteMe path="/hashtags">
-              <HashtagsPage />
+            <RouteMe path="/blog/search/:keyword">
+              {params => <SearchPage keyword={params.keyword || ""} />}
             </RouteMe>
-
-            <RouteMe path="/gallery">
-              <GalleryPage />
-            </RouteMe>
-
-            <RouteMe path="/hashtag/:name">
-              {params => {
-                return (<HashtagPage name={params.name || ""} />)
-              }}
-            </RouteMe>
-
-            <RouteMe path="/search/:keyword">
-              {params => {
-                return (<SearchPage keyword={params.keyword || ""} />)
-              }}
-            </RouteMe>
-
-            <RouteMe path="/writing" paddingClassName='mx-4'>
+            <RouteMe path="/blog/writing" paddingClassName='mx-4'>
               <WritingPage />
             </RouteMe>
-
-            <RouteMe path="/writing/:id" paddingClassName='mx-4'>
-              {({ id }) => {
-                const id_num = tryInt(0, id)
-                return (
-                  <WritingPage id={id_num} />
-                )
-              }}
+            <RouteMe path="/blog/writing/:id" paddingClassName='mx-4'>
+              {({ id }) => <WritingPage id={tryInt(0, id)} />}
             </RouteMe>
+            <RouteWithIndex path="/blog/feed/:id">
+              {(params, TOC, clean) => <FeedPage id={params.id || ""} TOC={TOC} clean={clean} />}
+            </RouteWithIndex>
+            <RouteWithIndex path="/blog/:alias">
+              {(params, TOC, clean) => <FeedPage id={params.alias || ""} TOC={TOC} clean={clean} />}
+            </RouteWithIndex>
+
+            <Route path="/timeline"><Redirect to="/blog/timeline" /></Route>
+            <Route path="/hashtags"><Redirect to="/blog/tags" /></Route>
+
+            <Route path="/gallery"><Redirect to="/blog/gallery" /></Route>
+
+            <Route path="/hashtag/:name">{params => <Redirect to={`/blog/tag/${params.name || ''}`} />}</Route>
+            <Route path="/search/:keyword">{params => <Redirect to={`/blog/search/${params.keyword || ''}`} />}</Route>
+            <Route path="/writing"><Redirect to="/blog/writing" /></Route>
+            <Route path="/writing/:id">{params => <Redirect to={`/blog/writing/${params.id || ''}`} />}</Route>
 
             <RouteMe path="/appearance" paddingClassName='mx-4'>
               <AppearancePage />
@@ -183,39 +174,17 @@ function App() {
             <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>
             <RouteMe path="/life/rss" paddingClassName='mx-4'><PrivateLifePage section="rss" /></RouteMe>
 
-            <RouteMe path="/habits" paddingClassName='mx-4'>
-              <PrivateLifePage section="habits" />
-            </RouteMe>
-
-            <RouteMe path="/calendar" paddingClassName='mx-4'>
-              <PrivateLifePage section="calendar" />
-            </RouteMe>
-
-            <RouteMe path="/year" paddingClassName='mx-4'>
-              <PrivateLifePage section="year" />
-            </RouteMe>
-
-            <RouteMe path="/rss" paddingClassName='mx-4'>
-              <PrivateLifePage section="rss" />
-            </RouteMe>
+            <Route path="/habits"><Redirect to="/life/habits" /></Route>
+            <Route path="/calendar"><Redirect to="/life/calendar" /></Route>
+            <Route path="/year"><Redirect to="/life/year" /></Route>
+            <Route path="/rss"><Redirect to="/life/rss" /></Route>
 
             <RouteMe path="/callback" >
               <CallbackPage />
             </RouteMe>
 
-            <RouteWithIndex path="/feed/:id">
-              {(params, TOC, clean) => {
-                return (<FeedPage id={params.id || ""} TOC={TOC} clean={clean} />)
-              }}
-            </RouteWithIndex>
-
-            <RouteWithIndex path="/:alias">
-              {(params, TOC, clean) => {
-                return (
-                  <FeedPage id={params.alias || ""} TOC={TOC} clean={clean} />
-                )
-              }}
-            </RouteWithIndex>
+            <Route path="/feed/:id">{params => <Redirect to={`/blog/feed/${params.id || ''}`} />}</Route>
+            <Route path="/:alias">{params => <Redirect to={`/blog/${params.alias || ''}`} />}</Route>
 
             <RouteMe path="/user/github">
               {_ => (

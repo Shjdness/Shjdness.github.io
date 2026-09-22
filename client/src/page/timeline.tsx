@@ -61,7 +61,7 @@ export function TimelinePage() {
         const oldestFirst = [...allFeeds].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
         const oldPool = oldestFirst.slice(0, Math.max(1, Math.ceil(oldestFirst.length * 0.8)))
         const selected = oldPool[Math.floor(Math.random() * oldPool.length)]
-        setLocation(`/feed/${selected.id}`)
+        setLocation(`/blog/feed/${selected.id}`)
     }
     return (
         <>
@@ -84,7 +84,7 @@ export function TimelinePage() {
                                     <i className="ri-shuffle-line text-base" aria-hidden="true" />
                                 </button>
                                 <Link
-                                    href="/gallery"
+                                    href="/blog/gallery"
                                     className="gallery-entry group"
                                     aria-label="浏览全部图片"
                                 >
@@ -153,7 +153,7 @@ export function FeedItem({ id, title, createdAt }: { id: string, title: string, 
                 <span className="t-secondary text-sm" title={new Date(createdAt).toLocaleString()}>
                     {formatter.format(new Date(createdAt))}
                 </span>
-                <Link href={`/feed/${id}`} target="_blank" className="text-base t-primary hover:text-theme text-pretty overflow-hidden">
+                <Link href={`/blog/feed/${id}`} target="_blank" className="text-base t-primary hover:text-theme text-pretty overflow-hidden">
                     {title}
                 </Link>
             </div>

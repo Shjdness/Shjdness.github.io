@@ -148,17 +148,23 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     const profile = useContext(ProfileContext);
     const [location] = useLocation();
     const { t } = useTranslation()
+    const isBlogArticle = location === "/blog" || location.startsWith('/blog/feed/') || (
+        location.startsWith('/blog/')
+        && !['/blog/timeline', '/blog/tags', '/blog/gallery', '/blog/writing'].some(path => location === path || location.startsWith(`${path}/`))
+        && !location.startsWith('/blog/tag/')
+        && !location.startsWith('/blog/search/')
+    );
     return (
         <>
             <NavItem menu={menu} onClick={onClick} title="首页" selected={location === "/"} href="/" />
             <NavItem menu={menu} onClick={onClick} title={t('article.title')}
-                selected={location === "/blog" || location.startsWith('/feed')} href="/blog" />
+                selected={isBlogArticle} href="/blog" />
             <NavItem menu={menu} onClick={onClick} title={t('timeline')} selected={location === "/blog/timeline" || location === "/timeline"} href="/blog/timeline" />
             <NavItem menu={menu} onClick={onClick} title={t('hashtags')} selected={location === "/blog/tags" || location === "/hashtags"} href="/blog/tags" />
             <NavItem menu={menu} onClick={onClick} when={profile?.role === 'owner' || profile?.role === 'trusted'} title="生活"
                 selected={location.startsWith("/life") || location === "/habits" || location === "/calendar" || location === "/year" || location === "/rss"} href="/life" />
             <NavItem menu={menu} onClick={onClick} when={profile?.canWrite == true} title={t('writing')}
-                selected={location.startsWith("/writing")} href="/writing" />
+                selected={location.startsWith("/blog/writing") || location.startsWith("/writing")} href="/blog/writing" />
         </>
     )
 }
@@ -177,7 +183,7 @@ function SearchButton({ className, onClose }: { className?: string, onClose?: ()
                 onClose?.()
         }, 100)
         if (value.length !== 0)
-            setLocation(`/search/${key}`)
+            setLocation(`/blog/search/${key}`)
     }
     return (<div className={className + " flex flex-row items-center"}>
         <button onClick={() => setIsOpened(true)} title={label} aria-label={label}

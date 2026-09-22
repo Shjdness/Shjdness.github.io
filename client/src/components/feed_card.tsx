@@ -37,7 +37,7 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
 
     return (
         <div ref={cardRef} className={`feed-scroll-card w-full ${visible ? "is-visible" : ""}`}>
-            <Link href={`/feed/${id}`} target="_blank" className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
+            <Link href={`/blog/feed/${id}`} target="_blank" className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
                 {avatar &&
                     <div className="flex flex-row items-center mb-2 rounded-xl overflow-clip">
                         <img src={avatar} alt=""

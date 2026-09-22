@@ -153,7 +153,12 @@ export function RssService() {
       if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
       const item = await db.query.rssItems.findFirst({ where: and(eq(rssItems.id, Number(params.id)), eq(rssItems.ownerId, uid!)) });
       if (!item) { set.status = 404; return '条目不存在'; }
-      await db.update(rssItems).set({ ...(body.read === undefined ? {} : { read: body.read ? 1 : 0 }), ...(body.starred === undefined ? {} : { starred: body.starred ? 1 : 0 }), updatedAt: new Date() }).where(eq(rssItems.id, item.id));
+      const now = new Date();
+      await db.update(rssItems).set({
+        ...(body.read === undefined ? {} : { read: body.read ? 1 : 0, readAt: body.read ? (item.readAt || now) : null }),
+        ...(body.starred === undefined ? {} : { starred: body.starred ? 1 : 0, starredAt: body.starred ? (item.starredAt || now) : null }),
+        updatedAt: now,
+      }).where(eq(rssItems.id, item.id));
       return 'OK';
     }, { body: t.Object({ read: t.Optional(t.Boolean()), starred: t.Optional(t.Boolean()) }) })
     .delete('/subscriptions/:id', async ({ uid, lifeAccess, set, params }) => {

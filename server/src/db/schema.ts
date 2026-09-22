@@ -122,6 +122,8 @@ export const rssItems = sqliteTable("rss_items", {
     publishedAt: integer("published_at", { mode: 'timestamp' }).notNull(),
     read: integer("read").default(0).notNull(),
     starred: integer("starred").default(0).notNull(),
+    readAt: integer("read_at", { mode: 'timestamp' }),
+    starredAt: integer("starred_at", { mode: 'timestamp' }),
     createdAt: created_at,
     updatedAt: updated_at,
 });

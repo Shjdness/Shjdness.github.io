@@ -46,7 +46,7 @@ jobs:
       - name: Build Rin frontend
         run: bun run b
         env:
-          AVATAR: https://raw.githubusercontent.com/Shjdness/Blog/master/lemon.png
+          AVATAR: https://shjdness.github.io/favicon.png
           DESCRIPTION: Hasta que Llegue la Muerte
           NAME: Shjdshy
           PAGE_SIZE: "5"

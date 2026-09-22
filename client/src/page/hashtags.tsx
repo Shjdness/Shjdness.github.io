@@ -10,6 +10,13 @@ import { siteName } from '../utils/constants';
 type Hashtag = { id: number; name: string; feeds: number };
 type TaggedFeed = { id: number; title: string | null; summary: string; content: string; createdAt: Date; updatedAt: Date; hashtags: Array<{ id: number; name: string }>; user: { id: number; username: string; avatar: string | null } };
 
+function journalTimestamp(feed: TaggedFeed) {
+  const match = (feed.title || '').match(/(20\d{2})\D{0,3}(\d{1,2})\D{0,3}(\d{1,2})/);
+  if (!match) return new Date(feed.createdAt).getTime();
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  return Number.isFinite(parsed) ? parsed : new Date(feed.createdAt).getTime();
+}
+
 export function HashtagsPage() {
   const profile = useContext(ProfileContext);
   const [hashtags, setHashtags] = useState<Hashtag[]>();
@@ -26,7 +33,9 @@ export function HashtagsPage() {
     Promise.all(selected.map(name => client.tag({ name }).get({ headers: headersWithAuth() }))).then(results => {
       const lists = results.map(result => result.data && typeof result.data !== 'string' ? (result.data.feeds || []) as TaggedFeed[] : []);
       const common = lists[0]?.filter(feed => lists.every(list => list.some(candidate => candidate.id === feed.id))) || [];
-      setFeeds(common.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setFeeds(common.sort((a, b) => selected.includes('日记')
+        ? journalTimestamp(b) - journalTimestamp(a)
+        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoadingFeeds(false);
     });
   }, [selected.join('|')]);

@@ -5,6 +5,14 @@ import { feedHashtags, hashtags } from "../db/schema";
 import { getDB } from "../utils/di";
 import { setup } from "../setup";
 
+function journalTimestamp(title: string | null, fallback: Date) {
+    const value = title || '';
+    const match = value.match(/(20\d{2})\D{0,3}(\d{1,2})\D{0,3}(\d{1,2})/);
+    if (!match) return new Date(fallback).getTime();
+    const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+    return Number.isFinite(parsed) ? parsed : new Date(fallback).getTime();
+}
+
 export function TagService() {
     const db: DB = getDB();
     return new Elysia({ aot: false })
@@ -58,7 +66,9 @@ export function TagService() {
                             ...tag.feed,
                             hashtags: tag.feed.hashtags.map((tag) => tag.hashtag)
                         }
-                    })
+                    }).sort((left, right) => nameDecoded === '日记'
+                        ? journalTimestamp(right.title, right.createdAt) - journalTimestamp(left.title, left.createdAt)
+                        : new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
                     if (!tag) {
                         set.status = 404;
                         return 'Not found';
