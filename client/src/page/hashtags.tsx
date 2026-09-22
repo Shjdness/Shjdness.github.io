@@ -1,70 +1,43 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { useTranslation } from "react-i18next";
-import { Link } from "wouter";
-import { HashTag } from "../components/hashtag";
-import { Waiting } from "../components/loading";
-import { client } from "../main";
-import { siteName } from "../utils/constants";
+import { FeedCard } from '../components/feed_card';
+import { Waiting } from '../components/loading';
+import { client } from '../main';
+import { ProfileContext } from '../state/profile';
+import { headersWithAuth } from '../utils/auth';
+import { siteName } from '../utils/constants';
 
-type Hashtag = {
-    id: number;
-    name: string;
-    createdAt: Date;
-    updatedAt: Date;
-    feeds: number;
-}
+type Hashtag = { id: number; name: string; feeds: number };
+type TaggedFeed = { id: number; title: string | null; summary: string; content: string; createdAt: Date; updatedAt: Date; hashtags: Array<{ id: number; name: string }>; user: { id: number; username: string; avatar: string | null } };
 
 export function HashtagsPage() {
-    const { t } = useTranslation();
-    const [hashtags, setHashtags] = useState<Hashtag[]>();
-    const ref = useRef(false);
-    useEffect(() => {
-        if (ref.current) return;
-        client.tag.index.get().then(({ data }) => {
-            if (data && typeof data !== 'string') {
-                setHashtags(data);
-            }
-        });
-        ref.current = true;
-    }, [])
-    return (
-        <>
-            <Helmet>
-                <title>{`${t('hashtags')} - ${process.env.NAME}`}</title>
-                <meta property="og:site_name" content={siteName} />
-                <meta property="og:title" content={t('hashtags')} />
-                <meta property="og:image" content={process.env.AVATAR} />
-                <meta property="og:type" content="article" />
-                <meta property="og:url" content={document.URL} />
-            </Helmet>
-            <Waiting for={hashtags}>
-                <main className="w-full flex flex-col justify-center items-center mb-8 ani-show">
-                    <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
-                        <p>
-                            {t('hashtags')}
-                        </p>
-                    </div>
+  const profile = useContext(ProfileContext);
+  const [hashtags, setHashtags] = useState<Hashtag[]>();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [feeds, setFeeds] = useState<TaggedFeed[]>([]);
+  const [loadingFeeds, setLoadingFeeds] = useState(false);
+  const ref = useRef(false);
+  const loadTags = () => client.tag.index.get().then(({ data }) => { if (data && typeof data !== 'string') setHashtags(data as Hashtag[]); });
 
-                    <div className="wauto flex flex-col flex-wrap items-start justify-start">
-                        {hashtags?.filter(({ feeds }) => feeds > 0).map((hashtag, index) => {
-                            return (
-                                <div key={index} className="w-full flex flex-row">
-                                    <div className="w-full rounded-2xl m-2 duration-300 flex flex-row items-center space-x-4   ">
-                                        <Link href={`/hashtag/${hashtag.name}`} className="text-base t-primary hover:text-theme text-pretty overflow-hidden">
-                                            <HashTag name={hashtag.name} />
-                                        </Link>
-                                        <div className="flex-1" />
-                                        <span className="t-secondary text-sm">
-                                            {t("article.total_short$count", { count: hashtag.feeds })}
-                                        </span>
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
-                </main>
-            </Waiting>
-        </>
-    )
+  useEffect(() => { if (ref.current) return; void loadTags(); ref.current = true; }, []);
+  useEffect(() => {
+    if (!selected.length) { setFeeds([]); return; }
+    setLoadingFeeds(true);
+    Promise.all(selected.map(name => client.tag({ name }).get({ headers: headersWithAuth() }))).then(results => {
+      const lists = results.map(result => result.data && typeof result.data !== 'string' ? (result.data.feeds || []) as TaggedFeed[] : []);
+      const common = lists[0]?.filter(feed => lists.every(list => list.some(candidate => candidate.id === feed.id))) || [];
+      setFeeds(common.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setLoadingFeeds(false);
+    });
+  }, [selected.join('|')]);
+
+  const toggle = (name: string) => setSelected(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name]);
+  const remove = async (tag: Hashtag) => {
+    if (!window.confirm(`标签「${tag.name}」关联 ${tag.feeds} 篇文章。删除只会移除标签关联，不会删除文章。继续吗？`)) return;
+    await client.tag({ name: tag.name }).delete(undefined, { headers: headersWithAuth() });
+    setSelected(current => current.filter(name => name !== tag.name));
+    await loadTags();
+  };
+
+  return <><Helmet><title>标签 - {process.env.NAME}</title><meta property="og:site_name" content={siteName} /></Helmet><Waiting for={hashtags}><main className="tags-page ani-show"><header><p>BLOG INDEX</p><h1>标签</h1><span>可同时选择多个标签；结果需包含全部所选标签。</span></header><div className="tag-filter-list">{hashtags?.filter(tag => tag.feeds > 0).map(tag => <div key={tag.id} className={selected.includes(tag.name) ? 'active' : ''}><button onClick={() => toggle(tag.name)}>#{tag.name}<small>{tag.feeds}</small></button>{profile?.role === 'owner' && <button className="tag-delete" title={`删除 ${tag.name}`} onClick={() => remove(tag)}><i className="ri-delete-bin-line" /></button>}</div>)}</div>{selected.length > 0 && <section className="tag-results"><div><strong>{selected.map(name => `#${name}`).join(' + ')}</strong><span>{loadingFeeds ? '正在筛选…' : `${feeds.length} 篇文章`}</span></div>{!loadingFeeds && feeds.map(({ id, ...feed }) => <FeedCard key={id} id={id} {...feed} />)}{!loadingFeeds && feeds.length === 0 && <p className="life-coming-soon">没有同时包含这些标签的文章。</p>}</section>}</main></Waiting></>;
 }

@@ -80,6 +80,19 @@ export const habitLogs = sqliteTable("habit_logs", {
     updatedAt: updated_at,
 });
 
+export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    startedAt: integer("started_at", { mode: 'timestamp' }).notNull(),
+    endedAt: integer("ended_at", { mode: 'timestamp' }).notNull(),
+    focusMinutes: integer("focus_minutes").notNull(),
+    breakMinutes: integer("break_minutes").default(5).notNull(),
+    roundIndex: integer("round_index").default(1).notNull(),
+    completed: integer("completed").default(1).notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+});
+
 /** Private RSS reader: subscriptions and entries are always owned by one Life user. */
 export const rssSubscriptions = sqliteTable("rss_subscriptions", {
     id: integer("id").primaryKey(),

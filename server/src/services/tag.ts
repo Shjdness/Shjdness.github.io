@@ -3,10 +3,12 @@ import Elysia from "elysia";
 import type { DB } from "../_worker";
 import { feedHashtags, hashtags } from "../db/schema";
 import { getDB } from "../utils/di";
+import { setup } from "../setup";
 
 export function TagService() {
     const db: DB = getDB();
     return new Elysia({ aot: false })
+        .use(setup())
         .group('/tag', (group) =>
             group
                 .get('/', async () => {
@@ -65,6 +67,14 @@ export function TagService() {
                         ...tag,
                         feeds: tagFeeds
                     };
+                })
+                .delete('/:name', async ({ admin, set, params: { name } }) => {
+                    if (!admin) { set.status = 403; return 'Permission denied'; }
+                    const nameDecoded = decodeURI(name);
+                    const tag = await db.query.hashtags.findFirst({ where: eq(hashtags.name, nameDecoded) });
+                    if (!tag) { set.status = 404; return 'Not found'; }
+                    await db.delete(hashtags).where(eq(hashtags.id, tag.id));
+                    return 'OK';
                 })
         );
 }

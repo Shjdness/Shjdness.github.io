@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next'
 import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppearance } from './state/appearance.tsx'
 import { AppearancePage } from './page/appearance.tsx'
 import { PrivateLifePage } from './page/life.tsx'
+import { HomePage } from './page/home.tsx'
 
 function App() {
   const ref = useRef(false)
@@ -99,7 +100,7 @@ function App() {
     '--glass-blur': `${appearance.glassBlur}px`,
   } as React.CSSProperties), [appearance])
   return (
-    <div className={`site-shell ${location === '/' ? 'site-shell--home' : 'site-shell--inner'}`} style={appearanceStyle}>
+    <div className={`site-shell ${location === '/' ? 'site-shell--home' : location.startsWith('/life') ? 'site-shell--life' : 'site-shell--blog'}`} style={appearanceStyle}>
       <ClientConfigContext.Provider value={config}>
         <ProfileContext.Provider value={profile}>
           <AppearanceContext.Provider value={{
@@ -124,9 +125,11 @@ function App() {
                 <link rel="icon" href={favicon} />}
             </Helmet>
             <Switch>
-            <RouteMe path="/">
-              <FeedsPage />
-            </RouteMe>
+            <Route path="/"><HomePage /></Route>
+
+            <RouteMe path="/blog"><FeedsPage /></RouteMe>
+            <RouteMe path="/blog/timeline"><TimelinePage /></RouteMe>
+            <RouteMe path="/blog/tags"><HashtagsPage /></RouteMe>
 
             <RouteMe path="/timeline">
               <TimelinePage />
@@ -173,6 +176,12 @@ function App() {
             <RouteMe path="/life" paddingClassName='mx-4'>
               <PrivateLifePage section="life" />
             </RouteMe>
+
+            <RouteMe path="/life/habits" paddingClassName='mx-4'><PrivateLifePage section="habits" /></RouteMe>
+            <RouteMe path="/life/calendar" paddingClassName='mx-4'><PrivateLifePage section="calendar" /></RouteMe>
+            <RouteMe path="/life/year" paddingClassName='mx-4'><PrivateLifePage section="year" /></RouteMe>
+            <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>
+            <RouteMe path="/life/rss" paddingClassName='mx-4'><PrivateLifePage section="rss" /></RouteMe>
 
             <RouteMe path="/habits" paddingClassName='mx-4'>
               <PrivateLifePage section="habits" />

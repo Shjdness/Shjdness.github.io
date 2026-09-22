@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gte, lte } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
 import { habitLogs, habits } from '../db/schema';
 import { setup } from '../setup';
@@ -27,6 +27,12 @@ export function HabitService() {
       await db.insert(habitLogs).values({ habitId, ownerId: uid, date: body.date, completed: body.completed ? 1 : 0, note: body.note || '' }).onConflictDoUpdate({ target: [habitLogs.habitId, habitLogs.date], set: { completed: body.completed ? 1 : 0, note: body.note || '', updatedAt: new Date() } });
       return 'OK';
     }, { body: t.Object({ date: day, completed: t.Boolean(), note: t.Optional(t.String({ maxLength: 500 })) }) })
+    .get('/range', async ({ uid, lifeAccess, set, query }) => {
+      if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
+      const ownerHabits = await db.query.habits.findMany({ where: eq(habits.ownerId, uid), orderBy: (habits, { desc }) => [desc(habits.active), desc(habits.createdAt)] });
+      const logs = await db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid), gte(habitLogs.date, query.from), lte(habitLogs.date, query.to)) });
+      return { habits: ownerHabits, logs };
+    }, { query: t.Object({ from: day, to: day }) })
     .get('/calendar', async ({ uid, lifeAccess, set, query }) => {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
       const prefix = `${query.month}-`;

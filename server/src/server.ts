@@ -12,6 +12,7 @@ import { AppearanceService } from './services/appearance';
 import { LifeService } from './services/life';
 import { HabitService } from './services/habit';
 import { RssService } from './services/rss';
+import { PomodoroService } from './services/pomodoro';
 
 export const app = () => new Elysia({ aot: false })
     .use(cors({
@@ -40,6 +41,7 @@ export const app = () => new Elysia({ aot: false })
     .use(LifeService())
     .use(HabitService())
     .use(RssService())
+    .use(PomodoroService())
     .get('/', () => `Hi`)
     .onError(({ path, params, code }) => {
         if (code === 'NOT_FOUND')

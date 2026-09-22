@@ -150,12 +150,13 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     const { t } = useTranslation()
     return (
         <>
+            <NavItem menu={menu} onClick={onClick} title="首页" selected={location === "/"} href="/" />
             <NavItem menu={menu} onClick={onClick} title={t('article.title')}
-                selected={location === "/" || location.startsWith('/feed')} href="/" />
-            <NavItem menu={menu} onClick={onClick} title={t('timeline')} selected={location === "/timeline"} href="/timeline" />
-            <NavItem menu={menu} onClick={onClick} title={t('hashtags')} selected={location === "/hashtags"} href="/hashtags" />
+                selected={location === "/blog" || location.startsWith('/feed')} href="/blog" />
+            <NavItem menu={menu} onClick={onClick} title={t('timeline')} selected={location === "/blog/timeline" || location === "/timeline"} href="/blog/timeline" />
+            <NavItem menu={menu} onClick={onClick} title={t('hashtags')} selected={location === "/blog/tags" || location === "/hashtags"} href="/blog/tags" />
             <NavItem menu={menu} onClick={onClick} when={profile?.role === 'owner' || profile?.role === 'trusted'} title="生活"
-                selected={location === "/life" || location === "/habits" || location === "/calendar" || location === "/year" || location === "/rss"} href="/life" />
+                selected={location.startsWith("/life") || location === "/habits" || location === "/calendar" || location === "/year" || location === "/rss"} href="/life" />
             <NavItem menu={menu} onClick={onClick} when={profile?.canWrite == true} title={t('writing')}
                 selected={location.startsWith("/writing")} href="/writing" />
         </>

@@ -22,7 +22,7 @@ export function LifeService() {
                 const user = await db.query.users.findFirst({ where: eq(users.id, uid) });
                 return {
                     role: roleForUser(user),
-                    sections: ['habits', 'calendar', 'year', 'rss'],
+                    sections: ['overview', 'habits', 'calendar', 'pomodoro', 'rss'],
                 };
             })
         );
