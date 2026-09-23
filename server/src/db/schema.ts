@@ -142,6 +142,15 @@ export const rssSubscriptions = sqliteTable("rss_subscriptions", {
     updatedAt: updated_at,
 });
 
+export const rssSourceGroups = sqliteTable("rss_source_groups", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+}, table => ({ ownerName: uniqueIndex("rss_source_groups_owner_name").on(table.ownerId, table.name) }));
+
 export const rssItems = sqliteTable("rss_items", {
     id: integer("id").primaryKey(),
     subscriptionId: integer("subscription_id").references(() => rssSubscriptions.id, { onDelete: 'cascade' }).notNull(),

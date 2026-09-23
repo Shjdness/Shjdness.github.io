@@ -22,6 +22,7 @@ export function PomodoroService() {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
       const startedAt = new Date(body.startedAt); const endedAt = new Date(body.endedAt);
       if (!Number.isFinite(startedAt.getTime()) || !Number.isFinite(endedAt.getTime()) || endedAt <= startedAt) { set.status = 400; return 'Invalid session time'; }
+      if (endedAt.getTime() - startedAt.getTime() < 5 * 60_000) return { ignored: true };
       const result = await db.insert(pomodoroSessions).values({
         ownerId: uid, startedAt, endedAt, focusMinutes: body.focusMinutes,
         breakMinutes: body.breakMinutes, roundIndex: body.roundIndex, completed: body.completed ? 1 : 0,
@@ -30,7 +31,7 @@ export function PomodoroService() {
       return result[0];
     }, { body: t.Object({
       startedAt: t.String(), endedAt: t.String(),
-      focusMinutes: t.Integer({ minimum: 1, maximum: 180 }),
+      focusMinutes: t.Integer({ minimum: 5, maximum: 180 }),
       breakMinutes: t.Integer({ minimum: 1, maximum: 60 }),
       roundIndex: t.Integer({ minimum: 1, maximum: 20 }),
       completed: t.Boolean(),
