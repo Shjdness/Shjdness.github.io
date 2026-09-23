@@ -162,7 +162,7 @@ export function LifeService() {
                 const [ownerHabits, logs, sessions, rss, basics] = await Promise.all([
                     db.query.habits.findMany({ where: eq(habits.ownerId, uid!), columns: { id: true, name: true } }),
                     db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.year}-01-01`), lte(habitLogs.date, `${query.year}-12-31`)), columns: { habitId: true, date: true, completed: true } }),
-                    db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), columns: { startedAt: true, completed: true }, limit: 2000 }),
+                    db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), columns: { startedAt: true, focusMinutes: true, completed: true }, limit: 2000 }),
                     db.query.rssItems.findMany({
                         where: and(eq(rssItems.ownerId, uid!), or(
                             and(isNotNull(rssItems.readAt), gte(rssItems.readAt, range.start), lt(rssItems.readAt, range.end)),
