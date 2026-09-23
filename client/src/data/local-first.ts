@@ -1,5 +1,5 @@
 export type SyncEntity = 'habit' | 'note' | 'basic' | 'pomodoro' | 'rss';
-export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed' };
+export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed'; lastError?: string };
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 type SavedAdvice = { id: string; savedAt: number };
 
@@ -66,12 +66,13 @@ export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>)
   for (const item of queue) {
     if (!item.id) continue;
     try {
-      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing' }));
+      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined }));
       const sent = await send(item);
       if (sent) { await storeRequest('sync_queue', 'readwrite', store => store.delete(item.id!)); synced += 1; }
-      else { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed' })); failed += 1; }
-    } catch {
-      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed' }));
+      else { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError: '服务器未确认写入' })); failed += 1; }
+    } catch (error) {
+      const lastError = error instanceof Error ? error.message.slice(0, 240) : '同步失败';
+      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError }));
       failed += 1;
     }
   }
