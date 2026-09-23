@@ -113,8 +113,8 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
   if (item.entity === 'pomodoro' && item.action === 'create') {
     const payload = item.payload as { startedAt: string };
     const month = payload.startedAt.slice(0, 7);
-    const existing = await withTimeout<any>(client.pomodoro.sessions.get({ query: { month }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT);
-    if (Array.isArray(existing.data) && existing.data.some((session: PomodoroSession) => new Date(session.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) return true;
+    const existing = await lifeApi<PomodoroSession[]>(`/pomodoro/sessions?month=${encodeURIComponent(month)}`);
+    if (Array.isArray(existing) && existing.some(session => new Date(session.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) return true;
     await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(item.payload) });
     return true;
   }
@@ -215,7 +215,7 @@ function LifeSyncStatus() {
   const [status, setStatus] = useState<'synced' | 'pending' | 'syncing' | 'failed' | 'offline'>(navigator.onLine ? 'synced' : 'offline');
   const [lastSync, setLastSync] = useState(() => localStorage.getItem('shjdshy-last-sync') || '');
   const [syncError, setSyncError] = useState('');
-  const refresh = async () => { const queue = await getSyncQueue(); setPending(queue.length); setSyncError(queue.find(item => item.lastError)?.lastError || ''); if (!navigator.onLine) setStatus('offline'); else if (queue.some(item => item.status === 'failed')) setStatus('failed'); else setStatus(queue.length ? 'pending' : 'synced'); };
+  const refresh = async () => { const queue = await getSyncQueue(); const failed = queue.find(item => item.lastError); setPending(queue.length); setSyncError(failed ? `${failed.entity}/${failed.action}: ${failed.lastError}` : ''); if (!navigator.onLine) setStatus('offline'); else if (queue.some(item => item.status === 'failed')) setStatus('failed'); else setStatus(queue.length ? 'pending' : 'synced'); };
   const sync = async () => {
     if (!navigator.onLine) { setStatus('offline'); await refresh(); return; }
     setStatus('syncing');
