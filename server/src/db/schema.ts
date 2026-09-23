@@ -90,6 +90,18 @@ export const lifeDailyNotes = sqliteTable("life_daily_notes", {
     updatedAt: updated_at,
 }, table => ({ ownerDate: uniqueIndex("life_daily_notes_owner_date").on(table.ownerId, table.date) }));
 
+export const dailyBasics = sqliteTable("daily_basics", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: text("date").notNull(),
+    content: text("content").notNull(),
+    completed: integer("completed").default(0).notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    clientKey: text("client_key"),
+    createdAt: created_at,
+    updatedAt: updated_at,
+}, table => ({ ownerClientKey: uniqueIndex("daily_basics_owner_client_key").on(table.ownerId, table.clientKey) }));
+
 export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
     id: integer("id").primaryKey(),
     ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),

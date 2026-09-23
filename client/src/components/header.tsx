@@ -242,7 +242,9 @@ function LocalClock() {
     useEffect(() => {
         let timer = 0;
         const schedule = () => { const delay = 60000 - (Date.now() % 60000) + 50; timer = window.setTimeout(() => { setNow(new Date()); schedule(); }, delay); };
-        schedule(); return () => window.clearTimeout(timer);
+        const refresh = () => { if (document.visibilityState === 'visible') setNow(new Date()); };
+        schedule(); document.addEventListener('visibilitychange', refresh);
+        return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', refresh); };
     }, []);
     return <time className="header-clock" dateTime={now.toISOString()}>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time>;
 }

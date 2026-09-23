@@ -19,18 +19,27 @@ export function TagService() {
         .use(setup())
         .group('/tag', (group) =>
             group
-                .get('/', async () => {
+                .get('/', async ({ admin, writer, uid }) => {
                     const tag_list = await db.query.hashtags.findMany({
                         with: {
                             feeds: {
-                                columns: { feedId: true }
+                                with: {
+                                    feed: {
+                                        columns: { uid: true, draft: true, listed: true },
+                                        with: { hashtags: { columns: {}, with: { hashtag: { columns: { name: true } } } } }
+                                    }
+                                }
                             }
                         }
                     });
                     return tag_list.map((tag) => {
                         return {
                             ...tag,
-                            feeds: tag.feeds.length
+                            feeds: tag.feeds.filter(({ feed }) => {
+                                if (uid && (admin || writer)) return feed.uid === uid;
+                                const diary = feed.hashtags.some(({ hashtag }) => hashtag.name === '日记');
+                                return !diary && feed.draft === 0 && feed.listed === 1;
+                            }).length
                         }
                     })
                 })
@@ -66,11 +75,9 @@ export function TagService() {
                             ...tag.feed,
                             hashtags: tag.feed.hashtags.map((tag) => tag.hashtag)
                         }
-                    }).filter(feed => {
-                        const diary = feed.hashtags.some(tag => tag.name === '日记');
-                        if (diary) return Boolean(admin || (writer && feed.uid === uid));
-                        return (feed.draft === 0 && feed.listed === 1) || admin || (writer && feed.uid === uid);
-                    })
+                    }).filter(feed => uid && (admin || writer)
+                        ? feed.uid === uid
+                        : !feed.hashtags.some(tag => tag.name === '日记') && feed.draft === 0 && feed.listed === 1)
                     .sort((left, right) => nameDecoded === '日记'
                         ? journalTimestamp(right.title, right.createdAt) - journalTimestamp(left.title, left.createdAt)
                         : new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())

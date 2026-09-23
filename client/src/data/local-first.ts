@@ -1,4 +1,4 @@
-export type SyncEntity = 'habit' | 'note' | 'pomodoro' | 'rss';
+export type SyncEntity = 'habit' | 'note' | 'basic' | 'pomodoro' | 'rss';
 export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed' };
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 type SavedAdvice = { id: string; savedAt: number };
@@ -56,19 +56,27 @@ export async function getSyncQueue() {
   return storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
 }
 
-export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>) {
-  if (!navigator.onLine) return;
-  for (const item of await getSyncQueue()) {
+export type SyncResult = { total: number; synced: number; failed: number; offline: boolean };
+
+export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
+  const queue = await getSyncQueue();
+  if (!navigator.onLine) return { total: queue.length, synced: 0, failed: queue.length, offline: true };
+  let synced = 0;
+  let failed = 0;
+  for (const item of queue) {
     if (!item.id) continue;
     try {
+      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing' }));
       const sent = await send(item);
-      if (sent) await storeRequest('sync_queue', 'readwrite', store => store.delete(item.id!));
-      else await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed' }));
+      if (sent) { await storeRequest('sync_queue', 'readwrite', store => store.delete(item.id!)); synced += 1; }
+      else { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed' })); failed += 1; }
     } catch {
       await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed' }));
+      failed += 1;
     }
   }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+  return { total: queue.length, synced, failed, offline: false };
 }
 
 export async function getSavedAdviceIds() {
