@@ -38,7 +38,7 @@ const WRITE_TIMEOUT = 20000;
 
 async function lifeApi<T>(path: string, init?: RequestInit): Promise<T> {
   const timeout = (init?.method || 'GET').toUpperCase() === 'GET' ? READ_TIMEOUT : WRITE_TIMEOUT;
-  const response = await withTimeout(fetch(`${endpoint}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...headersWithAuth(), ...(init?.headers || {}) } }), timeout);
+  const response = await withTimeout(fetch(`${endpoint}${path}`, { ...init, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...headersWithAuth(), ...(init?.headers || {}) } }), timeout);
   if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`);
   const body = await response.text();
   const trimmed = body.trim();
