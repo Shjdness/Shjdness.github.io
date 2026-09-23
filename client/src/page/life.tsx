@@ -94,7 +94,7 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
   if (item.entity === 'basic') {
     const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string };
     if (item.action === 'create') {
-      const result = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify(payload) });
+      const result = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey }) });
       if (!result.insertedId || payload.localId === undefined) return false;
       const mapping = (await getCached<Record<string, number>>('life:basic-id-map'))?.value || {};
       mapping[String(payload.localId)] = result.insertedId;
@@ -274,7 +274,7 @@ function TodayBasics({ initial }: { initial?: DailyBasic[] }) {
     const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: DailyBasic = { id: localId, date, content, completed: 0, sortOrder: items.length, clientKey };
     const next = [...items, local]; setDraft(''); await persist(next);
     const payload = { localId, date, content, sortOrder: local.sortOrder, clientKey };
-    try { const data = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify(payload) }); await rememberLocalId('life:basic-id-map', localId, data.insertedId); await persist(next.map(item => item.id === localId ? { ...item, id: data.insertedId } : item)); }
+    try { const data = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date, content, sortOrder: local.sortOrder, clientKey }) }); await rememberLocalId('life:basic-id-map', localId, data.insertedId); await persist(next.map(item => item.id === localId ? { ...item, id: data.insertedId } : item)); }
     catch { await enqueueMutation('basic', 'create', payload); }
   };
   const update = async (item: DailyBasic, patch: { content?: string; completed?: boolean }) => {
