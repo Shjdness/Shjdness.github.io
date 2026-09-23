@@ -6,7 +6,6 @@ import { Waiting } from "../components/loading"
 import { client } from "../main"
 import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
-import { getNormalPosts } from "../data/blog"
 
 type FeedsData = {
     name: string;
@@ -43,7 +42,7 @@ export function HashtagPage({ name }: { name: string }) {
             headers: headersWithAuth()
         }).then(({ data }) => {
             if (data && typeof data !== 'string') {
-                setHashtag({ ...data, feeds: getNormalPosts(data.feeds || []) })
+                setHashtag({ ...data, feeds: data.feeds || [] })
                 setStatus('idle')
             }
         })

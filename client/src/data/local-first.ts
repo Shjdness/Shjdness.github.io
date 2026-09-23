@@ -1,4 +1,4 @@
-export type SyncEntity = 'habit' | 'pomodoro' | 'rss';
+export type SyncEntity = 'habit' | 'note' | 'pomodoro' | 'rss';
 export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed' };
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 type SavedAdvice = { id: string; savedAt: number };

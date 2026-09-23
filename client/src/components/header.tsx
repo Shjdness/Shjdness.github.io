@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactModal from "react-modal";
 import Popup from "reactjs-popup";
@@ -195,7 +195,7 @@ function SearchButton({ className, onClose }: { className?: string, onClose?: ()
         if (value.length !== 0)
             setLocation(`/blog/search/${key}`)
     }
-    return (<div className={className + " flex flex-row items-center"}>
+    return (<div className={className + " flex flex-row items-center gap-2"}>
         <button onClick={() => setIsOpened(true)} title={label} aria-label={label}
             className="flex rounded-full border dark:border-neutral-600 px-2 bg-w aspect-[1] items-center justify-center t-primary bg-button">
             <i className="ri-search-line"></i>
@@ -237,13 +237,24 @@ function SearchButton({ className, onClose }: { className?: string, onClose?: ()
     )
 }
 
+function LocalClock() {
+    const [now, setNow] = useState(new Date());
+    useEffect(() => {
+        let timer = 0;
+        const schedule = () => { const delay = 60000 - (Date.now() % 60000) + 50; timer = window.setTimeout(() => { setNow(new Date()); schedule(); }, delay); };
+        schedule(); return () => window.clearTimeout(timer);
+    }, []);
+    return <time className="header-clock" dateTime={now.toISOString()}>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time>;
+}
+
 
 function UserAvatar({ className, profile, onClose }: { className?: string, profile?: Profile, onClose?: () => void }) {
     const { t } = useTranslation()
     const { LoginModal, setIsOpened } = useLoginModal(onClose)
     const label = t('github_login')
 
-    return (<div className={className + " flex flex-row items-center"}>
+    return (<div className={className + " flex flex-row items-center gap-2"}>
+        {profile && <LocalClock />}
         {profile?.avatar ? <>
             <div className="w-8 relative">
                 <img src={profile.avatar} alt="Avatar" className="w-8 h-8 rounded-full border" />

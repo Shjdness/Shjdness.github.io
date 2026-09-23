@@ -6,8 +6,6 @@ import { client } from '../main';
 import { ProfileContext } from '../state/profile';
 import { headersWithAuth } from '../utils/auth';
 import { siteName } from '../utils/constants';
-import { useLocation } from 'wouter';
-import { getNormalPosts } from '../data/blog';
 
 type Hashtag = { id: number; name: string; feeds: number };
 type TaggedFeed = { id: number; title: string | null; summary: string; content: string; createdAt: Date; updatedAt: Date; hashtags: Array<{ id: number; name: string }>; user: { id: number; username: string; avatar: string | null } };
@@ -19,7 +17,6 @@ export function HashtagsPage() {
   const [feeds, setFeeds] = useState<TaggedFeed[]>([]);
   const [loadingFeeds, setLoadingFeeds] = useState(false);
   const ref = useRef(false);
-  const [, setLocation] = useLocation();
   const loadTags = () => client.tag.index.get().then(({ data }: any) => { if (data && typeof data !== 'string') setHashtags(data as Hashtag[]); });
 
   useEffect(() => { if (ref.current) return; void loadTags(); ref.current = true; }, []);
@@ -29,13 +26,12 @@ export function HashtagsPage() {
     Promise.all(selected.map(name => client.tag({ name }).get({ headers: headersWithAuth() }))).then((results: any[]) => {
       const lists: TaggedFeed[][] = results.map((result: any) => result.data && typeof result.data !== 'string' ? (result.data.feeds || []) as TaggedFeed[] : []);
       const common = lists[0]?.filter(feed => lists.every(list => list.some(candidate => candidate.id === feed.id))) || [];
-      setFeeds(getNormalPosts(common).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setFeeds(common.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoadingFeeds(false);
     });
   }, [selected.join('|')]);
 
   const toggle = (name: string) => {
-    if (name === '日记') { setLocation('/blog/diary'); return; }
     setSelected(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name]);
   };
   const remove = async (tag: Hashtag) => {

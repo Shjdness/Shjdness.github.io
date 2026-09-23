@@ -139,14 +139,15 @@ export function FeedService() {
                         return 'Content already exists';
                     }
                     const date = createdAt ? new Date(createdAt) : new Date();
+                    const diary = tags.includes('日记');
                     const result = await db.insert(feeds).values({
                         title,
                         content,
                         summary,
                         uid,
                         alias,
-                        listed: listed ? 1 : 0,
-                        draft: draft ? 1 : 0,
+                        listed: diary ? 0 : listed ? 1 : 0,
+                        draft: diary ? 1 : draft ? 1 : 0,
                         createdAt: date,
                         updatedAt: date
                     }).returning({ insertedId: feeds.id });
@@ -194,7 +195,8 @@ export function FeedService() {
                         return 'Not found';
                     }
                     // permission check
-                    if (feed.draft && feed.uid !== uid && !admin) {
+                    const isDiary = feed.hashtags.some(({ hashtag }) => hashtag.name === '日记');
+                    if ((feed.draft || isDiary) && feed.uid !== uid && !admin) {
                         set.status = 403;
                         return 'Permission denied';
                     }
@@ -239,7 +241,13 @@ export function FeedService() {
                 }) => {
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
-                        where: eq(feeds.id, id_num)
+                        where: eq(feeds.id, id_num),
+                        with: {
+                            hashtags: {
+                                columns: {},
+                                with: { hashtag: { columns: { name: true } } }
+                            }
+                        }
                     });
                     if (!feed) {
                         set.status = 404;
@@ -249,14 +257,17 @@ export function FeedService() {
                         set.status = 403;
                         return 'Permission denied';
                     }
+                    const diary = tags
+                        ? tags.includes('日记')
+                        : feed.hashtags.some(({ hashtag }) => hashtag.name === '日记');
                     await db.update(feeds).set({
                         title,
                         content,
                         summary,
                         alias,
                         top: admin ? top : undefined,
-                        listed: listed ? 1 : 0,
-                        draft: draft ? 1 : 0,
+                        listed: diary ? 0 : listed ? 1 : 0,
+                        draft: diary ? 1 : draft ? 1 : 0,
                         createdAt: createdAt ? new Date(createdAt) : undefined,
                         updatedAt: new Date()
                     }).where(eq(feeds.id, id_num));

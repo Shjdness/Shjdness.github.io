@@ -66,7 +66,11 @@ export function TagService() {
                             ...tag.feed,
                             hashtags: tag.feed.hashtags.map((tag) => tag.hashtag)
                         }
-                    }).filter(feed => (feed.draft === 0 && feed.listed === 1) || admin || (writer && feed.uid === uid))
+                    }).filter(feed => {
+                        const diary = feed.hashtags.some(tag => tag.name === '日记');
+                        if (diary) return Boolean(admin || (writer && feed.uid === uid));
+                        return (feed.draft === 0 && feed.listed === 1) || admin || (writer && feed.uid === uid);
+                    })
                     .sort((left, right) => nameDecoded === '日记'
                         ? journalTimestamp(right.title, right.createdAt) - journalTimestamp(left.title, left.createdAt)
                         : new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())

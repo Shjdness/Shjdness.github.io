@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const created_at = integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull();
 const updated_at = integer("updated_at", { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull();
@@ -64,9 +64,10 @@ export const habits = sqliteTable("habits", {
     description: text("description").default("").notNull(),
     color: text("color").default("#e11d62").notNull(),
     active: integer("active").default(1).notNull(),
+    clientKey: text("client_key"),
     createdAt: created_at,
     updatedAt: updated_at,
-});
+}, table => ({ ownerClientKey: uniqueIndex("habits_owner_client_key").on(table.ownerId, table.clientKey) }));
 
 export const habitLogs = sqliteTable("habit_logs", {
     id: integer("id").primaryKey(),
@@ -79,6 +80,15 @@ export const habitLogs = sqliteTable("habit_logs", {
     createdAt: created_at,
     updatedAt: updated_at,
 });
+
+export const lifeDailyNotes = sqliteTable("life_daily_notes", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    date: text("date").notNull(),
+    content: text("content").default("").notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+}, table => ({ ownerDate: uniqueIndex("life_daily_notes_owner_date").on(table.ownerId, table.date) }));
 
 export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
     id: integer("id").primaryKey(),

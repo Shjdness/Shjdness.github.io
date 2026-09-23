@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lt, lte, or } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
-import { habitLogs, habits, pomodoroSessions, rssItems, users } from '../db/schema';
+import { habitLogs, habits, lifeDailyNotes, pomodoroSessions, rssItems, users } from '../db/schema';
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
 import { roleForUser } from '../utils/roles';
@@ -91,7 +91,7 @@ export function LifeService() {
                     set.status = 400;
                     return 'Invalid date range';
                 }
-                const [ownerHabits, logs, sessions, rss] = await Promise.all([
+                const [ownerHabits, logs, sessions, rss, notes] = await Promise.all([
                     db.query.habits.findMany({ where: eq(habits.ownerId, uid!) }),
                     db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.month}-01`), lte(habitLogs.date, `${query.month}-31`)) }),
                     db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), orderBy: [desc(pomodoroSessions.startedAt)], limit: 500 }),
@@ -103,9 +103,24 @@ export function LifeService() {
                         columns: { id: true, title: true, url: true, readAt: true, starredAt: true },
                         limit: 500,
                     }),
+                    db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, `${query.month}-01`), lte(lifeDailyNotes.date, `${query.month}-31`)) }),
                 ]);
-                return { habits: ownerHabits, logs, sessions, rss };
+                return { habits: ownerHabits, logs, sessions, rss, notes };
             }, { query: t.Object({ month: t.String({ pattern: monthPattern }), start: t.String(), end: t.String() }) })
+            .get('/notes', async ({ uid, lifeAccess, set, query }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                return db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, query.from), lte(lifeDailyNotes.date, query.to)) });
+            }, { query: t.Object({ from: t.String({ pattern: dayPattern }), to: t.String({ pattern: dayPattern }) }) })
+            .post('/notes/:date', async ({ uid, lifeAccess, set, params, body }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                const incoming = new Date(body.updatedAt);
+                if (!Number.isFinite(incoming.getTime())) { set.status = 400; return 'Invalid updatedAt'; }
+                const existing = await db.query.lifeDailyNotes.findFirst({ where: and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)) });
+                if (existing && existing.updatedAt.getTime() > incoming.getTime()) return { saved: false, note: existing };
+                await db.insert(lifeDailyNotes).values({ ownerId: uid!, date: params.date, content: body.content, updatedAt: incoming }).onConflictDoUpdate({ target: [lifeDailyNotes.ownerId, lifeDailyNotes.date], set: { content: body.content, updatedAt: incoming } });
+                const note = await db.query.lifeDailyNotes.findFirst({ where: and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)) });
+                return { saved: true, note };
+            }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }), body: t.Object({ content: t.String({ maxLength: 2000 }), updatedAt: t.String() }) })
             .get('/year', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const range = validRange(query.start, query.end);

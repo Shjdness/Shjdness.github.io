@@ -81,6 +81,7 @@ h3,
 /* Home / Blog / Life architecture */
 .home-landing { min-height:100svh; display:grid; place-items:center; padding:clamp(1.2rem,5vw,5rem); }
 .home-landing-card { width:min(42rem,100%); padding:clamp(1.6rem,6vw,4rem); border:1px solid rgb(255 255 255 / .44); border-radius:2rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .7)); backdrop-filter:blur(var(--glass-blur)) saturate(145%); box-shadow:0 30px 80px rgb(15 23 42 / .18),inset 0 1px 0 rgb(255 255 255 / .5); }
+.home-avatar { width:4.5rem; height:4.5rem; margin-bottom:1.2rem; border:2px solid rgb(255 255 255 / .62); border-radius:1.35rem; object-fit:cover; box-shadow:0 14px 36px rgb(15 23 42 / .18); }
 .home-kicker { color:#be185d; font-size:.72rem; font-weight:800; letter-spacing:.23em; }
 .home-landing h1 { margin-top:.55rem; font-size:clamp(3.2rem,11vw,7rem); font-weight:800; line-height:.92; color:#172033; }
 .home-motto { margin-top:.7rem; color:#5f6878; letter-spacing:.04em; }
@@ -101,7 +102,21 @@ h3,
 .habit-week { min-width:38rem; margin-top:1rem; overflow:hidden; border:1px solid rgb(148 163 184 / .16); border-radius:1rem; }.life-section{overflow-x:auto}
 .habit-week-head,.habit-week-row { display:grid; grid-template-columns:minmax(10rem,2fr) repeat(7,minmax(2.7rem,1fr)); align-items:center; gap:.25rem; padding:.65rem; }.habit-week-head{background:rgb(148 163 184 / .1)}.habit-week-row+.habit-week-row{border-top:1px solid rgb(148 163 184 / .12)}
 .habit-week-head>span:not(:first-child){text-align:center}.habit-week-head b,.habit-week-head small,.habit-week-row>span strong,.habit-week-row>span small{display:block}.habit-week-head small,.habit-week-row>span small{color:#64748b;font-size:.68rem}
+.habit-week-head button { padding:.3rem; border-radius:.65rem; text-align:center; }
+.habit-week-head button.selected { background:rgb(225 29 98 / .12); color:#e11d62; }
+.habit-week-row>span { position:relative; padding-right:2rem; }
+.habit-edit-button { position:absolute; top:50%; right:.1rem; width:1.7rem!important; height:1.7rem!important; transform:translateY(-50%); border:0!important; color:#64748b; }
 .habit-week-row button { width:2.15rem; height:2.15rem; margin:auto; border:1px solid rgb(148 163 184 / .28); border-radius:50%; background:rgb(255 255 255 / .13); }.habit-week-row button.done{border-color:#22c55e;background:#22c55e;color:#fff}
+.daily-note { display:grid; gap:.75rem; margin-top:1rem; padding:1rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / .1); }
+.daily-note>div { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.daily-note small { color:#e11d62; font-weight:800; letter-spacing:.14em; }
+.daily-note textarea { min-height:7rem; resize:vertical; padding:.85rem; border:1px solid rgb(148 163 184 / .2); border-radius:.8rem; background:rgb(255 255 255 / .12); color:inherit; line-height:1.65; }
+.daily-note>button { justify-self:end; padding:.62rem .9rem; border-radius:.75rem; background:#e11d62; color:#fff; font-weight:700; }
+.habit-editor-actions { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:.55rem; margin-top:1rem; }
+.habit-editor-actions button { padding:.65rem .9rem; border-radius:.75rem; background:rgb(148 163 184 / .14); }
+.habit-editor-actions button:last-child { background:#e11d62; color:#fff; }
+.habit-editor-actions .habit-archive { color:#e11d62; }
+.header-clock { min-width:3.2rem; color:#64748b; font-size:.72rem; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:.08em; text-align:center; }
 .pomodoro { display:grid; place-items:center; margin-top:1.6rem; padding:2rem; border:1px solid rgb(255 255 255 / .2); border-radius:1.5rem; background:rgb(255 255 255 / .11); }.pomodoro>p{color:#e11d62;font-weight:800;letter-spacing:.22em}.pomodoro>strong{font-size:clamp(4rem,14vw,8rem);line-height:1.05;font-variant-numeric:tabular-nums}.pomodoro>span{color:#64748b}.pomodoro>div{display:flex;gap:.65rem;margin-top:1.3rem}.pomodoro button{min-width:6rem;padding:.7rem 1.1rem;border-radius:999px;background:#e11d62;color:#fff}.pomodoro button.secondary{background:rgb(148 163 184 / .18);color:inherit}
 .pomodoro-settings { display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; margin-top:.8rem; }.pomodoro-settings label{display:grid;gap:.35rem;padding:.8rem;border-radius:1rem;background:rgb(148 163 184 / .1);font-size:.72rem;color:#64748b}.pomodoro-settings input{width:100%;background:transparent;font-size:1rem;color:inherit}
 .calendar-weekdays { display:grid; grid-template-columns:repeat(7,1fr); gap:.4rem; margin-top:1rem; text-align:center; color:#64748b; font-size:.7rem; }.calendar-day{border:1px solid transparent;text-align:left}.calendar-day.selected{border-color:#e11d62}.calendar-day em{display:block;margin-top:.2rem;color:#e11d62;font-size:.68rem;font-style:normal}.calendar-detail{margin-top:1rem;padding:1rem;border-radius:1rem;background:rgb(148 163 184 / .1)}.calendar-detail h2{font-size:1rem}.calendar-detail>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.8rem;margin-top:.7rem}.calendar-detail article{padding:.75rem;border-radius:.8rem;background:rgb(255 255 255 / .1)}.calendar-detail p{margin-top:.35rem;color:#64748b;font-size:.74rem}
@@ -154,6 +169,8 @@ h3,
     0 18px 50px rgb(31 41 55 / 0.09),
     inset 0 1px 0 rgb(255 255 255 / 0.24);
 }
+
+.route-loading { min-height:45vh; display:grid; place-items:center; color:#64748b; font-weight:700; }
 
 [data-color-mode="dark"] .site-shell .glass-panel {
   border-color: rgb(255 255 255 / 0.12);
@@ -1287,6 +1304,17 @@ a.toc-link {
 .blog-home>header>p,.diary-page>header>p { color:#e11d62; font-size:.7rem; font-weight:800; letter-spacing:.22em; }
 .blog-home>header h1,.diary-page>header h1 { font-size:clamp(2rem,6vw,3.4rem); font-weight:800; }
 .blog-home>header span,.diary-page>header span { color:#64748b; }
+.diary-index-toggle { display:none; width:100%; margin-bottom:.8rem; padding:.72rem .9rem; border:1px solid rgb(148 163 184 / .2); border-radius:.85rem; background:rgb(255 255 255 / .12); color:#e11d62; font-weight:700; }
+.diary-layout { display:grid; grid-template-columns:minmax(9rem,12rem) minmax(0,1fr); align-items:start; gap:1rem; }
+.diary-index { position:sticky; top:6rem; max-height:calc(100vh - 8rem); overflow:auto; padding:1rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .62)); backdrop-filter:blur(var(--glass-blur)); }
+.diary-index>strong { display:block; margin-bottom:.65rem; color:#e11d62; font-size:.72rem; letter-spacing:.12em; }
+.diary-index summary { cursor:pointer; padding:.3rem 0; font-weight:700; }
+.diary-index details details { margin-left:.65rem; color:#64748b; font-size:.82rem; }
+.diary-index a { display:flex; justify-content:space-between; gap:.5rem; padding:.3rem .2rem .3rem .75rem; border-radius:.4rem; color:#64748b; font-size:.75rem; }
+.diary-index a:hover { background:rgb(225 29 98 / .1); color:#e11d62; }
+.diary-index a small { color:#94a3b8; }
+.diary-list { min-width:0; }
+.diary-list>div { scroll-margin-top:6rem; }
 .blog-home>section { margin-top:2rem; }
 .blog-section-heading { display:flex; align-items:center; justify-content:space-between; padding:0 .3rem; }
 .blog-section-heading h2 { font-size:1.2rem; font-weight:800; }
@@ -1348,3 +1376,4 @@ a.toc-link {
 .guide-modal>section>div { display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem; }.guide-modal button { padding:.55rem .8rem; border-radius:.68rem; background:rgb(148 163 184 / .13); }.guide-modal button:last-child { background:#e11d62; color:#fff; }
 [data-color-mode="dark"] .today-advice,[data-color-mode="dark"] .guide-results>article { background:rgb(3 10 25 / .26); }
 @media (max-width:640px) { .life-title-row{align-items:center}.life-sync-status span{display:none}.guide-page>header{display:grid}.guide-tools{grid-template-columns:1fr}.guide-tools select{grid-column:1}.guide-results{grid-template-columns:1fr}.today-advice>div:last-child{flex-wrap:wrap} }
+@media (max-width:720px) { .diary-index-toggle{display:block}.diary-layout{display:block}.diary-index{display:none;position:static;max-height:none;margin-bottom:1rem}.diary-index.open{display:block}.header-clock{display:none} }

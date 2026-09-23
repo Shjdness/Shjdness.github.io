@@ -178,6 +178,10 @@ export function WritingPage({ id }: { id?: number }) {
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
+  const diaryMode = selectedTagNames.includes('日记');
+  useEffect(() => {
+    if (diaryMode) { setDraft(true); setListed(false); }
+  }, [diaryMode]);
   const saveTagNames = (names: string[]) => {
     const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(Boolean))];
     setTags(unique.map(name => `#${name}`).join(' '));
@@ -228,8 +232,8 @@ export function WritingPage({ id }: { id?: number }) {
         summary,
         alias,
         tags: tagsplit,
-        draft,
-        listed,
+        draft: diaryMode ? true : draft,
+        listed: diaryMode ? false : listed,
         createdAt,
         onCompleted: () => {
           setPublishing(false)
@@ -251,9 +255,9 @@ export function WritingPage({ id }: { id?: number }) {
         content,
         summary,
         tags: tagsplit,
-        draft,
+        draft: diaryMode ? true : draft,
         alias,
-        listed,
+        listed: diaryMode ? false : listed,
         createdAt,
         onCompleted: () => {
           setPublishing(false)
@@ -422,26 +426,26 @@ export function WritingPage({ id }: { id?: number }) {
             className="mt-4"
           />
           <div
-            className="select-none flex flex-row justify-between items-center mt-6 mb-2 px-4"
-            onClick={() => setDraft(!draft)}
+            className={`select-none flex flex-row justify-between items-center mt-6 mb-2 px-4 ${diaryMode ? 'opacity-50' : ''}`}
+            onClick={() => { if (!diaryMode) setDraft(!draft); }}
           >
-            <p>{t('visible.self_only')}</p>
+            <p>{t('visible.self_only')}{diaryMode ? '（日记固定）' : ''}</p>
             <Checkbox
               id="draft"
-              value={draft}
-              setValue={setDraft}
+              value={diaryMode || draft}
+              setValue={value => { if (!diaryMode) setDraft(value); }}
               placeholder={t('draft')}
             />
           </div>
           <div
-            className="select-none flex flex-row justify-between items-center mt-6 mb-2 px-4"
-            onClick={() => setListed(!listed)}
+            className={`select-none flex flex-row justify-between items-center mt-6 mb-2 px-4 ${diaryMode ? 'opacity-50' : ''}`}
+            onClick={() => { if (!diaryMode) setListed(!listed); }}
           >
             <p>{t('listed')}</p>
             <Checkbox
               id="listed"
-              value={listed}
-              setValue={setListed}
+              value={diaryMode ? false : listed}
+              setValue={value => { if (!diaryMode) setListed(value); }}
               placeholder={t('listed')}
             />
           </div>

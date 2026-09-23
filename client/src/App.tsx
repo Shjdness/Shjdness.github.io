@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { getCookie } from 'typescript-cookie'
 import { DefaultParams, PathPattern, Redirect, Route, Switch, useLocation } from 'wouter'
@@ -10,11 +10,9 @@ import { client } from './main'
 import { CallbackPage } from './page/callback'
 import { FeedPage, TOCHeader } from './page/feed'
 import { FeedsPage } from './page/feeds'
-import { GalleryPage } from './page/gallery'
 import { HashtagPage } from './page/hashtag.tsx'
 import { HashtagsPage } from './page/hashtags.tsx'
 import { TimelinePage } from './page/timeline'
-import { WritingPage } from './page/writing'
 import { ClientConfigContext, ConfigWrapper, defaultClientConfig } from './state/config.tsx'
 import { Profile, ProfileContext } from './state/profile'
 import { headersWithAuth } from './utils/auth'
@@ -24,11 +22,14 @@ import { Tips, TipsPage } from './components/tips.tsx'
 import { useTranslation } from 'react-i18next'
 import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppearance } from './state/appearance.tsx'
 import { AppearancePage } from './page/appearance.tsx'
-import { PrivateLifePage } from './page/life.tsx'
 import { HomePage } from './page/home.tsx'
 import { BlogHomePage } from './page/blog_home.tsx'
 import { DiaryPage } from './page/diary.tsx'
-import { GuidePage } from './page/guide.tsx'
+
+const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
+const WritingPage = lazy(() => import('./page/writing').then(module => ({ default: module.WritingPage })))
+const PrivateLifePage = lazy(() => import('./page/life.tsx').then(module => ({ default: module.PrivateLifePage })))
+const GuidePage = lazy(() => import('./page/guide.tsx').then(module => ({ default: module.GuidePage })))
 
 const LIFE_PROFILE_CACHE = 'shjdshy-life-profile';
 const cachedProfile = () => {
@@ -135,6 +136,7 @@ function App() {
               {favicon &&
                 <link rel="icon" href={favicon} />}
             </Helmet>
+            <Suspense fallback={<div className="route-loading" role="status">正在打开…</div>}>
             <Switch>
             <Route path="/"><HomePage /></Route>
 
@@ -227,6 +229,7 @@ function App() {
             {/* Default route in a switch */}
             <Route>404: No such page!</Route>
             </Switch>
+            </Suspense>
           </AppearanceContext.Provider>
         </ProfileContext.Provider>
       </ClientConfigContext.Provider>
