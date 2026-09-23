@@ -17,7 +17,6 @@ type RssSubscription = { id: number; feedUrl: string; sourceUrl: string; title: 
 type RssGroup = { id: number; name: string; sortOrder: number };
 type RssItem = { id: number; subscriptionId: number; externalId?: string; title: string; url: string; summary: string; author: string; publishedAt: Date; read: number; starred: number; readAt?: Date | null; starredAt?: Date | null; mediaType: 'text' | 'video' | 'image' | 'audio' | 'external'; mediaUrl: string; embedUrl: string; thumbnailUrl: string; duration: number; contentHtml: string };
 type RssData = { subscriptions: RssSubscription[]; groups?: RssGroup[]; items: RssItem[]; counts: { all: number; unread: number; starred: number }; page?: { limit: number; offset: number; total: number; hasMore: boolean } };
-type RssFilter = 'all' | 'today' | 'unread' | 'starred';
 type RssContentType = 'all' | 'text' | 'video' | 'image';
 type RssActivity = { id: number; title: string; url: string; readAt: Date | null; starredAt: Date | null };
 type CalendarData = { habits: Habit[]; logs: Log[]; sessions: PomodoroSession[]; rss: RssActivity[]; notes: DailyNote[]; basics: DailyBasic[] };
