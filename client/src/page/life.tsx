@@ -41,7 +41,11 @@ async function lifeApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await withTimeout(fetch(`${endpoint}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...headersWithAuth(), ...(init?.headers || {}) } }), timeout);
   if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`);
   const body = await response.text();
-  return (body && response.headers.get('content-type')?.includes('application/json') ? JSON.parse(body) : body || null) as T;
+  const trimmed = body.trim();
+  if (trimmed && response.headers.get('content-type')?.includes('application/json')) {
+    try { return JSON.parse(trimmed) as T; } catch { return trimmed as T; }
+  }
+  return (trimmed || null) as T;
 }
 
 export function PrivateLifePage({ section }: { section: LifeSection }) {
@@ -77,19 +81,19 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
   if (item.entity === 'habit' && (item.action === 'update' || item.action === 'archive')) {
     const payload = item.payload as { id: number; patch: { name?: string; description?: string; color?: string; active?: boolean } };
     const id = await resolveHabitId(payload.id);
-    const { error } = await withTimeout<any>(client.habit({ id }).post(payload.patch, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT);
-    return !error;
+    await lifeApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
+    return true;
   }
   if (item.entity === 'habit' && item.action === 'toggle') {
     const payload = item.payload as { id: number; date: string; completed: boolean };
     const id = await resolveHabitId(payload.id);
-    const { error } = await withTimeout<any>(client.habit({ id }).toggle.post({ date: payload.date, completed: payload.completed }, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT);
-    return !error;
+    await lifeApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date: payload.date, completed: payload.completed }) });
+    return true;
   }
   if (item.entity === 'note' && item.action === 'save') {
     const payload = item.payload as { date: string; content: string; updatedAt: string };
-    const { error } = await withTimeout<any>(client.life.notes({ date: payload.date }).post({ content: payload.content, updatedAt: payload.updatedAt }, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT);
-    return !error;
+    await lifeApi(`/life/notes/${payload.date}`, { method: 'POST', body: JSON.stringify({ content: payload.content, updatedAt: payload.updatedAt }) });
+    return true;
   }
   if (item.entity === 'basic') {
     const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string };
@@ -111,13 +115,13 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
     const month = payload.startedAt.slice(0, 7);
     const existing = await withTimeout<any>(client.pomodoro.sessions.get({ query: { month }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT);
     if (Array.isArray(existing.data) && existing.data.some((session: PomodoroSession) => new Date(session.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) return true;
-    const { error } = await withTimeout<any>(client.pomodoro.sessions.post(item.payload as never, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT);
-    return !error;
+    await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(item.payload) });
+    return true;
   }
   if (item.entity === 'rss' && item.action === 'update') {
     const payload = item.payload as { id: number; patch: { read?: boolean; starred?: boolean } };
-    const { error } = await withTimeout<any>(client.rss.items({ id: payload.id }).post(payload.patch, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT);
-    return !error;
+    await lifeApi(`/rss/items/${payload.id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
+    return true;
   }
   throw new Error(`Unsupported queued mutation: ${item.entity}/${item.action}`);
 }
@@ -302,9 +306,9 @@ function HabitView() {
   useEffect(() => { setNoteDraft(notes.find(note => note.date === selectedDate)?.content || ''); }, [selectedDate, notes]);
   const persist = (nextHabits = habits, nextLogs = logs, nextNotes = notes) => setCached(cacheKey, { habits: nextHabits, logs: nextLogs, notes: nextNotes });
   const create = async () => { if (!name.trim() || busy) return; setBusy(true); const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: Habit = { id: localId, name: name.trim(), description: '', color: '#e11d62', active: 1, clientKey }; const nextHabits = [local, ...habits]; setHabits(nextHabits); void persist(nextHabits); setName(''); const payload = { localId, name: local.name, clientKey }; try { const { data, error } = await withTimeout<any>(client.habit.index.post({ name: local.name, clientKey }, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT); if (error || !data?.insertedId) throw new Error('sync failed'); await rememberLocalId('life:habit-id-map', localId, data.insertedId); const mapped = nextHabits.map(item => item.id === localId ? { ...item, id: data.insertedId } : item); setHabits(mapped); await persist(mapped); } catch { await enqueueMutation('habit', 'create', payload); } finally { setBusy(false); } };
-  const updateHabit = async (habit: Habit, patch: { name?: string; description?: string; active?: boolean }) => { const nextHabits = habits.map(item => item.id === habit.id ? { ...item, ...patch, active: patch.active === undefined ? item.active : patch.active ? 1 : 0 } : item); setHabits(nextHabits); void persist(nextHabits); try { const id = await resolveHabitId(habit.id); const { error } = await withTimeout<any>(client.habit({ id }).post(patch, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('habit', patch.active === false ? 'archive' : 'update', { id: habit.id, patch }); } };
-  const toggle = async (habitId: number, date: string) => { setSelectedDate(date); const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); const nextLogs = completed ? logs.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...logs.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]; setLogs(nextLogs); void persist(habits, nextLogs); void patchCalendarCache(date, value => ({ ...value, habits, logs: nextLogs })); const payload = { id: habitId, date, completed: !completed }; try { const id = await resolveHabitId(habitId); const { error } = await withTimeout<any>(client.habit({ id }).toggle.post({ date, completed: !completed }, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('habit', 'toggle', payload); } };
-  const saveNote = async () => { const updatedAt = new Date().toISOString(); const note: DailyNote = { date: selectedDate, content: noteDraft.trim(), updatedAt }; const nextNotes = [...notes.filter(item => item.date !== selectedDate), note]; setNotes(nextNotes); await persist(habits, logs, nextNotes); await patchCalendarCache(selectedDate, value => ({ ...value, notes: [...(value.notes || []).filter(item => item.date !== selectedDate), note] })); try { const { error } = await withTimeout<any>(client.life.notes({ date: selectedDate }).post({ content: note.content, updatedAt }, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('note', 'save', note); } };
+  const updateHabit = async (habit: Habit, patch: { name?: string; description?: string; active?: boolean }) => { const nextHabits = habits.map(item => item.id === habit.id ? { ...item, ...patch, active: patch.active === undefined ? item.active : patch.active ? 1 : 0 } : item); setHabits(nextHabits); void persist(nextHabits); try { const id = await resolveHabitId(habit.id); await lifeApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('habit', patch.active === false ? 'archive' : 'update', { id: habit.id, patch }); } };
+  const toggle = async (habitId: number, date: string) => { setSelectedDate(date); const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); const nextLogs = completed ? logs.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...logs.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]; setLogs(nextLogs); void persist(habits, nextLogs); void patchCalendarCache(date, value => ({ ...value, habits, logs: nextLogs })); const payload = { id: habitId, date, completed: !completed }; try { const id = await resolveHabitId(habitId); await lifeApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date, completed: !completed }) }); } catch { await enqueueMutation('habit', 'toggle', payload); } };
+  const saveNote = async () => { const updatedAt = new Date().toISOString(); const note: DailyNote = { date: selectedDate, content: noteDraft.trim(), updatedAt }; const nextNotes = [...notes.filter(item => item.date !== selectedDate), note]; setNotes(nextNotes); await persist(habits, logs, nextNotes); await patchCalendarCache(selectedDate, value => ({ ...value, notes: [...(value.notes || []).filter(item => item.date !== selectedDate), note] })); try { await lifeApi(`/life/notes/${selectedDate}`, { method: 'POST', body: JSON.stringify({ content: note.content, updatedAt }) }); } catch { await enqueueMutation('note', 'save', note); } };
   const activeHabits = habits.filter(habit => habit.active);
   return <LifeLayout section="habits" title="习惯" intro="以一周为单位留下轻巧的确认，不把生活变成 KPI。"><div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(mondayOf())}>本周</button><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => { const date = isoDay(day); return <button key={date} className={selectedDate === date ? 'selected' : ''} onClick={() => setSelectedDate(date)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></button>; })}</div>{activeHabits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small><button className="habit-edit-button" onClick={() => setEditing(habit)} title="编辑习惯"><i className="ri-edit-line" /></button></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} onClick={() => toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} placeholder="添加一个想长期坚持的习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create} disabled={busy}>添加</button></div><section className="daily-note"><div><small>DAILY NOTE</small><strong>{selectedDate}</strong></div><textarea value={noteDraft} maxLength={2000} placeholder="今天做了什么 / 有什么想记下来……" onChange={event => setNoteDraft(event.target.value)} /><button onClick={saveNote}>保存当天记录</button></section>{editing && <HabitEditor habit={editing} onClose={() => setEditing(null)} onSave={patch => { void updateHabit(editing, patch); setEditing(null); }} />}</LifeLayout>;
 }
@@ -348,7 +352,7 @@ function PomodoroView() {
       const calendarKey = `life:calendar:${session.startedAt.slice(0, 7)}`;
       const cached = await getCached<CalendarData>(calendarKey);
       if (cached) await setCached(calendarKey, { ...cached.value, sessions: [...cached.value.sessions, { ...session, id: -Date.now(), startedAt: new Date(session.startedAt), endedAt, completed: 1, completedEarly: completedEarly ? 1 : 0 } as PomodoroSession] });
-      try { const { error } = await withTimeout<any>(client.pomodoro.sessions.post(session, { headers: headersWithAuth() }) as Promise<any>, WRITE_TIMEOUT); if (error) throw new Error('sync failed'); } catch { await enqueueMutation('pomodoro', 'create', session); } finally { finishing.current = false; }
+      try { await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(session) }); } catch { await enqueueMutation('pomodoro', 'create', session); } finally { finishing.current = false; }
       return;
     }
     if (timer.mode === 'break') setTimer({ mode: 'focus', round: Math.min(rounds, timer.round + 1), remaining: focusMinutes * 60, targetAt: null, startedAt: null, taskName: timer.taskName });
