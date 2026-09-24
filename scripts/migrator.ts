@@ -28,6 +28,7 @@ const S3_FOLDER = renv("S3_FOLDER", 'images/')
 const S3_REGION = renv("S3_REGION", "auto")
 const S3_FORCE_PATH_STYLE = env("S3_FORCE_PATH_STYLE", "false")
 const WEBHOOK_URL = env("WEBHOOK_URL", "")
+const RSSHUB_BASE_URL = env("RSSHUB_BASE_URL", "https://rsshub.app")
 
 // Secrets
 const accessKeyId = env("S3_ACCESS_KEY_ID")
@@ -56,9 +57,13 @@ S3_ACCESS_HOST = "${S3_ACCESS_HOST}"
 S3_BUCKET = "${S3_BUCKET}"
 S3_FORCE_PATH_STYLE = "${S3_FORCE_PATH_STYLE}"
 WEBHOOK_URL = "${WEBHOOK_URL}"
+RSSHUB_BASE_URL = "${RSSHUB_BASE_URL}"
 
 [placement]
 mode = "smart"
+
+[triggers]
+crons = ["17 */6 * * *"]
 `))
 
 type D1Item = {

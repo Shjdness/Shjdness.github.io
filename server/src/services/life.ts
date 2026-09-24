@@ -95,7 +95,7 @@ export function LifeService() {
                     return 'Invalid date range';
                 }
                 const [ownerHabits, logs, sessions, rss, notes, basics] = await Promise.all([
-                    db.query.habits.findMany({ where: eq(habits.ownerId, uid!) }),
+                    db.query.habits.findMany({ where: and(eq(habits.ownerId, uid!), eq(habits.active, 1)) }),
                     db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.month}-01`), lte(habitLogs.date, `${query.month}-31`)) }),
                     db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), orderBy: [desc(pomodoroSessions.startedAt)], limit: 500 }),
                     db.query.rssItems.findMany({
@@ -117,11 +117,14 @@ export function LifeService() {
             }, { query: t.Object({ from: t.String({ pattern: dayPattern }), to: t.String({ pattern: dayPattern }) }) })
             .post('/basics', async ({ uid, lifeAccess, set, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                const content = body.content.trim();
                 if (body.clientKey) {
                     const existing = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.clientKey, body.clientKey)) });
                     if (existing) return { insertedId: existing.id };
                 }
-                const result = await db.insert(dailyBasics).values({ ownerId: uid!, date: body.date, content: body.content.trim(), sortOrder: body.sortOrder, clientKey: body.clientKey }).returning({ insertedId: dailyBasics.id });
+                const duplicate = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, body.date), eq(dailyBasics.content, content)) });
+                if (duplicate) return { insertedId: duplicate.id };
+                const result = await db.insert(dailyBasics).values({ ownerId: uid!, date: body.date, content, sortOrder: body.sortOrder, clientKey: body.clientKey }).returning({ insertedId: dailyBasics.id });
                 return result[0];
             }, { body: t.Object({ date: t.String({ pattern: dayPattern }), content: t.String({ minLength: 1, maxLength: 240 }), sortOrder: t.Integer({ minimum: 0, maximum: 100 }), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
             .post('/basics/:id', async ({ uid, lifeAccess, set, params, body }) => {
@@ -152,6 +155,11 @@ export function LifeService() {
                 const note = await db.query.lifeDailyNotes.findFirst({ where: and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)) });
                 return { saved: true, note };
             }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }), body: t.Object({ content: t.String({ maxLength: 2000 }), updatedAt: t.String() }) })
+            .delete('/notes/:date', async ({ uid, lifeAccess, set, params }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                await db.delete(lifeDailyNotes).where(and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)));
+                return 'OK';
+            }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }) })
             .get('/year', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const range = validRange(query.start, query.end);

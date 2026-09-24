@@ -100,7 +100,10 @@ export const dailyBasics = sqliteTable("daily_basics", {
     clientKey: text("client_key"),
     createdAt: created_at,
     updatedAt: updated_at,
-}, table => ({ ownerClientKey: uniqueIndex("daily_basics_owner_client_key").on(table.ownerId, table.clientKey) }));
+}, table => ({
+    ownerClientKey: uniqueIndex("daily_basics_owner_client_key").on(table.ownerId, table.clientKey),
+    ownerDateContent: uniqueIndex("daily_basics_owner_date_content").on(table.ownerId, table.date, table.content),
+}));
 
 export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
     id: integer("id").primaryKey(),

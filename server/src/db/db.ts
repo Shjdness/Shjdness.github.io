@@ -21,6 +21,8 @@ export interface Env {
     WEBHOOK_URL: string,
     S3_FORCE_PATH_STYLE: string,
     GUEST_ACCESS_CODE: string,
+    /** Configurable RSSHub origin; keep the route path unchanged when moving instances. */
+    RSSHUB_BASE_URL: string,
 }
 
 export function db(env: Env) {

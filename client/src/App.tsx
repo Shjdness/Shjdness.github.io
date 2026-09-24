@@ -187,7 +187,7 @@ function App() {
             <RouteMe path="/life/calendar" paddingClassName='mx-4'><PrivateLifePage section="calendar" /></RouteMe>
             <RouteMe path="/life/year" paddingClassName='mx-4'><PrivateLifePage section="year" /></RouteMe>
             <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>
-            <RouteMe path="/life/rss" paddingClassName='mx-4'><PrivateLifePage section="rss" /></RouteMe>
+            <Route path="/life/rss"><PrivateLifePage section="rss" /></Route>
             <RouteMe path="/life/guide" paddingClassName='mx-4'><GuidePage /></RouteMe>
 
             <Route path="/habits"><Redirect to="/life/habits" /></Route>

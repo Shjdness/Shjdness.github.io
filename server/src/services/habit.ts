@@ -31,6 +31,13 @@ export function HabitService() {
       await db.update(habits).set({ name: body.name, description: body.description, color: body.color, active: body.active === undefined ? undefined : body.active ? 1 : 0, updatedAt: new Date() }).where(and(eq(habits.id, habitId), eq(habits.ownerId, uid)));
       return 'OK';
     }, { body: t.Object({ name: t.Optional(t.String({ minLength: 1, maxLength: 80 })), description: t.Optional(t.String({ maxLength: 240 })), color: t.Optional(t.String({ maxLength: 16 })), active: t.Optional(t.Boolean()) }) })
+    .delete('/:id', async ({ uid, lifeAccess, set, params }) => {
+      if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
+      const habitId = Number.parseInt(params.id, 10);
+      const result = await db.delete(habits).where(and(eq(habits.id, habitId), eq(habits.ownerId, uid))).returning({ id: habits.id });
+      if (!result.length) { set.status = 404; return 'Habit not found'; }
+      return 'OK';
+    })
     .post('/:id/toggle', async ({ uid, lifeAccess, set, params, body }) => {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
       const habitId = Number.parseInt(params.id, 10);
