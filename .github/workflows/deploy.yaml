@@ -2,6 +2,14 @@ name: Deploy
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+      - 'scripts/migrator.ts'
+      - 'wrangler.example.toml'
+      - '.github/workflows/deploy.yaml'
 
 jobs:
   deploy:
