@@ -53,5 +53,7 @@
 | GUEST_ACCESS_CODE        | 访客写作者登录安全码，请使用至少 12 位且不可提交到公开仓库                       | a-long-private-code                                              |
 | RSS_SYNC_TOKEN           | GitHub 定时 RSSHub 任务与 Worker 之间的随机共享密钥，不可暴露给浏览器          | another-long-private-code                                        |
 | TWITTER_AUTH_TOKEN       | 可选；仅供 GitHub Actions 内的临时 RSSHub 读取 X 路由使用                     | platform-token                                                    |
+| PIXIV_REFRESHTOKEN       | 可选；Pixiv 路由的官方必需配置，保存到 GitHub Actions Secret                  | pixiv-refresh-token                                               |
+| BILIBILI_COOKIE          | 可选；Bilibili 对托管出口返回 412 时使用，保存登录后的完整 Cookie             | SESSDATA=...                                                       |
 | S3_ACCESS_KEY_ID         | S3 存储桶访问所需的 KEY ID，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌 ID | 1234567890abcdef1234567890abcd                                   |
 | S3_SECRET_ACCESS_KEY     | S3 存储桶访问所需的 Secret，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌    | 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef |

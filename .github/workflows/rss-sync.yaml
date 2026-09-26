@@ -21,12 +21,14 @@ jobs:
         env:
           TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
           PIXIV_REFRESHTOKEN: ${{ secrets.PIXIV_REFRESHTOKEN }}
+          BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
         run: |
           docker run -d --name rsshub --memory=1g -p 1200:1200 \
             -e NODE_ENV=production \
             -e CACHE_TYPE=memory \
             -e TWITTER_AUTH_TOKEN="$TWITTER_AUTH_TOKEN" \
             -e PIXIV_REFRESHTOKEN="$PIXIV_REFRESHTOKEN" \
+            -e BILIBILI_COOKIE_OWNER="$BILIBILI_COOKIE" \
             diygod/rsshub:chromium-bundled
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:1200/ >/dev/null; then exit 0; fi
