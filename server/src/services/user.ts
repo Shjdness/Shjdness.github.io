@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import Elysia, { t } from "elysia";
-import { URL } from "url";
+import { URL } from "node:url";
 import type { DB } from "../_worker";
 import { info, users } from "../db/schema";
 import { setup } from "../setup";
