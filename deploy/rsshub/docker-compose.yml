@@ -1,0 +1,51 @@
+services:
+  rsshub:
+    image: ${RSSHUB_IMAGE:-ghcr.io/diygod/rsshub:2026-09-24}
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${RSSHUB_PORT:-1200}:1200"
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/
+      CACHE_EXPIRE: ${CACHE_EXPIRE:-3600}
+      ACCESS_KEY: ${RSSHUB_ACCESS_KEY:?set RSSHUB_ACCESS_KEY in .env}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-15000}
+      BILIBILI_COOKIE_1: ${BILIBILI_COOKIE_1:-}
+      PIXIV_REFRESHTOKEN: ${PIXIV_REFRESHTOKEN:-}
+      TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+      PROXY_URI: ${PROXY_URI:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:1200/healthz"]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    mem_limit: 160m
+    cpus: 0.5
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"

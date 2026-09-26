@@ -39,6 +39,7 @@ jobs:
           RIN_GITHUB_CLIENT_ID: ${{ secrets.RIN_GITHUB_CLIENT_ID }}
           RIN_GITHUB_CLIENT_SECRET: ${{ secrets.RIN_GITHUB_CLIENT_SECRET }}
           GUEST_ACCESS_CODE: ${{ secrets.GUEST_ACCESS_CODE }}
+          RSSHUB_ACCESS_KEY: ${{ secrets.RSSHUB_ACCESS_KEY }}
 
           DB_NAME: ${{ vars.DB_NAME }}
           WORKER_NAME: ${{ vars.WORKER_NAME }}

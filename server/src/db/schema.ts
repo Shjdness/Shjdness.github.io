@@ -167,6 +167,7 @@ export const rssItems = sqliteTable("rss_items", {
     mediaUrl: text("media_url").default("").notNull(),
     embedUrl: text("embed_url").default("").notNull(),
     thumbnailUrl: text("thumbnail_url").default("").notNull(),
+    mediaJson: text("media_json").default("[]").notNull(),
     duration: integer("duration").default(0).notNull(),
     contentHtml: text("content_html").default("").notNull(),
     publishedAt: integer("published_at", { mode: 'timestamp' }).notNull(),

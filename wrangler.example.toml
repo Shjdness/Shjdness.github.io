@@ -1,9 +1,8 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "rin-server"
 main = "server/src/_worker.ts"
-compatibility_date = "2024-05-29"
-# compatibility_flags = ["nodejs_compat"]
-node_compat = true
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 FRONTEND_URL = "http://localhost:5173"
@@ -16,6 +15,7 @@ S3_BUCKET = "<YourS3BucketName>"
 S3_FORCE_PATH_STYLE = "false"
 WEBHOOK_URL = "https://<YourWebhookURL>"
 RSSHUB_BASE_URL = "https://rsshub.app"
+# Set RSSHUB_ACCESS_KEY as a Worker secret when the self-hosted instance enables access control.
 
 [triggers]
 crons = ["17 */6 * * *"]

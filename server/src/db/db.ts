@@ -23,6 +23,8 @@ export interface Env {
     GUEST_ACCESS_CODE: string,
     /** Configurable RSSHub origin; keep the route path unchanged when moving instances. */
     RSSHUB_BASE_URL: string,
+    /** Optional self-hosted RSSHub access key. Never expose this value to the browser. */
+    RSSHUB_ACCESS_KEY: string,
 }
 
 export function db(env: Env) {

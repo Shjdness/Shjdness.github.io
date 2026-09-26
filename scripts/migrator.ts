@@ -37,14 +37,14 @@ const jwtSecret = env("JWT_SECRET")
 const githubClientId = env("RIN_GITHUB_CLIENT_ID")
 const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
 const guestAccessCode = env("GUEST_ACCESS_CODE")
+const rssHubAccessKey = env("RSSHUB_ACCESS_KEY")
 
 Bun.write('wrangler.toml', stripIndent(`
 #:schema node_modules/wrangler/config-schema.json
 name = "${WORKER_NAME}"
 main = "server/src/_worker.ts"
-compatibility_date = "2024-05-29"
-# compatibility_flags = ["nodejs_compat"]
-node_compat = true
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 FRONTEND_URL = "${FRONTEND_URL}"
@@ -161,6 +161,7 @@ await putSecret('RIN_GITHUB_CLIENT_ID', githubClientId)
 await putSecret('RIN_GITHUB_CLIENT_SECRET', githubClientSecret)
 await putSecret('JWT_SECRET', jwtSecret)
 await putSecret('GUEST_ACCESS_CODE', guestAccessCode)
+await putSecret('RSSHUB_ACCESS_KEY', rssHubAccessKey)
 
 console.log(`Put Done.`)
 console.log(`----------------------------`)

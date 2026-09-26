@@ -25,6 +25,16 @@ function rssHubBase() {
   return (getEnv().RSSHUB_BASE_URL?.trim() || 'https://rsshub.app').replace(/\/$/, '');
 }
 
+function isRssHubUrl(value: URL) {
+  try { return value.origin === new URL(rssHubBase()).origin; } catch { return false; }
+}
+
+function authenticatedRssHubUrl(value: URL) {
+  const key = getEnv().RSSHUB_ACCESS_KEY?.trim();
+  if (key && isRssHubUrl(value) && !value.searchParams.has('key')) value.searchParams.set('key', key);
+  return value;
+}
+
 function normalizedSource(value: string) {
   let normalized = value.trim();
   if (normalized.startsWith('/')) normalized = `${rssHubBase()}${normalized}`;
@@ -40,9 +50,10 @@ function normalizedSource(value: string) {
 
 async function safeFetch(value: string, accept: string, conditional?: { etag: string; lastModified: string }, redirects = 0): Promise<{ unchanged: boolean; response: Response; body: string; finalUrl: string }> {
   const url = validatedFeedUrl(value); if (!url) throw new Error('仅支持公开 HTTPS 地址'); if (redirects > 5) throw new Error('重定向次数过多');
+  const requestUrl = authenticatedRssHubUrl(new URL(url));
   const headers = new Headers({ Accept: accept, 'User-Agent': 'Shjdness-RSS/2.0 (+https://shjdness.github.io/life/rss)' }); if (conditional?.etag) headers.set('If-None-Match', conditional.etag); if (conditional?.lastModified) headers.set('If-Modified-Since', conditional.lastModified);
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15_000);
-  const response = await fetch(url.toString(), { headers, redirect: 'manual', signal: controller.signal }).finally(() => clearTimeout(timeout));
+  const response = await fetch(requestUrl.toString(), { headers, redirect: 'manual', signal: controller.signal }).finally(() => clearTimeout(timeout));
   if (response.status >= 300 && response.status < 400) { const location = response.headers.get('location'); if (!location) throw new Error('重定向无有效地址'); return safeFetch(new URL(location, url).toString(), accept, conditional, redirects + 1); }
   if (response.status === 304) return { unchanged: true, response, body: '', finalUrl: url.toString() };
   if (!response.ok) {
@@ -55,25 +66,28 @@ async function safeFetch(value: string, accept: string, conditional?: { etag: st
 
 const feedAccept = 'application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, application/json;q=0.9';
 type MediaType = 'text' | 'video' | 'image' | 'audio' | 'external';
-type ParsedItem = { externalId: string; title: string; url: string; summary: string; author: string; publishedAt: Date; mediaType: MediaType; mediaUrl: string; embedUrl: string; thumbnailUrl: string; duration: number; contentHtml: string };
+type ParsedItem = { externalId: string; title: string; url: string; summary: string; author: string; publishedAt: Date; mediaType: MediaType; mediaUrl: string; embedUrl: string; thumbnailUrl: string; mediaJson: string; duration: number; contentHtml: string };
 const youtubeId = (url: string, fallback = '') => { try { const parsed = new URL(url); return parsed.searchParams.get('v') || (parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1) : parsed.pathname.match(/\/shorts\/([^/?]+)/)?.[1]) || fallback; } catch { return fallback; } };
-const firstImage = (value: unknown) => text(value).match(/<img\b[^>]*src=["']([^"']+)["']/i)?.[1] || '';
+const decodeUrl = (value: string) => value.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#47;/g, '/');
+const imagesFrom = (value: unknown) => [...new Set([...text(value).matchAll(/<img\b[^>]*(?:src|data-src)=["']([^"']+)["']/gi)].map(match => decodeUrl(match[1])).filter(url => /^https?:\/\//i.test(url)))].slice(0, 16);
 
 function mediaFor(entry: Record<string, any>, url: string) {
   const enclosure = asArray(entry.enclosure)[0] || {}; const media = asArray(entry['media:content'])[0] || {}; const thumb = asArray(entry['media:thumbnail'])[0] || {};
-  let mediaUrl = text(media['@_url'] || enclosure['@_url'] || enclosure.url); const mime = text(media['@_type'] || enclosure['@_type'] || enclosure.type).toLowerCase(); const videoId = clean(entry['yt:videoId'], 100) || youtubeId(url);
-  if (videoId || mime.startsWith('video/')) return { mediaType: 'video' as const, mediaUrl, embedUrl: videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : '', thumbnailUrl: text(thumb['@_url']) || (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : mediaUrl), duration: Number(media['@_duration'] || 0) || 0 };
+  const content = entry['content:encoded'] || entry.description || entry.content || entry.summary;
+  const images = imagesFrom(content); let mediaUrl = text(media['@_url'] || enclosure['@_url'] || enclosure.url); const mime = text(media['@_type'] || enclosure['@_type'] || enclosure.type).toLowerCase(); const videoId = clean(entry['yt:videoId'], 100) || youtubeId(url);
+  if (videoId || mime.startsWith('video/')) return { mediaType: 'video' as const, mediaUrl, embedUrl: videoId ? `https://www.youtube.com/embed/${videoId}` : '', thumbnailUrl: text(thumb['@_url']) || (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : mediaUrl), mediaJson: '[]', duration: Number(media['@_duration'] || 0) || 0 };
   const bilibiliId = url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1];
-  if (bilibiliId) return { mediaType: 'video' as const, mediaUrl: '', embedUrl: `https://player.bilibili.com/player.html?bvid=${bilibiliId}`, thumbnailUrl: text(thumb['@_url']) || firstImage(entry['content:encoded'] || entry.description || entry.content), duration: 0 };
-  if (!mediaUrl) mediaUrl = firstImage(entry['content:encoded'] || entry.description || entry.content || entry.summary);
-  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif)(?:\?|$)/i.test(mediaUrl)) return { mediaType: 'image' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']) || mediaUrl, duration: 0 };
-  if (mime.startsWith('audio/')) return { mediaType: 'audio' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']), duration: Number(media['@_duration'] || 0) || 0 };
-  return { mediaType: 'text' as const, mediaUrl: '', embedUrl: '', thumbnailUrl: text(thumb['@_url']), duration: 0 };
+  if (bilibiliId) return { mediaType: 'video' as const, mediaUrl: '', embedUrl: `https://player.bilibili.com/player.html?bvid=${bilibiliId}&high_quality=1`, thumbnailUrl: text(thumb['@_url']) || images[0] || '', mediaJson: '[]', duration: 0 };
+  if (!mediaUrl) mediaUrl = images[0] || '';
+  const gallery = [...new Set([mediaUrl, ...images].filter(Boolean))];
+  if (mime.startsWith('image/') || gallery.length || /\.(png|jpe?g|gif|webp|avif)(?:\?|$)/i.test(mediaUrl)) return { mediaType: 'image' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']) || mediaUrl, mediaJson: JSON.stringify(gallery), duration: 0 };
+  if (mime.startsWith('audio/')) return { mediaType: 'audio' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']), mediaJson: '[]', duration: Number(media['@_duration'] || 0) || 0 };
+  return { mediaType: 'text' as const, mediaUrl: '', embedUrl: '', thumbnailUrl: text(thumb['@_url']), mediaJson: '[]', duration: 0 };
 }
 
 function parseFeed(body: string, fallbackUrl: string) {
   if (body.trim().startsWith('{')) {
-    const json = JSON.parse(body) as Record<string, any>; const items = asArray(json.items as Record<string, any>[]).map(item => { const url = clean(item.url || item.external_url || fallbackUrl, 2000); const attachment = asArray(item.attachments)[0] || {}; const mime = text(attachment.mime_type).toLowerCase(); const mediaUrl = clean(attachment.url, 2000); const mediaType: MediaType = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : 'text'; return { externalId: clean(item.id || url, 1000), title: clean(item.title || '未命名条目', 500), url, summary: clean(item.summary || item.content_text || item.content_html), author: clean((asArray(item.authors)[0] || {}).name || item.author || '', 200), publishedAt: dateOf(item.date_published || item.date_modified), mediaType, mediaUrl, embedUrl: '', thumbnailUrl: clean(item.image || item.banner_image || (mediaType === 'image' ? mediaUrl : ''), 2000), duration: Number(attachment.duration_in_seconds || 0) || 0, contentHtml: clean(item.content_text || item.content_html || item.summary, 20_000) }; }).filter(item => item.externalId && item.url);
+    const json = JSON.parse(body) as Record<string, any>; const items = asArray(json.items as Record<string, any>[]).map(item => { const url = clean(item.url || item.external_url || fallbackUrl, 2000); const attachments = asArray(item.attachments); const attachment = attachments[0] || {}; const mime = text(attachment.mime_type).toLowerCase(); const mediaUrl = clean(attachment.url, 2000); const images = attachments.filter(value => text(value.mime_type).toLowerCase().startsWith('image/')).map(value => clean(value.url, 2000)).filter(Boolean); const mediaType: MediaType = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') || images.length ? 'image' : mime.startsWith('audio/') ? 'audio' : 'text'; return { externalId: clean(item.id || url, 1000), title: clean(item.title || '未命名条目', 500), url, summary: clean(item.summary || item.content_text || item.content_html), author: clean((asArray(item.authors)[0] || {}).name || item.author || '', 200), publishedAt: dateOf(item.date_published || item.date_modified), mediaType, mediaUrl, embedUrl: '', thumbnailUrl: clean(item.image || item.banner_image || (mediaType === 'image' ? mediaUrl : ''), 2000), mediaJson: JSON.stringify(images.length ? images : mediaType === 'image' && mediaUrl ? [mediaUrl] : []), duration: Number(attachment.duration_in_seconds || 0) || 0, contentHtml: clean(item.content_text || item.content_html || item.summary, 20_000) }; }).filter(item => item.externalId && item.url);
     return { title: clean(json.title || new URL(fallbackUrl).hostname, 160), description: clean(json.description, 500), siteUrl: clean(json.home_page_url || fallbackUrl, 2000), icon: clean(json.icon || json.favicon, 2000), items };
   }
   const document = parser.parse(body) as Record<string, any>; const channel = document.rss?.channel || document.channel; const atom = document.feed; const source = channel || atom; if (!source) throw new Error('无法识别 RSS、Atom 或 JSON Feed 格式');
@@ -82,11 +96,12 @@ function parseFeed(body: string, fallbackUrl: string) {
   return { title: clean(source.title || new URL(fallbackUrl).hostname, 160), description: clean(source.description || source.subtitle, 500), siteUrl: siteLink || fallbackUrl, icon: clean(source.icon || source.logo, 2000), items };
 }
 
-const platformFor = (value: string) => { const url = new URL(value); const host = url.hostname.toLowerCase(); const path = url.pathname.toLowerCase(); if (host.includes('youtube.com') || host === 'youtu.be') return 'youtube'; if (host.includes('bilibili.com') || path.includes('/bilibili/')) return 'bilibili'; if (host === 'x.com' || host.includes('twitter.com') || path.includes('/twitter/') || path.includes('/x/')) return 'x'; if (host.includes('rsshub')) return 'rsshub'; return 'other'; };
+const platformFor = (value: string) => { const url = new URL(value); const host = url.hostname.toLowerCase(); const path = url.pathname.toLowerCase(); if (host.includes('youtube.com') || host === 'youtu.be' || path.includes('/youtube/')) return 'youtube'; if (host.includes('bilibili.com') || path.includes('/bilibili/')) return 'bilibili'; if (host.includes('pixiv.net') || path.includes('/pixiv/')) return 'pixiv'; if (host === 'x.com' || host.includes('twitter.com') || path.includes('/twitter/') || path.includes('/x/')) return 'x'; if (host.includes('rsshub')) return 'rsshub'; return 'other'; };
 async function resolveSource(value: string) {
   const source = validatedFeedUrl(normalizedSource(value)); if (!source) throw new Error('请输入公开订阅地址'); const platform = platformFor(source.toString());
-  if (platform === 'bilibili' && source.hostname.includes('bilibili.com') && !source.hostname.includes('rsshub')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/bilibili/user/video/${uid}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'bilibili', uid)]; }
-  if (platform === 'x' && !source.hostname.includes('rsshub')) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/twitter/user/${username}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'x', username)]; }
+  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/bilibili/user/video/${uid}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'bilibili', uid)]; }
+  if (platform === 'pixiv' && source.hostname.includes('pixiv.net')) { const parts = source.pathname.split('/').filter(Boolean); const id = parts[0] === 'users' ? parts[1] : parts.find(value => /^\d+$/.test(value)); if (!id) throw new Error('请粘贴 Pixiv 用户主页或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/pixiv/user/${id}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'pixiv', id)]; }
+  if (platform === 'x' && (source.hostname === 'x.com' || source.hostname.includes('twitter.com'))) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/twitter/user/${username}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'x', username)]; }
   if (platform === 'youtube' && !source.pathname.includes('/feeds/videos.xml')) {
     const pathId = source.pathname.match(/\/channel\/(UC[\w-]+)/)?.[1];
     let channelId = pathId || '';
@@ -113,7 +128,29 @@ async function resolveSource(value: string) {
   for (const href of [...new Set(hrefs)].slice(0, 5)) { const feedUrl = new URL(href, fetched.finalUrl).toString(); if (!validatedFeedUrl(feedUrl)) continue; try { const feed = await safeFetch(feedUrl, feedAccept); results.push(candidate(parseFeed(feed.body, feedUrl), fetched.finalUrl, feedUrl, 'autodiscovery', platform, '')); } catch {} }
   if (!results.length) throw new Error('未发现可订阅源；也可以直接粘贴 Feed 地址'); return results;
 }
-function candidate(parsed: ReturnType<typeof parseFeed>, sourceUrl: string, feedUrl: string, provider: string, platform: string, externalId: string) { const contentType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : 'text'; const category = platform === 'youtube' || platform === 'bilibili' ? '视频' : platform === 'x' ? '社交媒体' : '其他'; return { sourceUrl, feedUrl, provider, platform, externalId, title: parsed.title, description: parsed.description, siteUrl: parsed.siteUrl, icon: parsed.icon, category, contentType, preview: parsed.items.slice(0, 3) }; }
+function candidate(parsed: ReturnType<typeof parseFeed>, sourceUrl: string, feedUrl: string, provider: string, platform: string, externalId: string) { const contentType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : 'text'; const category = platform === 'youtube' || platform === 'bilibili' ? '视频' : platform === 'pixiv' ? '图片' : platform === 'x' ? '社交媒体' : '其他'; return { sourceUrl, feedUrl, provider, platform, externalId, title: parsed.title, description: parsed.description, siteUrl: parsed.siteUrl, icon: parsed.icon, category, contentType, preview: parsed.items.slice(0, 3) }; }
+
+async function repairSubscriptionSource(db: ReturnType<typeof getDB>, subscription: typeof rssSubscriptions.$inferSelect) {
+  const candidates = await resolveSource(subscription.sourceUrl || subscription.feedUrl);
+  const resolved = candidates.find(item => item.platform === subscription.platform) || candidates[0];
+  if (!resolved) throw new Error('无法重新识别来源');
+  await db.update(rssSubscriptions).set({
+    feedUrl: resolved.feedUrl,
+    sourceUrl: resolved.sourceUrl,
+    title: resolved.title || subscription.title,
+    siteUrl: resolved.siteUrl || subscription.siteUrl,
+    favicon: resolved.icon || subscription.favicon,
+    provider: resolved.provider,
+    platform: resolved.platform,
+    externalId: resolved.externalId || subscription.externalId,
+    contentType: resolved.contentType || subscription.contentType,
+    etag: '',
+    lastModified: '',
+    lastError: '',
+    updatedAt: new Date(),
+  }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, subscription.ownerId)));
+  return true;
+}
 
 export async function refreshSubscription(db: ReturnType<typeof getDB>, ownerId: number, subscription: typeof rssSubscriptions.$inferSelect) {
   const now = new Date(); try { const effectiveFeedUrl = normalizedSource(subscription.feedUrl); const fetched = await safeFetch(effectiveFeedUrl, feedAccept, subscription); if (fetched.unchanged) { await db.update(rssSubscriptions).set({ feedUrl: effectiveFeedUrl, lastFetchedAt: now, lastError: '', updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); return { added: 0, unchanged: true }; }
@@ -137,6 +174,20 @@ export async function refreshSubscriptions(db: ReturnType<typeof getDB>, subscri
   return { refreshed: subscriptions.length - failures.length, total: subscriptions.length, added: results.reduce((sum, result) => sum + (result?.status === 'fulfilled' ? result.value.added : 0), 0), failed: failures.length, failures };
 }
 
+export async function refreshSubscriptionsWithRepair(db: ReturnType<typeof getDB>, subscriptions: Array<typeof rssSubscriptions.$inferSelect>) {
+  let repaired = 0;
+  const prepared = await Promise.all(subscriptions.map(async source => {
+    if (!source.lastError && !source.feedUrl.includes('rsshub.app')) return source;
+    try {
+      await repairSubscriptionSource(db, source);
+      const updated = await db.query.rssSubscriptions.findFirst({ where: eq(rssSubscriptions.id, source.id) });
+      if (updated) { repaired += 1; return updated; }
+    } catch { /* Keep the previous source in this batch when automatic repair is unavailable. */ }
+    return source;
+  }));
+  return { ...await refreshSubscriptions(db, prepared), repaired };
+}
+
 export function RssService() {
   const db = getDB(); const requireLife = ({ uid, lifeAccess, set }: { uid?: number; lifeAccess?: boolean; set: { status?: number | string } }) => { if (!uid || !lifeAccess) { set.status = 403; return false; } return true; };
   return new Elysia({ aot: false }).use(setup()).group('/rss', group => group
@@ -153,9 +204,9 @@ export function RssService() {
     .post('/refresh', async ({ uid, lifeAccess, set }) => {
       if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
       const subscriptions = await db.query.rssSubscriptions.findMany({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.active, 1)) });
-      return refreshSubscriptions(db, subscriptions);
+      return refreshSubscriptionsWithRepair(db, subscriptions);
     })
-    .post('/subscriptions/:id/refresh', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 404; return '订阅不存在'; } try { return await refreshSubscription(db, uid!, subscription); } catch (error) { set.status = 422; return error instanceof Error ? error.message : '更新失败'; } })
+    .post('/subscriptions/:id/refresh', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; let subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 404; return '订阅不存在'; } try { if (subscription.lastError || subscription.feedUrl.includes('rsshub.app')) { await repairSubscriptionSource(db, subscription); subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) throw new Error('订阅修复后读取失败'); } return await refreshSubscription(db, uid!, subscription); } catch (error) { set.status = 422; return error instanceof Error ? error.message : '更新失败'; } })
     .post('/items/mark-all-read', async ({ uid, lifeAccess, set }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const now = new Date(); await db.update(rssItems).set({ read: 1, readAt: now, updatedAt: now }).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))); return 'OK'; })
     .post('/items/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const item = await db.query.rssItems.findFirst({ where: and(eq(rssItems.id, Number(params.id)), eq(rssItems.ownerId, uid!)) }); if (!item) { set.status = 404; return '条目不存在'; } const now = new Date(); await db.update(rssItems).set({ ...(body.read === undefined ? {} : { read: body.read ? 1 : 0, readAt: body.read ? (item.readAt || now) : null }), ...(body.starred === undefined ? {} : { starred: body.starred ? 1 : 0, starredAt: body.starred ? (item.starredAt || now) : null }), updatedAt: now }).where(and(eq(rssItems.id, item.id), eq(rssItems.ownerId, uid!))); return 'OK'; }, { body: t.Object({ read: t.Optional(t.Boolean()), starred: t.Optional(t.Boolean()) }) })
     .delete('/subscriptions/:id', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const result = await db.delete(rssSubscriptions).where(and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!))).returning({ id: rssSubscriptions.id }); if (!result.length) { set.status = 404; return '订阅不存在'; } return 'OK'; })

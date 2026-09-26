@@ -48,6 +48,11 @@ S3_SECRET_ACCESS_KEY=<你的S3SecretAccessKey>
 
 [环境变量列表](./ENV.md)
 
+如需为 Bilibili、Pixiv 与 X 提供稳定订阅解析，请先按
+[`deploy/rsshub/README.md`](../deploy/rsshub/README.md) 部署私有 RSSHub，然后在
+GitHub Actions Variables 中设置 `RSSHUB_BASE_URL`，在 Secrets 中设置
+`RSSHUB_ACCESS_KEY`。YouTube 官方 Feed 不依赖 RSSHub。
+
 > [!TIP]
 > 下文代码块中若出现形如 <文字> 的内容表示需要根据文字提示替换为自己的内容（`<`和`>`不要保留），如：
 >
@@ -277,5 +282,4 @@ S3_ACCESS_HOST=https://image.xeu.life
 
 
 https://github.com/openRin/Rin/assets/36541432/3ed98e93-2cc3-4e5f-a885-4d16a48500c3
-
 

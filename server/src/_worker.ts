@@ -8,7 +8,7 @@ import * as schema from './db/schema';
 import { app } from "./server";
 import { CacheImpl } from "./utils/cache";
 import { dbToken, envToken } from "./utils/di";
-import { refreshSubscriptions } from "./services/rss";
+import { refreshSubscriptionsWithRepair } from "./services/rss";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>
 
 export default {
@@ -36,6 +36,6 @@ export default {
         Container.set(envToken, env)
         Container.set(dbToken, database)
         const subscriptions = await database.query.rssSubscriptions.findMany({ where: eq(schema.rssSubscriptions.active, 1) })
-        await refreshSubscriptions(database, subscriptions)
+        await refreshSubscriptionsWithRepair(database, subscriptions)
     },
 }

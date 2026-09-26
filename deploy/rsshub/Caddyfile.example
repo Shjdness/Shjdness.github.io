@@ -1,0 +1,7 @@
+# Replace the hostname with a DNS name that points to this server.
+# A real HTTPS hostname is required because the Cloudflare Worker rejects
+# private, plain-HTTP and literal-IP feed addresses.
+rss.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:1200
+}

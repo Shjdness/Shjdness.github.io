@@ -38,6 +38,7 @@
 | WEBHOOK_URL     | 否    | 新增评论时发送 Webhook 通知目标地址                  | 无           | https://webhook.example.com/webhook                             |
 | S3_ACCESS_HOST  | 否    | S3 存储桶访问地址                              | S3_ENDPOINT | https://image.xeu.life                                          |
 | S3_CACHE_FOLDER | 否    | S3 缓存文件夹（用于 SEO、高频请求缓存）                 | cache/      | cache/                                                          |
+| RSSHUB_BASE_URL | 否    | 自建 RSSHub 的 HTTPS 根地址（末尾不带 `/`）             | https://rsshub.app | https://rss.example.com                                  |
 
 **加密环境变量，以下所有内容均为必须（Webhook 除外）**
 
@@ -51,5 +52,6 @@
 | RIN_GITHUB_CLIENT_SECRET | Github OAuth 的客户端密钥                                         | 1234567890abcdef1234567890abcdef12345678                         |
 | JWT_SECRET               | JWT 认证所需密钥，可为常规格式的任意密码                                      | J0sT%Ch@nge#Me1                                                  |
 | GUEST_ACCESS_CODE        | 访客写作者登录安全码，请使用至少 12 位且不可提交到公开仓库                       | a-long-private-code                                              |
+| RSSHUB_ACCESS_KEY        | 自建 RSSHub 的访问密钥；只由 Worker 使用，不能暴露给浏览器                     | another-long-private-code                                        |
 | S3_ACCESS_KEY_ID         | S3 存储桶访问所需的 KEY ID，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌 ID | 1234567890abcdef1234567890abcd                                   |
 | S3_SECRET_ACCESS_KEY     | S3 存储桶访问所需的 Secret，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌    | 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef |
