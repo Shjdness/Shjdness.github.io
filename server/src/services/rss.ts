@@ -88,12 +88,12 @@ function bridgeCandidate(sourceUrl: string, route: string, platform: 'bilibili' 
 }
 async function resolveSource(value: string) {
   const source = validatedFeedUrl(normalizedSource(value)); if (!source) throw new Error('请输入公开订阅地址'); const platform = platformFor(source.toString());
-  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/bilibili/user/video/${uid}`, 'bilibili', uid)]; }
+  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/bilibili/user/dynamic/${uid}`, 'bilibili', uid)]; }
   if (platform === 'pixiv' && source.hostname.includes('pixiv.net')) { const parts = source.pathname.split('/').filter(Boolean); const id = parts[0] === 'users' ? parts[1] : parts.find(value => /^\d+$/.test(value)); if (!id) throw new Error('请粘贴 Pixiv 用户主页或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/pixiv/user/${id}`, 'pixiv', id)]; }
   if (platform === 'x' && (source.hostname === 'x.com' || source.hostname.includes('twitter.com'))) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/twitter/user/${username}`, 'x', username)]; }
   if (source.hostname.includes('rsshub')) {
     const path = source.pathname.replace(/\/$/, '');
-    const bili = path.match(/^\/bilibili\/user\/video\/(\d+)$/); if (bili) return [bridgeCandidate(source.toString(), path, 'bilibili', bili[1])];
+    const bili = path.match(/^\/bilibili\/user\/(?:video|dynamic)\/(\d+)$/); if (bili) return [bridgeCandidate(source.toString(), `/bilibili/user/dynamic/${bili[1]}`, 'bilibili', bili[1])];
     const pixiv = path.match(/^\/pixiv\/user\/(\d+)$/); if (pixiv) return [bridgeCandidate(source.toString(), path, 'pixiv', pixiv[1])];
     const twitter = path.match(/^\/(?:twitter|x)\/user\/([^/]+)$/); if (twitter) return [bridgeCandidate(source.toString(), `/twitter/user/${twitter[1]}`, 'x', twitter[1])];
     throw new Error('该 RSSHub 路由暂未加入安全的定时同步白名单');
@@ -206,7 +206,7 @@ export function RssService() {
     .get('/bridge/sources', async ({ headers, set }) => {
       if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
       const sources = await db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.active, 1) });
-      return { sources: sources.filter(isBridgeSubscription).map(source => ({ id: source.id, title: source.alias || source.title, route: new URL(normalizedSource(source.feedUrl)).pathname + new URL(normalizedSource(source.feedUrl)).search })) };
+      return { sources: sources.filter(isBridgeSubscription).map(source => { const url = new URL(normalizedSource(source.feedUrl)); const storedRoute = url.pathname + url.search; const route = source.platform === 'bilibili' ? storedRoute.replace(/^\/bilibili\/user\/video\//, '/bilibili/user/dynamic/') : storedRoute; return { id: source.id, title: source.alias || source.title, route }; }) };
     })
     .post('/bridge/ingest', async ({ headers, set, body }) => {
       if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
