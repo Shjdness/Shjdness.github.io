@@ -1,71 +1,47 @@
-# Rin
+# Shjdshy · Blog & Life
 
-English | [简体中文](./README_zh_CN.md)
+这是 `shjdness.github.io` 的实际源码仓库。项目最初基于开源项目 Rin，现已演进为一个简体中文、静态优先的个人 Blog 与 Private Life 工作台。
 
-![Cover](https://repository-images.githubusercontent.com/803866357/958bc2c1-1703-4127-920c-853291495bdc)
+## 当前结构
 
-![GitHub commit activity](https://img.shields.io/github/commit-activity/w/openRin/Rin?style=for-the-badge)
-![GitHub branch check runs](https://img.shields.io/github/check-runs/openRin/Rin/main?style=for-the-badge)
-![GitHub top language](https://img.shields.io/github/languages/top/openRin/Rin?style=for-the-badge)
-![GitHub License](https://img.shields.io/github/license/openRin/Rin?style=for-the-badge)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/openRin/Rin/deploy.yaml?style=for-the-badge)
-
-# Introduction
-
-Rin is a blog based on Cloudflare Pages + Workers + D1 + R2. It does not require a server to deploy. It can be deployed just with a domain name that resolves to Cloudflare.
-
-## Demo
-
-[xeu.life](https://xeu.life)
-
-## Features
-1. Support GitHub OAuth login. By default, the first logged-in user has management privileges, and other users are ordinary users
-2. Support article writing and editing
-3. Support local real-time saving of modifications/edits to any article without interfering between multiple articles
-4. Support setting it as visible only to yourself, which can serve as a draft box for cloud synchronization or record more private content
-5. Support dragging/pasting uploaded images to a bucket that supports the S3 protocol and generating links
-6. Support setting article aliases, and access articles through links such as https://xeu.life/about
-7. Support articles not being listed in the homepage list
-8. Support replying to comment articles/deleting comments
-9. Support sending comment notifications through Webhook
-10. Support automatic identification of the first picture in the article and display it as the header image in the article list
-11. Support inputting tag texts such as "#Blog #Cloudflare" and automatically parsing them into tags
-12. For more features, please refer to https://xeu.life
-
-# Documentation
-[rin-docs.xeu.life](https://rin-docs.xeu.life)
-
-## Star History
-
-<a href="https://star-history.com/#openRin/Rin&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=openRin/Rin&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=openRin/Rin&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=openRin/Rin&type=Date" />
- </picture>
-</a>
-
-# License
+```text
+Home
+├── Blog
+│   ├── 文章 / 时间轴 / 日记 / 标签 / 写作
+│   └── Gallery
+└── Life
+    ├── 总览 / 习惯 / 日历 / 年历 / 番茄钟
+    ├── RSS 桌面阅读器
+    └── Guide / Saved Advice
 ```
-MIT License
 
-Copyright (c) 2024 Xeu
+## 技术边界
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+- `client/`：React + Vite 静态前端，发布到 GitHub Pages。
+- `server/`：Cloudflare Worker API 与 D1 数据层。
+- `server/sql/`：按顺序执行的 D1 数据库迁移。
+- `scripts/`：部署、迁移及定时 RSSHub 同步脚本。
+- `.github/workflows/`：前端、后端与 RSSHub 定时任务。
+- `docs/`：当前架构、环境变量和设计记录。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 的 Bilibili、Pixiv 与 X 来源由 GitHub Actions 在新加坡时间 07:00、11:00、14:00、17:00 临时启动 RSSHub 抓取；任务结束即释放实例，不依赖公共 RSSHub 或长期服务器。YouTube 使用官方频道 Feed。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+## 部署
+
+- 前端：`.github/workflows/pages.yaml`
+- Worker 与 D1：`.github/workflows/deploy.yaml`
+- RSSHub 抓取：`.github/workflows/rss-sync.yaml`
+
+部署所需变量见 [docs/ENV.md](docs/ENV.md)，系统设计见 [docs/architecture.md](docs/architecture.md)。密钥只保存在 GitHub Actions Secrets 与 Cloudflare Worker Secrets 中，不应提交到仓库。
+
+## 本地验证
+
+```bash
+bun install --frozen-lockfile
+bun run check
+bun run b
 ```
+
+## 许可与来源
+
+项目保留 Rin 的 MIT 许可与版权声明，详见 [LICENSE](LICENSE)。当前站点的私人内容、图片与部署凭据不因开源许可而获得额外授权。

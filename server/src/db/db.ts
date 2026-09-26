@@ -21,10 +21,8 @@ export interface Env {
     WEBHOOK_URL: string,
     S3_FORCE_PATH_STYLE: string,
     GUEST_ACCESS_CODE: string,
-    /** Configurable RSSHub origin; keep the route path unchanged when moving instances. */
-    RSSHUB_BASE_URL: string,
-    /** Optional self-hosted RSSHub access key. Never expose this value to the browser. */
-    RSSHUB_ACCESS_KEY: string,
+    /** Shared secret used only by the scheduled GitHub RSSHub bridge. */
+    RSS_SYNC_TOKEN: string,
 }
 
 export function db(env: Env) {

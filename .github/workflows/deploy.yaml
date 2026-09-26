@@ -39,7 +39,7 @@ jobs:
           RIN_GITHUB_CLIENT_ID: ${{ secrets.RIN_GITHUB_CLIENT_ID }}
           RIN_GITHUB_CLIENT_SECRET: ${{ secrets.RIN_GITHUB_CLIENT_SECRET }}
           GUEST_ACCESS_CODE: ${{ secrets.GUEST_ACCESS_CODE }}
-          RSSHUB_ACCESS_KEY: ${{ secrets.RSSHUB_ACCESS_KEY }}
+          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
 
           DB_NAME: ${{ vars.DB_NAME }}
           WORKER_NAME: ${{ vars.WORKER_NAME }}
@@ -53,7 +53,6 @@ jobs:
           S3_REGION: ${{ vars.S3_REGION }}
           S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
           WEBHOOK_URL: ${{ vars.WEBHOOK_URL }}
-          RSSHUB_BASE_URL: ${{ vars.RSSHUB_BASE_URL }}
         run: |
           cd Rin/
           bun install --frozen-lockfile

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, like, or } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
 import { XMLParser } from 'fast-xml-parser';
@@ -21,43 +21,25 @@ function validatedFeedUrl(value: string) {
   return url.protocol === 'https:' && !url.username && !url.password && !privateHost && !literalAddress ? url : null;
 }
 
-function rssHubBase() {
-  return (getEnv().RSSHUB_BASE_URL?.trim() || 'https://rsshub.app').replace(/\/$/, '');
-}
-
-function isRssHubUrl(value: URL) {
-  try { return value.origin === new URL(rssHubBase()).origin; } catch { return false; }
-}
-
-function authenticatedRssHubUrl(value: URL) {
-  const key = getEnv().RSSHUB_ACCESS_KEY?.trim();
-  if (key && isRssHubUrl(value) && !value.searchParams.has('key')) value.searchParams.set('key', key);
-  return value;
-}
+const RSSHUB_DESCRIPTOR_ORIGIN = 'https://rsshub.internal.invalid';
 
 function normalizedSource(value: string) {
   let normalized = value.trim();
-  if (normalized.startsWith('/')) normalized = `${rssHubBase()}${normalized}`;
+  if (normalized.startsWith('/')) normalized = `${RSSHUB_DESCRIPTOR_ORIGIN}${normalized}`;
   else if (normalized.startsWith('feed://')) normalized = `https://${normalized.slice(7)}`;
   else if (normalized.startsWith('http://')) normalized = `https://${normalized.slice(7)}`;
   else if (!/^https?:\/\//i.test(normalized) && /^[\w.-]+\//.test(normalized)) normalized = `https://${normalized}`;
-  try {
-    const parsed = new URL(normalized);
-    if (parsed.hostname === 'rsshub.app' && rssHubBase() !== 'https://rsshub.app') normalized = `${rssHubBase()}${parsed.pathname}${parsed.search}`;
-  } catch { /* Validation reports malformed URLs below. */ }
   return normalized;
 }
 
 async function safeFetch(value: string, accept: string, conditional?: { etag: string; lastModified: string }, redirects = 0): Promise<{ unchanged: boolean; response: Response; body: string; finalUrl: string }> {
   const url = validatedFeedUrl(value); if (!url) throw new Error('仅支持公开 HTTPS 地址'); if (redirects > 5) throw new Error('重定向次数过多');
-  const requestUrl = authenticatedRssHubUrl(new URL(url));
   const headers = new Headers({ Accept: accept, 'User-Agent': 'Shjdness-RSS/2.0 (+https://shjdness.github.io/life/rss)' }); if (conditional?.etag) headers.set('If-None-Match', conditional.etag); if (conditional?.lastModified) headers.set('If-Modified-Since', conditional.lastModified);
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15_000);
-  const response = await fetch(requestUrl.toString(), { headers, redirect: 'manual', signal: controller.signal }).finally(() => clearTimeout(timeout));
+  const response = await fetch(url.toString(), { headers, redirect: 'manual', signal: controller.signal }).finally(() => clearTimeout(timeout));
   if (response.status >= 300 && response.status < 400) { const location = response.headers.get('location'); if (!location) throw new Error('重定向无有效地址'); return safeFetch(new URL(location, url).toString(), accept, conditional, redirects + 1); }
   if (response.status === 304) return { unchanged: true, response, body: '', finalUrl: url.toString() };
   if (!response.ok) {
-    if (response.status === 403 && url.hostname.includes('rsshub')) throw new Error('RSSHub 拒绝服务器访问（403），请改用自建 RSSHub 实例');
     throw new Error(`来源返回 ${response.status}`);
   }
   if (Number(response.headers.get('content-length') || 0) > 4_000_000) throw new Error('来源内容超过 4MB'); const body = await response.text(); if (body.length > 4_000_000) throw new Error('来源内容超过 4MB');
@@ -97,11 +79,25 @@ function parseFeed(body: string, fallbackUrl: string) {
 }
 
 const platformFor = (value: string) => { const url = new URL(value); const host = url.hostname.toLowerCase(); const path = url.pathname.toLowerCase(); if (host.includes('youtube.com') || host === 'youtu.be' || path.includes('/youtube/')) return 'youtube'; if (host.includes('bilibili.com') || path.includes('/bilibili/')) return 'bilibili'; if (host.includes('pixiv.net') || path.includes('/pixiv/')) return 'pixiv'; if (host === 'x.com' || host.includes('twitter.com') || path.includes('/twitter/') || path.includes('/x/')) return 'x'; if (host.includes('rsshub')) return 'rsshub'; return 'other'; };
+const bridgePlatform = (platform: string) => ['bilibili', 'pixiv', 'x', 'rsshub'].includes(platform);
+const isBridgeSubscription = (source: Pick<typeof rssSubscriptions.$inferSelect, 'platform' | 'provider' | 'feedUrl'>) => source.provider === 'rsshub' || bridgePlatform(source.platform) || source.feedUrl.includes('rsshub');
+function bridgeCandidate(sourceUrl: string, route: string, platform: 'bilibili' | 'pixiv' | 'x', externalId: string) {
+  const title = platform === 'bilibili' ? `Bilibili ${externalId}` : platform === 'pixiv' ? `Pixiv ${externalId}` : `@${externalId}`;
+  const parsed = { title, description: '内容由站点的定时 RSSHub 任务更新', siteUrl: sourceUrl, icon: '', items: [] };
+  return candidate(parsed, sourceUrl, `${RSSHUB_DESCRIPTOR_ORIGIN}${route}`, 'rsshub', platform, externalId);
+}
 async function resolveSource(value: string) {
   const source = validatedFeedUrl(normalizedSource(value)); if (!source) throw new Error('请输入公开订阅地址'); const platform = platformFor(source.toString());
-  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/bilibili/user/video/${uid}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'bilibili', uid)]; }
-  if (platform === 'pixiv' && source.hostname.includes('pixiv.net')) { const parts = source.pathname.split('/').filter(Boolean); const id = parts[0] === 'users' ? parts[1] : parts.find(value => /^\d+$/.test(value)); if (!id) throw new Error('请粘贴 Pixiv 用户主页或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/pixiv/user/${id}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'pixiv', id)]; }
-  if (platform === 'x' && (source.hostname === 'x.com' || source.hostname.includes('twitter.com'))) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); const feedUrl = `${rssHubBase()}/twitter/user/${username}`; const feed = await safeFetch(feedUrl, feedAccept); return [candidate(parseFeed(feed.body, feedUrl), source.toString(), feedUrl, 'rsshub', 'x', username)]; }
+  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/bilibili/user/video/${uid}`, 'bilibili', uid)]; }
+  if (platform === 'pixiv' && source.hostname.includes('pixiv.net')) { const parts = source.pathname.split('/').filter(Boolean); const id = parts[0] === 'users' ? parts[1] : parts.find(value => /^\d+$/.test(value)); if (!id) throw new Error('请粘贴 Pixiv 用户主页或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/pixiv/user/${id}`, 'pixiv', id)]; }
+  if (platform === 'x' && (source.hostname === 'x.com' || source.hostname.includes('twitter.com'))) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/twitter/user/${username}`, 'x', username)]; }
+  if (source.hostname.includes('rsshub')) {
+    const path = source.pathname.replace(/\/$/, '');
+    const bili = path.match(/^\/bilibili\/user\/video\/(\d+)$/); if (bili) return [bridgeCandidate(source.toString(), path, 'bilibili', bili[1])];
+    const pixiv = path.match(/^\/pixiv\/user\/(\d+)$/); if (pixiv) return [bridgeCandidate(source.toString(), path, 'pixiv', pixiv[1])];
+    const twitter = path.match(/^\/(?:twitter|x)\/user\/([^/]+)$/); if (twitter) return [bridgeCandidate(source.toString(), `/twitter/user/${twitter[1]}`, 'x', twitter[1])];
+    throw new Error('该 RSSHub 路由暂未加入安全的定时同步白名单');
+  }
   if (platform === 'youtube' && !source.pathname.includes('/feeds/videos.xml')) {
     const pathId = source.pathname.match(/\/channel\/(UC[\w-]+)/)?.[1];
     let channelId = pathId || '';
@@ -152,9 +148,24 @@ async function repairSubscriptionSource(db: ReturnType<typeof getDB>, subscripti
   return true;
 }
 
+async function ingestParsedFeed(db: ReturnType<typeof getDB>, subscription: typeof rssSubscriptions.$inferSelect, body: string) {
+  const now = new Date();
+  const parsed = parseFeed(body, subscription.feedUrl);
+  let added = 0;
+  for (const item of parsed.items.slice(0, 500)) {
+    const result = await db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId: subscription.ownerId, ...item }).onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id });
+    added += result.length;
+  }
+  const stableType = subscription.platform === 'youtube' || subscription.platform === 'bilibili' ? 'video' : subscription.platform === 'pixiv' ? 'image' : subscription.platform === 'x' ? 'text' : '';
+  const inferredType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : subscription.contentType;
+  await db.update(rssSubscriptions).set({ title: parsed.title || subscription.title, siteUrl: parsed.siteUrl || subscription.siteUrl, favicon: parsed.icon || subscription.favicon, lastFetchedAt: now, lastError: '', contentType: stableType || inferredType, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, subscription.ownerId)));
+  return { added, total: parsed.items.length };
+}
+
 export async function refreshSubscription(db: ReturnType<typeof getDB>, ownerId: number, subscription: typeof rssSubscriptions.$inferSelect) {
+  if (isBridgeSubscription(subscription)) throw new Error('该来源由定时 RSSHub 任务更新');
   const now = new Date(); try { const effectiveFeedUrl = normalizedSource(subscription.feedUrl); const fetched = await safeFetch(effectiveFeedUrl, feedAccept, subscription); if (fetched.unchanged) { await db.update(rssSubscriptions).set({ feedUrl: effectiveFeedUrl, lastFetchedAt: now, lastError: '', updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); return { added: 0, unchanged: true }; }
-    const parsed = parseFeed(fetched.body, subscription.feedUrl); let added = 0; for (const item of parsed.items.slice(0, 250)) { const result = await db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId, ...item }).onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id }); added += result.length; }
+    const parsed = parseFeed(fetched.body, subscription.feedUrl); let added = 0; for (const item of parsed.items.slice(0, 500)) { const result = await db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId, ...item }).onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id }); added += result.length; }
     const origin = new URL(effectiveFeedUrl).origin; await db.update(rssSubscriptions).set({ feedUrl: effectiveFeedUrl, title: parsed.title || subscription.title, siteUrl: parsed.siteUrl || effectiveFeedUrl, favicon: parsed.icon || subscription.favicon || `${origin}/favicon.ico`, etag: fetched.response.headers.get('etag') || '', lastModified: fetched.response.headers.get('last-modified') || '', lastFetchedAt: now, lastError: '', contentType: parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : subscription.contentType, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); return { added, unchanged: false };
   } catch (error) { const message = error instanceof Error ? error.message.slice(0, 240) : '更新失败'; await db.update(rssSubscriptions).set({ lastFetchedAt: now, lastError: message, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); throw new Error(message); }
 }
@@ -175,6 +186,7 @@ export async function refreshSubscriptions(db: ReturnType<typeof getDB>, subscri
 }
 
 export async function refreshSubscriptionsWithRepair(db: ReturnType<typeof getDB>, subscriptions: Array<typeof rssSubscriptions.$inferSelect>) {
+  subscriptions = subscriptions.filter(source => !isBridgeSubscription(source));
   let repaired = 0;
   const prepared = await Promise.all(subscriptions.map(async source => {
     if (!source.lastError && !source.feedUrl.includes('rsshub.app')) return source;
@@ -191,22 +203,38 @@ export async function refreshSubscriptionsWithRepair(db: ReturnType<typeof getDB
 export function RssService() {
   const db = getDB(); const requireLife = ({ uid, lifeAccess, set }: { uid?: number; lifeAccess?: boolean; set: { status?: number | string } }) => { if (!uid || !lifeAccess) { set.status = 403; return false; } return true; };
   return new Elysia({ aot: false }).use(setup()).group('/rss', group => group
-    .get('/', async ({ uid, lifeAccess, set, query }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const limit = Math.min(200, Math.max(10, Number(query.limit || 90))); const offset = Math.max(0, Number(query.offset || 0)); const conditions: SQL[] = [eq(rssItems.ownerId, uid!)]; if (query.filter === 'unread') conditions.push(eq(rssItems.read, 0)); if (query.filter === 'starred') conditions.push(eq(rssItems.starred, 1)); if (query.sourceId) conditions.push(eq(rssItems.subscriptionId, Number(query.sourceId))); if (query.contentType && query.contentType !== 'all') conditions.push(eq(rssItems.mediaType, query.contentType)); if (query.search?.trim()) { const term = `%${query.search.trim()}%`; conditions.push(or(like(rssItems.title, term), like(rssItems.summary, term), like(rssItems.author, term))!); } const where = and(...conditions);
+    .get('/bridge/sources', async ({ headers, set }) => {
+      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
+      const sources = await db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.active, 1) });
+      return { sources: sources.filter(isBridgeSubscription).map(source => ({ id: source.id, title: source.alias || source.title, route: new URL(normalizedSource(source.feedUrl)).pathname + new URL(normalizedSource(source.feedUrl)).search })) };
+    })
+    .post('/bridge/ingest', async ({ headers, set, body }) => {
+      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
+      const source = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, body.subscriptionId), eq(rssSubscriptions.active, 1)) });
+      if (!source || !isBridgeSubscription(source)) { set.status = 404; return 'Source not found'; }
+      try { return await ingestParsedFeed(db, source, body.feed); } catch (error) { const message = error instanceof Error ? error.message.slice(0, 240) : '解析失败'; await db.update(rssSubscriptions).set({ lastFetchedAt: new Date(), lastError: message, updatedAt: new Date() }).where(eq(rssSubscriptions.id, source.id)); set.status = 422; return message; }
+    }, { body: t.Object({ subscriptionId: t.Number(), feed: t.String({ maxLength: 8_000_000 }) }) })
+    .post('/bridge/error', async ({ headers, set, body }) => {
+      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
+      await db.update(rssSubscriptions).set({ lastFetchedAt: new Date(), lastError: body.error.slice(0, 240), updatedAt: new Date() }).where(eq(rssSubscriptions.id, body.subscriptionId)); return 'OK';
+    }, { body: t.Object({ subscriptionId: t.Number(), error: t.String({ maxLength: 500 }) }) })
+    .get('/', async ({ uid, lifeAccess, set, query }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const limit = Math.min(200, Math.max(10, Number(query.limit || 90))); const offset = Math.max(0, Number(query.offset || 0)); const ownedSubscriptions = await db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.ownerId, uid!) }); const matchingSources = ownedSubscriptions.filter(source => (!query.sourceId || source.id === Number(query.sourceId)) && (!query.category || source.category === query.category) && (!query.contentType || query.contentType === 'all' || source.contentType === query.contentType)); const conditions: SQL[] = [eq(rssItems.ownerId, uid!)]; if (query.filter === 'unread') conditions.push(eq(rssItems.read, 0)); if (query.filter === 'starred') conditions.push(eq(rssItems.starred, 1)); if (query.sourceId || query.category || (query.contentType && query.contentType !== 'all')) conditions.push(matchingSources.length ? inArray(rssItems.subscriptionId, matchingSources.map(source => source.id)) : eq(rssItems.subscriptionId, -1)); if (query.search?.trim()) { const term = `%${query.search.trim()}%`; conditions.push(or(like(rssItems.title, term), like(rssItems.summary, term), like(rssItems.author, term))!); } const where = and(...conditions);
       const [subscriptions, groups, items, filteredCount, allCount, unreadCount, starredCount] = await Promise.all([db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.ownerId, uid!), orderBy: [desc(rssSubscriptions.updatedAt)] }), db.select().from(rssSourceGroups).where(eq(rssSourceGroups.ownerId, uid!)).orderBy(rssSourceGroups.sortOrder, rssSourceGroups.id), db.select().from(rssItems).where(where).orderBy(desc(rssItems.publishedAt), desc(rssItems.id)).limit(limit).offset(offset), db.select({ value: count() }).from(rssItems).where(where), db.select({ value: count() }).from(rssItems).where(eq(rssItems.ownerId, uid!)), db.select({ value: count() }).from(rssItems).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))), db.select({ value: count() }).from(rssItems).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.starred, 1)))]); const total = filteredCount[0]?.value || 0; return { subscriptions, groups, items, counts: { all: allCount[0]?.value || 0, unread: unreadCount[0]?.value || 0, starred: starredCount[0]?.value || 0 }, page: { limit, offset, total, hasMore: offset + items.length < total } };
-    }, { query: t.Object({ filter: t.Optional(t.Union([t.Literal('all'), t.Literal('unread'), t.Literal('starred')])), contentType: t.Optional(t.String()), sourceId: t.Optional(t.String()), search: t.Optional(t.String({ maxLength: 120 })), limit: t.Optional(t.String()), offset: t.Optional(t.String()) }) })
+    }, { query: t.Object({ filter: t.Optional(t.Union([t.Literal('all'), t.Literal('unread'), t.Literal('starred')])), contentType: t.Optional(t.String()), sourceId: t.Optional(t.String()), category: t.Optional(t.String({ maxLength: 80 })), search: t.Optional(t.String({ maxLength: 120 })), limit: t.Optional(t.String()), offset: t.Optional(t.String()) }) })
     .post('/resolve', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; try { return { candidates: await resolveSource(body.sourceUrl) }; } catch (error) { set.status = 422; return error instanceof Error ? error.message : '无法识别该来源'; } }, { body: t.Object({ sourceUrl: t.String({ maxLength: 2000 }) }) })
-    .post('/subscriptions', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const feedUrl = validatedFeedUrl(body.feedUrl)?.toString(); if (!feedUrl) { set.status = 400; return '请输入公开 HTTPS 订阅地址'; } const existing = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.feedUrl, feedUrl)) }); if (existing) { set.status = 409; return '该订阅已存在'; } const category = body.category?.trim() || '其他'; await db.insert(rssSourceGroups).values({ ownerId: uid!, name: category }).onConflictDoNothing({ target: [rssSourceGroups.ownerId, rssSourceGroups.name] }); const inserted = await db.insert(rssSubscriptions).values({ ownerId: uid!, feedUrl, sourceUrl: body.sourceUrl || feedUrl, title: body.title?.trim() || '', alias: body.alias?.trim() || '', description: body.description?.trim() || '', category, provider: body.provider || 'manual', platform: body.platform || 'other', externalId: body.externalId || '', contentType: body.contentType || 'text', favicon: body.icon || '' }).returning({ id: rssSubscriptions.id }); const subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, inserted[0].id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 500; return '无法创建订阅'; } try { return { subscriptionId: subscription.id, ...await refreshSubscription(db, uid!, subscription) }; } catch (error) { return { subscriptionId: subscription.id, added: 0, warning: error instanceof Error ? error.message : '首次更新失败，可稍后重试' }; }
+    .post('/subscriptions', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const feedUrl = validatedFeedUrl(body.feedUrl)?.toString(); if (!feedUrl) { set.status = 400; return '请输入公开 HTTPS 订阅地址'; } const existing = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.feedUrl, feedUrl)) }); if (existing) { set.status = 409; return '该订阅已存在'; } const category = body.category?.trim() || '其他'; await db.insert(rssSourceGroups).values({ ownerId: uid!, name: category }).onConflictDoNothing({ target: [rssSourceGroups.ownerId, rssSourceGroups.name] }); const inserted = await db.insert(rssSubscriptions).values({ ownerId: uid!, feedUrl, sourceUrl: body.sourceUrl || feedUrl, title: body.title?.trim() || '', alias: body.alias?.trim() || '', description: body.description?.trim() || '', category, provider: body.provider || 'manual', platform: body.platform || 'other', externalId: body.externalId || '', contentType: body.contentType || 'text', favicon: body.icon || '' }).returning({ id: rssSubscriptions.id }); const subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, inserted[0].id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 500; return '无法创建订阅'; } if (isBridgeSubscription(subscription)) return { subscriptionId: subscription.id, added: 0, queued: true, warning: '订阅已保存，将在下一个定时同步时获取内容' }; try { return { subscriptionId: subscription.id, ...await refreshSubscription(db, uid!, subscription) }; } catch (error) { return { subscriptionId: subscription.id, added: 0, warning: error instanceof Error ? error.message : '首次更新失败，可稍后重试' }; }
     }, { body: t.Object({ feedUrl: t.String({ maxLength: 2000 }), sourceUrl: t.Optional(t.String({ maxLength: 2000 })), title: t.Optional(t.String({ maxLength: 160 })), alias: t.Optional(t.String({ maxLength: 160 })), description: t.Optional(t.String({ maxLength: 500 })), category: t.Optional(t.String({ maxLength: 80 })), provider: t.Optional(t.String()), platform: t.Optional(t.String()), externalId: t.Optional(t.String()), contentType: t.Optional(t.String()), icon: t.Optional(t.String({ maxLength: 2000 })) }) })
     .post('/subscriptions/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const existing = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, id), eq(rssSubscriptions.ownerId, uid!)) }); if (!existing) { set.status = 404; return '订阅不存在'; } const category = body.category?.trim(); if (category) await db.insert(rssSourceGroups).values({ ownerId: uid!, name: category }).onConflictDoNothing({ target: [rssSourceGroups.ownerId, rssSourceGroups.name] }); await db.update(rssSubscriptions).set({ alias: body.alias?.trim(), description: body.description?.trim(), category, updatedAt: new Date() }).where(and(eq(rssSubscriptions.id, id), eq(rssSubscriptions.ownerId, uid!))); return 'OK'; }, { body: t.Object({ alias: t.Optional(t.String({ maxLength: 160 })), description: t.Optional(t.String({ maxLength: 500 })), category: t.Optional(t.String({ maxLength: 80 })) }) })
     .post('/groups', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const name = body.name.trim(); const existing = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.ownerId, uid!), eq(rssSourceGroups.name, name)) }); if (existing) return existing; const inserted = await db.insert(rssSourceGroups).values({ ownerId: uid!, name }).returning(); return inserted[0]; }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }) }) })
+    .post('/groups/reorder', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const groups = await db.select({ id: rssSourceGroups.id }).from(rssSourceGroups).where(eq(rssSourceGroups.ownerId, uid!)); const owned = new Set(groups.map(item => item.id)); const ids = body.ids as number[]; if (ids.length !== owned.size || ids.some((id: number) => !owned.has(id))) { set.status = 400; return '分组顺序不完整'; } await Promise.all(ids.map((id: number, sortOrder: number) => db.update(rssSourceGroups).set({ sortOrder, updatedAt: new Date() }).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))))); return 'OK'; }, { body: t.Object({ ids: t.Array(t.Number()) }) })
     .post('/groups/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const groupItem = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!)) }); if (!groupItem) { set.status = 404; return '分组不存在'; } const name = body.name.trim(); await db.update(rssSourceGroups).set({ name, updatedAt: new Date() }).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))); await db.update(rssSubscriptions).set({ category: name, updatedAt: new Date() }).where(and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.category, groupItem.name))); return 'OK'; }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }) }) })
     .delete('/groups/:id', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const groupItem = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!)) }); if (!groupItem) { set.status = 404; return '分组不存在'; } await db.update(rssSubscriptions).set({ category: '其他', updatedAt: new Date() }).where(and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.category, groupItem.name))); await db.delete(rssSourceGroups).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))); return 'OK'; })
     .post('/refresh', async ({ uid, lifeAccess, set }) => {
       if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
       const subscriptions = await db.query.rssSubscriptions.findMany({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.active, 1)) });
-      return refreshSubscriptionsWithRepair(db, subscriptions);
+      const queued = subscriptions.filter(isBridgeSubscription).length; return { ...await refreshSubscriptionsWithRepair(db, subscriptions), queued };
     })
-    .post('/subscriptions/:id/refresh', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; let subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 404; return '订阅不存在'; } try { if (subscription.lastError || subscription.feedUrl.includes('rsshub.app')) { await repairSubscriptionSource(db, subscription); subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) throw new Error('订阅修复后读取失败'); } return await refreshSubscription(db, uid!, subscription); } catch (error) { set.status = 422; return error instanceof Error ? error.message : '更新失败'; } })
+    .post('/subscriptions/:id/refresh', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; let subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 404; return '订阅不存在'; } if (isBridgeSubscription(subscription)) return { added: 0, queued: true, warning: '该来源按每日四个时段统一同步' }; try { if (subscription.lastError) { await repairSubscriptionSource(db, subscription); subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) throw new Error('订阅修复后读取失败'); } return await refreshSubscription(db, uid!, subscription); } catch (error) { set.status = 422; return error instanceof Error ? error.message : '更新失败'; } })
     .post('/items/mark-all-read', async ({ uid, lifeAccess, set }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const now = new Date(); await db.update(rssItems).set({ read: 1, readAt: now, updatedAt: now }).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))); return 'OK'; })
     .post('/items/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const item = await db.query.rssItems.findFirst({ where: and(eq(rssItems.id, Number(params.id)), eq(rssItems.ownerId, uid!)) }); if (!item) { set.status = 404; return '条目不存在'; } const now = new Date(); await db.update(rssItems).set({ ...(body.read === undefined ? {} : { read: body.read ? 1 : 0, readAt: body.read ? (item.readAt || now) : null }), ...(body.starred === undefined ? {} : { starred: body.starred ? 1 : 0, starredAt: body.starred ? (item.starredAt || now) : null }), updatedAt: now }).where(and(eq(rssItems.id, item.id), eq(rssItems.ownerId, uid!))); return 'OK'; }, { body: t.Object({ read: t.Optional(t.Boolean()), starred: t.Optional(t.Boolean()) }) })
     .delete('/subscriptions/:id', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const result = await db.delete(rssSubscriptions).where(and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!))).returning({ id: rssSubscriptions.id }); if (!result.length) { set.status = 404; return '订阅不存在'; } return 'OK'; })

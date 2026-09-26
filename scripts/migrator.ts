@@ -28,7 +28,6 @@ const S3_FOLDER = renv("S3_FOLDER", 'images/')
 const S3_REGION = renv("S3_REGION", "auto")
 const S3_FORCE_PATH_STYLE = env("S3_FORCE_PATH_STYLE", "false")
 const WEBHOOK_URL = env("WEBHOOK_URL", "")
-const RSSHUB_BASE_URL = env("RSSHUB_BASE_URL", "https://rsshub.app")
 
 // Secrets
 const accessKeyId = env("S3_ACCESS_KEY_ID")
@@ -37,7 +36,7 @@ const jwtSecret = env("JWT_SECRET")
 const githubClientId = env("RIN_GITHUB_CLIENT_ID")
 const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
 const guestAccessCode = env("GUEST_ACCESS_CODE")
-const rssHubAccessKey = env("RSSHUB_ACCESS_KEY")
+const rssSyncToken = env("RSS_SYNC_TOKEN")
 
 Bun.write('wrangler.toml', stripIndent(`
 #:schema node_modules/wrangler/config-schema.json
@@ -57,13 +56,12 @@ S3_ACCESS_HOST = "${S3_ACCESS_HOST}"
 S3_BUCKET = "${S3_BUCKET}"
 S3_FORCE_PATH_STYLE = "${S3_FORCE_PATH_STYLE}"
 WEBHOOK_URL = "${WEBHOOK_URL}"
-RSSHUB_BASE_URL = "${RSSHUB_BASE_URL}"
 
 [placement]
 mode = "smart"
 
 [triggers]
-crons = ["17 */6 * * *"]
+crons = ["0 3,6,9,23 * * *"]
 `))
 
 type D1Item = {
@@ -161,7 +159,7 @@ await putSecret('RIN_GITHUB_CLIENT_ID', githubClientId)
 await putSecret('RIN_GITHUB_CLIENT_SECRET', githubClientSecret)
 await putSecret('JWT_SECRET', jwtSecret)
 await putSecret('GUEST_ACCESS_CODE', guestAccessCode)
-await putSecret('RSSHUB_ACCESS_KEY', rssHubAccessKey)
+await putSecret('RSS_SYNC_TOKEN', rssSyncToken)
 
 console.log(`Put Done.`)
 console.log(`----------------------------`)
