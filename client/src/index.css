@@ -1523,6 +1523,10 @@ a.toc-link {
 .rss-standalone .rss-main.is-reader.is-text{overflow:auto}.rss-standalone .rss-main.is-reader.is-text .rss-reader{height:auto;min-height:100%;overflow:visible}.rss-standalone .rss-main.is-reader.is-text .rss-reader-body p{max-height:none;overflow:visible}
 .rss-standalone .rss-lightbox{position:fixed}
 .header-clock{min-width:4.8rem;color:#334155;font-size:1.2rem;font-weight:900;letter-spacing:.1em;text-shadow:0 1px 12px rgb(255 255 255 / .34)}
+.header-pomodoro{max-width:18rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e11d62;letter-spacing:.03em}
+.rss-standalone-shell{position:relative}
+.rss-pomodoro-status{position:absolute;z-index:8;top:.85rem;right:1rem;display:flex;max-width:min(24rem,42vw);align-items:center;gap:.4rem;padding:.5rem .75rem;border:1px solid rgb(225 29 98 / .28);border-radius:999px;background:rgb(8 24 50 / .88);color:#f8b4c8;font-size:.82rem;font-weight:800;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 .5rem 1.5rem rgb(2 6 23 / .2);backdrop-filter:blur(16px)}
+.rss-heading-actions{display:flex;align-items:center;gap:.45rem}.rss-heading-actions button{display:grid;place-items:center}
 [data-color-mode="dark"] .rss-sidebar-tools{background:rgb(5 16 34 / .92)}
 [data-color-mode="dark"] .header-clock{color:#d8e4f4;text-shadow:0 1px 14px rgb(82 155 255 / .25)}
 @media (max-width:900px){.rss-standalone .rss-workspace-wide{grid-template-columns:17rem minmax(0,1fr)}.rss-standalone .rss-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

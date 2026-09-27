@@ -310,7 +310,7 @@ GitHub main
 
 以下不是前端代码缺陷，而是外部服务条件：
 
-1. Bilibili、Pixiv、X 等 RSSHub 路由的稳定性取决于 RSSHub 实例、目标站点登录限制和 Cookie/代理配置。
+1. Bilibili、X 等 RSSHub 路由的稳定性取决于 RSSHub 实例、目标站点登录限制和 Cookie/代理配置；Pixiv 接入已停用。
 2. 公共 RSSHub 的 403/人机验证不能由网站合法绕过，需要自建 RSSHub 并设置 `RSSHUB_BASE_URL`。
 3. YouTube 官方 Feed 本身只提供有限的最新条目；想获得完整历史需要长期定时抓取、RSSHub 或 YouTube Data API。
 4. 本地离线数据只有在同步队列成功后才会跨设备出现；应在设置或状态栏提示最后同步时间和 pending 数量。
@@ -334,7 +334,7 @@ GitHub main
 ## 14. 后续优先级
 
 ```text
-高：部署自建 RSSHub，设置 RSSHUB_BASE_URL，验证 Bilibili/Pixiv/X
+高：验证定时 RSSHub 的 Bilibili/X 抓取与凭据状态
 高：RSS 状态栏显示最后同步时间、待同步数和失败来源
 中：彻底移除不再使用的旧友链/多语言兼容代码
 中：把 RSS 分组、收藏和订阅设置纳入更完整的跨设备同步

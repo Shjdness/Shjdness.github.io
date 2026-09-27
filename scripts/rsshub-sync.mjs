@@ -20,13 +20,11 @@ let failed = 0
 let skipped = 0
 
 const configured = {
-  pixiv: process.env.RSS_PIXIV_CONFIGURED === 'true',
   bilibili: process.env.RSS_BILIBILI_CONFIGURED === 'true',
   x: process.env.RSS_X_CONFIGURED === 'true',
 }
 
 const missingConfiguration = (source) => {
-  if (source.route.startsWith('/pixiv/') && !configured.pixiv) return '缺少 GitHub Secret：PIXIV_REFRESHTOKEN，Pixiv 官方路由暂不抓取'
   if (source.route.startsWith('/bilibili/') && !configured.bilibili) return '缺少 GitHub Secret：BILIBILI_COOKIE，GitHub 托管出口会被 Bilibili 412 拒绝'
   if (/^\/(?:twitter|x)\//.test(source.route) && !configured.x) return '缺少 GitHub Secret：TWITTER_AUTH_TOKEN，X 官方路由暂不抓取'
   return ''

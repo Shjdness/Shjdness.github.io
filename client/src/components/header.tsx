@@ -10,6 +10,7 @@ import { Button } from "./button";
 import { IconSmall } from "./icon";
 import { Input } from "./input";
 import { Padding } from "./padding";
+import { usePomodoro } from "../state/pomodoro";
 
 
 export function Header({ children }: { children?: React.ReactNode }) {
@@ -238,6 +239,7 @@ function SearchButton({ className, onClose }: { className?: string, onClose?: ()
 }
 
 function LocalClock() {
+    const { timer, running, clock } = usePomodoro();
     const [now, setNow] = useState(new Date());
     useEffect(() => {
         let timer = 0;
@@ -246,6 +248,7 @@ function LocalClock() {
         schedule(); document.addEventListener('visibilitychange', refresh);
         return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', refresh); };
     }, []);
+    if (running) return <Link href="/life/pomodoro" className="header-clock header-pomodoro" title="打开番茄钟">{timer.taskName.trim() ? `${timer.taskName.trim()} · ${clock}` : clock}</Link>;
     return <time className="header-clock" dateTime={now.toISOString()}>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time>;
 }
 

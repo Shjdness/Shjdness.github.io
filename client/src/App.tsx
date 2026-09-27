@@ -25,6 +25,7 @@ import { AppearancePage } from './page/appearance.tsx'
 import { HomePage } from './page/home.tsx'
 import { BlogHomePage } from './page/blog_home.tsx'
 import { DiaryPage } from './page/diary.tsx'
+import { PomodoroProvider } from './state/pomodoro.tsx'
 
 const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
 const WritingPage = lazy(() => import('./page/writing').then(module => ({ default: module.WritingPage })))
@@ -115,6 +116,7 @@ function App() {
     <div className={`site-shell ${location === '/' ? 'site-shell--home' : location.startsWith('/life') ? 'site-shell--life' : 'site-shell--blog'}`} style={appearanceStyle}>
       <ClientConfigContext.Provider value={config}>
         <ProfileContext.Provider value={profile}>
+          <PomodoroProvider>
           <AppearanceContext.Provider value={{
             settings: appearance,
             defaults: appearanceDefaults,
@@ -231,6 +233,7 @@ function App() {
             </Switch>
             </Suspense>
           </AppearanceContext.Provider>
+          </PomodoroProvider>
         </ProfileContext.Provider>
       </ClientConfigContext.Provider>
     </div>

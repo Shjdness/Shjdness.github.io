@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { client, endpoint } from '../main';
@@ -6,6 +6,7 @@ import { ProfileContext } from '../state/profile';
 import { headersWithAuth } from '../utils/auth';
 import { TodayAdviceCard } from './guide';
 import { enqueueMutation, flushSyncQueue, getCached, getSyncQueue, onLocalChange, setCached, withTimeout } from '../data/local-first';
+import { usePomodoro } from '../state/pomodoro';
 
 type LifeSection = 'life' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
 type Habit = { id: number; name: string; description: string; color: string; active: number; clientKey?: string | null };
@@ -363,46 +364,12 @@ async function patchCalendarCache(date: string, update: (value: CalendarData) =>
   if (cached) await setCached(key, update(cached.value));
 }
 
-type TimerState = { mode: 'focus' | 'break'; round: number; remaining: number; targetAt: number | null; startedAt: string | null; taskName: string };
-type PomodoroPreferences = { focusMinutes: number; breakMinutes: number; rounds: number; autoStartFocus: boolean };
-const TIMER_KEY = 'rin-life-pomodoro';
-const POMODORO_PREFS_KEY = 'rin-life-pomodoro-preferences';
-const defaultPomodoroPreferences: PomodoroPreferences = { focusMinutes: 25, breakMinutes: 5, rounds: 4, autoStartFocus: false };
 const boundedNumber = (value: string, fallback: number, min: number, max: number) => { const parsed = Number(value); return Number.isFinite(parsed) && parsed >= min ? Math.min(max, Math.round(parsed)) : fallback; };
 function PomodoroView() {
-  const [preferences, setPreferences] = useState<PomodoroPreferences>(() => { try { return { ...defaultPomodoroPreferences, ...JSON.parse(localStorage.getItem(POMODORO_PREFS_KEY) || '{}') }; } catch { return defaultPomodoroPreferences; } });
+  const { timer, preferences, running, clock, setTimer, setPreferences, start, pause, stop, finishStage } = usePomodoro();
   const [drafts, setDrafts] = useState(() => ({ focus: String(preferences.focusMinutes), break: String(preferences.breakMinutes), rounds: String(preferences.rounds) }));
-  const [timer, setTimer] = useState<TimerState>(() => { try { const saved = JSON.parse(localStorage.getItem(TIMER_KEY) || 'null') as TimerState | null; if (saved) return { ...saved, taskName: saved.taskName || '', remaining: saved.targetAt ? Math.max(0, Math.ceil((saved.targetAt - Date.now()) / 1000)) : saved.remaining }; } catch {} return { mode: 'focus', round: 1, remaining: preferences.focusMinutes * 60, targetAt: null, startedAt: null, taskName: '' }; });
-  const finishing = useRef(false);
   const { focusMinutes, breakMinutes, rounds } = preferences;
-  const running = timer.targetAt !== null;
-  useEffect(() => { localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); }, [timer]);
-  useEffect(() => { localStorage.setItem(POMODORO_PREFS_KEY, JSON.stringify(preferences)); }, [preferences]);
-  useEffect(() => { if (!timer.targetAt) return; const interval = window.setInterval(() => setTimer(current => current.targetAt ? { ...current, remaining: Math.max(0, Math.ceil((current.targetAt - Date.now()) / 1000)) } : current), 500); return () => clearInterval(interval); }, [timer.targetAt]);
-  const finishStage = async (completedEarly = false) => {
-    if (finishing.current) return; finishing.current = true;
-    const endedAt = new Date();
-    if (timer.mode === 'focus' && timer.startedAt) {
-      const actualMinutes = Math.max(1, Math.ceil((endedAt.getTime() - new Date(timer.startedAt).getTime()) / 60000));
-      const session = { startedAt: timer.startedAt, endedAt: endedAt.toISOString(), focusMinutes: completedEarly ? actualMinutes : focusMinutes, breakMinutes, roundIndex: timer.round, completed: true, taskName: timer.taskName.trim(), completedEarly };
-      const hasNextRound = timer.round < rounds;
-      setTimer(hasNextRound
-        ? { mode: 'break', round: timer.round, remaining: breakMinutes * 60, targetAt: Date.now() + breakMinutes * 60 * 1000, startedAt: null, taskName: timer.taskName }
-        : { mode: 'focus', round: 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null, taskName: timer.taskName });
-      if (session.focusMinutes < 5) { finishing.current = false; return; }
-      const calendarKey = `life:calendar:${session.startedAt.slice(0, 7)}`;
-      const cached = await getCached<CalendarData>(calendarKey);
-      if (cached) await setCached(calendarKey, { ...cached.value, sessions: [...cached.value.sessions, { ...session, id: -Date.now(), startedAt: new Date(session.startedAt), endedAt, completed: 1, completedEarly: completedEarly ? 1 : 0 } as PomodoroSession] });
-      try { await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(session) }); } catch { await enqueueMutation('pomodoro', 'create', session); } finally { finishing.current = false; }
-      return;
-    }
-    if (timer.mode === 'break') setTimer({ mode: 'focus', round: Math.min(rounds, timer.round + 1), remaining: focusMinutes * 60, targetAt: null, startedAt: null, taskName: timer.taskName });
-    finishing.current = false;
-  };
-  useEffect(() => { if (timer.remaining === 0 && timer.targetAt) void finishStage(); }, [timer.remaining, timer.targetAt]);
-  const start = () => setTimer(current => ({ ...current, targetAt: Date.now() + current.remaining * 1000, startedAt: current.mode === 'focus' ? current.startedAt || new Date().toISOString() : null })); const pause = () => setTimer(current => ({ ...current, targetAt: null })); const stop = () => setTimer(current => ({ mode: 'focus', round: 1, remaining: focusMinutes * 60, targetAt: null, startedAt: null, taskName: current.taskName }));
   const commitSetting = (kind: 'focus' | 'break' | 'rounds') => { const limits = kind === 'focus' ? [1, 180] : kind === 'break' ? [1, 60] : [1, 20]; const key: 'focusMinutes' | 'breakMinutes' | 'rounds' = kind === 'focus' ? 'focusMinutes' : kind === 'break' ? 'breakMinutes' : 'rounds'; const value = boundedNumber(drafts[kind], preferences[key], limits[0], limits[1]); setDrafts(current => ({ ...current, [kind]: String(value) })); setPreferences(current => ({ ...current, [key]: value })); if (!timer.startedAt && ((kind === 'focus' && timer.mode === 'focus') || (kind === 'break' && timer.mode === 'break'))) setTimer(current => ({ ...current, remaining: value * 60 })); };
-  const clock = `${String(Math.floor(timer.remaining / 60)).padStart(2, '0')}:${String(timer.remaining % 60).padStart(2, '0')}`;
   return <LifeLayout section="pomodoro" title="番茄钟" intro="休息只出现在两轮专注之间；最后一轮结束后，本组计时自然完成。"><label className="pomodoro-task">当前任务<input value={timer.taskName} placeholder="" disabled={timer.mode === 'break'} onChange={e => setTimer(current => ({ ...current, taskName: e.target.value }))} /></label><div className={`pomodoro ${timer.mode}`}><p>{timer.mode === 'focus' ? 'FOCUS' : 'BREAK'}</p><strong>{clock}</strong><span>{timer.mode === 'focus' ? `第 ${timer.round} / ${rounds} 轮` : `第 ${timer.round} 轮完成 · 接下来第 ${timer.round + 1} 轮`}</span><div>{running ? <button onClick={pause}>暂停</button> : <button onClick={start}>{timer.remaining === (timer.mode === 'focus' ? focusMinutes : breakMinutes) * 60 ? '开始' : '继续'}</button>}{timer.mode === 'focus' && timer.startedAt && <button onClick={() => void finishStage(true)}>提前完成</button>}{timer.mode === 'break' && <button onClick={() => void finishStage(true)}>跳过休息</button>}<button className="secondary" onClick={stop}>停止</button></div></div><div className="pomodoro-settings"><label>专注时长<input inputMode="numeric" value={drafts.focus} disabled={Boolean(timer.startedAt) || timer.mode === 'break'} onChange={e => setDrafts(current => ({ ...current, focus: e.target.value }))} onBlur={() => commitSetting('focus')} /></label><label>休息时长<input inputMode="numeric" value={drafts.break} disabled={Boolean(timer.startedAt) || timer.mode === 'break'} onChange={e => setDrafts(current => ({ ...current, break: e.target.value }))} onBlur={() => commitSetting('break')} /></label><label>轮数<input inputMode="numeric" value={drafts.rounds} disabled={Boolean(timer.startedAt) || timer.mode === 'break'} onChange={e => setDrafts(current => ({ ...current, rounds: e.target.value }))} onBlur={() => commitSetting('rounds')} /></label></div></LifeLayout>;
 }
 
@@ -458,8 +425,9 @@ function readableRssError(error: unknown, fallback: string) {
 }
 
 function RssView() {
+  const { timer: pomodoroTimer, running: pomodoroRunning, clock: pomodoroClock } = usePomodoro();
   const [data, setData] = useState<RssData | null>(null);
-  const [filter, setFilter] = useState<'unread' | 'starred'>('unread');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'starred'>('all');
   const [contentType, setContentType] = useState<RssContentType>('all');
   const [sourceId, setSourceId] = useState<number | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -515,7 +483,9 @@ function RssView() {
   const refreshSource = async (source: RssSubscription) => { setBusy(true); try { const result = await lifeApi<{ added: number; queued?: boolean; warning?: string }>(`/rss/subscriptions/${source.id}/refresh`, { method: 'POST' }, 30_000); setMessage(result.queued ? (result.warning || '该来源将在下一个定时同步时更新。') : `「${source.alias || source.title}」新增 ${result.added || 0} 条。`); await load(); } catch (error) { setMessage(readableRssError(error, `「${source.alias || source.title}」更新失败`)); } finally { setBusy(false); } };
 
   const subscriptions = data?.subscriptions || []; const items = data?.items || []; const counts = data?.counts || { all: 0, unread: 0, starred: 0 };
-  const persistedGroups = data?.groups || []; const groupNames = [...new Set([...persistedGroups.map(group => group.name), ...subscriptions.map(source => source.category || '其他')])];
+  const persistedGroups = data?.groups || [];
+  const subscriptionsForView = contentType === 'all' ? subscriptions : subscriptions.filter(source => source.contentType === contentType);
+  const groupNames = [...new Set(subscriptionsForView.map(source => source.category || '其他'))];
   const displayName = (source: RssSubscription) => source.alias || source.title || new URL(source.feedUrl).hostname;
   const sourceOf = (item: RssItem) => subscriptions.find(source => source.id === item.subscriptionId);
   const itemImage = (item: RssItem) => item.thumbnailUrl || item.mediaUrl;
@@ -531,6 +501,7 @@ function RssView() {
   };
 
   return <main className="rss-standalone"><Helmet><title>RSS | Shjdshy</title></Helmet><section className="rss-standalone-shell">
+    {pomodoroRunning && <Link href="/life/pomodoro" className="rss-pomodoro-status" title="打开番茄钟"><i className="ri-timer-line" />{pomodoroTimer.taskName.trim() ? `${pomodoroTimer.taskName.trim()} · ${pomodoroClock}` : pomodoroClock}</Link>}
     {message && <p className="rss-message">{message}</p>}
     <div className={`rss-workspace rss-workspace-wide ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
       <aside className="rss-library">
@@ -542,19 +513,19 @@ function RssView() {
         </nav>
         <div className="rss-library-content">
           <section className="rss-sidebar-card">
-            <div className="rss-side-heading"><span>阅读状态</span></div>
-            <button className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter('unread')}><i className="ri-mail-unread-line" /><span>未读</span><b>{counts.unread}</b></button>
-            <button className={filter === 'starred' ? 'active' : ''} onClick={() => setFilter('starred')}><i className="ri-star-line" /><span>收藏</span><b>{counts.starred}</b></button>
+            <div className="rss-side-heading"><span>阅读状态</span>{filter !== 'all' && <button onClick={() => setFilter('all')} title="清除阅读状态筛选"><i className="ri-close-circle-line" /></button>}</div>
+            <button className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter(current => current === 'unread' ? 'all' : 'unread')}><i className="ri-mail-unread-line" /><span>未读</span><b>{counts.unread}</b></button>
+            <button className={filter === 'starred' ? 'active' : ''} onClick={() => setFilter(current => current === 'starred' ? 'all' : 'starred')}><i className="ri-star-line" /><span>收藏</span><b>{counts.starred}</b></button>
             {filter === 'unread' && counts.unread > 0 && <button className="rss-clear-unread" onClick={() => void markAllRead()}><i className="ri-check-double-line" /><span>一键清除未读</span></button>}
           </section>
           <section className="rss-sidebar-card">
             <div className="rss-side-heading"><span>内容视角</span></div>
-            {([['all','全部类型','ri-layout-grid-line'],['text','文章','ri-article-line'],['video','视频','ri-video-line'],['image','图片','ri-image-line']] as Array<[RssContentType,string,string]>).map(([key,name,icon]) => <button key={key} className={contentType === key ? 'active' : ''} onClick={() => setContentType(key)}><i className={icon} /><span>{name}</span></button>)}
+            {([['all','全部类型','ri-layout-grid-line'],['text','文章','ri-article-line'],['video','视频','ri-video-line'],['image','图片','ri-image-line']] as Array<[RssContentType,string,string]>).map(([key,name,icon]) => <button key={key} className={contentType === key ? 'active' : ''} onClick={() => { setContentType(key); setSelectedGroup(null); setSourceId(null); }}><i className={icon} /><span>{name}</span></button>)}
           </section>
           <section className="rss-sidebar-card rss-source-card">
-            <div className="rss-side-heading"><span>来源</span><button onClick={() => setShowGroups(true)} title="管理分组"><i className="ri-folder-settings-line" /></button></div>
+            <div className="rss-side-heading"><span>来源</span><span className="rss-heading-actions"><button onClick={() => setShowGroups(true)} title="管理分组"><i className="ri-folder-settings-line" /></button><button onClick={() => setCollapsed(current => current.size ? new Set() : new Set(groupNames))} title={collapsed.size ? '展开所有分组' : '收起所有分组'}><i className={collapsed.size ? 'ri-expand-up-down-line' : 'ri-collapse-diagonal-line'} /></button></span></div>
             <button className={!selectedGroup && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(null); setSourceId(null); }}><i className="ri-folders-line" /><span>全部分组</span></button>
-            {groupNames.map(group => { const sources = subscriptions.filter(source => (source.category || '其他') === group); if (!sources.length) return null; const folded = collapsed.has(group); return <section className="rss-source-group" key={group}><div className="rss-source-group-head"><button className={selectedGroup === group && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(group); setSourceId(null); }}><strong>{group}</strong><b>{sources.length}</b></button><button title={folded ? '展开' : '收起'} onClick={() => setCollapsed(current => { const next = new Set(current); next.has(group) ? next.delete(group) : next.add(group); return next; })}><i className={folded ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'} /></button></div>{!folded && sources.map(source => <div className="rss-source-row" key={source.id}><button className={sourceId === source.id ? 'active' : ''} onClick={() => { setSourceId(source.id); setSelectedGroup(group); }}><img src={source.favicon || '/favicon.png'} alt="" loading="lazy" /><span>{displayName(source)}</span></button><button title="来源设置" onClick={() => setEditingSource(source)}><i className="ri-more-2-fill" /></button></div>)}</section>; })}
+            {groupNames.map(group => { const sources = subscriptionsForView.filter(source => (source.category || '其他') === group); if (!sources.length) return null; const folded = collapsed.has(group); return <section className="rss-source-group" key={group}><div className="rss-source-group-head"><button className={selectedGroup === group && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(group); setSourceId(null); }}><strong>{group}</strong><b>{sources.length}</b></button><button title={folded ? '展开' : '收起'} onClick={() => setCollapsed(current => { const next = new Set(current); next.has(group) ? next.delete(group) : next.add(group); return next; })}><i className={folded ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'} /></button></div>{!folded && sources.map(source => <div className="rss-source-row" key={source.id}><button className={sourceId === source.id ? 'active' : ''} onClick={() => { setSourceId(source.id); setSelectedGroup(group); }}><img src={source.favicon || '/favicon.png'} alt="" loading="lazy" /><span>{displayName(source)}</span></button><button title="来源设置" onClick={() => setEditingSource(source)}><i className="ri-more-2-fill" /></button></div>)}</section>; })}
           </section>
         </div>
       </aside>
@@ -567,7 +538,7 @@ function RssView() {
         </article> : <><div className={`rss-card-grid rss-card-grid-${contentType}`}>{items.map(renderCard)}</div>{!items.length && <p className="rss-empty">这里暂时没有内容。</p>}{data?.page?.hasMore && <button className="rss-load-more" onClick={() => void load(true)}>加载更早内容</button>}</>}
       </section>
     </div>
-    {showAdd && <div className="rss-modal-backdrop" onMouseDown={() => setShowAdd(false)}><section className="rss-modal" onMouseDown={event => event.stopPropagation()}><header><div><small>ADD SUBSCRIPTION</small><h2>新增订阅</h2></div><button onClick={() => setShowAdd(false)}><i className="ri-close-line" /></button></header><p>支持 RSS / Atom / JSON Feed、RSSHub、YouTube、Bilibili、Pixiv 与 X 用户链接。</p>{message && !candidate && <p className="rss-modal-message">{message}</p>}<label>来源地址<input autoFocus value={sourceUrl} placeholder="粘贴 Feed 或频道主页" onChange={event => setSourceUrl(event.target.value)} /></label><button className="rss-save" onClick={() => void detect()} disabled={busy || !sourceUrl.trim()}>{busy ? '正在检测…' : '检测来源'}</button>{candidates.length > 1 && <label>发现的订阅<select value={candidate?.feedUrl || ''} onChange={event => { const next = candidates.find(value => value.feedUrl === event.target.value) || null; setCandidate(next); setAlias(next?.title || ''); setCategory(next?.category || '其他'); }}>{candidates.map(value => <option value={value.feedUrl} key={value.feedUrl}>{value.title}</option>)}</select></label>}{candidate && <div className="rss-detected"><small>{candidate.platform.toUpperCase()} · {candidate.contentType.toUpperCase()}</small><h3>{candidate.title}</h3><label>显示名称<input value={alias} onChange={event => setAlias(event.target.value)} /></label><label>分组<select value={category} onChange={event => setCategory(event.target.value)}>{groupNames.map(name => <option key={name} value={name}>{name}</option>)}{!groupNames.includes(category) && <option value={category}>{category}</option>}</select></label><div className="rss-preview-list">{candidate.preview.map(item => <span key={item.externalId}>{item.title}</span>)}</div><button className="rss-save" onClick={() => void subscribe()} disabled={busy}>确认订阅</button></div>}</section></div>}
+    {showAdd && <div className="rss-modal-backdrop" onMouseDown={() => setShowAdd(false)}><section className="rss-modal" onMouseDown={event => event.stopPropagation()}><header><div><small>ADD SUBSCRIPTION</small><h2>新增订阅</h2></div><button onClick={() => setShowAdd(false)}><i className="ri-close-line" /></button></header><p>支持 RSS / Atom / JSON Feed、RSSHub、YouTube、Bilibili 与 X 用户链接。</p>{message && !candidate && <p className="rss-modal-message">{message}</p>}<label>来源地址<input autoFocus value={sourceUrl} placeholder="粘贴 Feed 或频道主页" onChange={event => setSourceUrl(event.target.value)} /></label><button className="rss-save" onClick={() => void detect()} disabled={busy || !sourceUrl.trim()}>{busy ? '正在检测…' : '检测来源'}</button>{candidates.length > 1 && <label>发现的订阅<select value={candidate?.feedUrl || ''} onChange={event => { const next = candidates.find(value => value.feedUrl === event.target.value) || null; setCandidate(next); setAlias(next?.title || ''); setCategory(next?.category || '其他'); }}>{candidates.map(value => <option value={value.feedUrl} key={value.feedUrl}>{value.title}</option>)}</select></label>}{candidate && <div className="rss-detected"><small>{candidate.platform.toUpperCase()} · {candidate.contentType.toUpperCase()}</small><h3>{candidate.title}</h3><label>显示名称<input value={alias} onChange={event => setAlias(event.target.value)} /></label><label>分组<select value={category} onChange={event => setCategory(event.target.value)}>{groupNames.map(name => <option key={name} value={name}>{name}</option>)}{!groupNames.includes(category) && <option value={category}>{category}</option>}</select></label><div className="rss-preview-list">{candidate.preview.map(item => <span key={item.externalId}>{item.title}</span>)}</div><button className="rss-save" onClick={() => void subscribe()} disabled={busy}>确认订阅</button></div>}</section></div>}
     {showGroups && <div className="rss-modal-backdrop" onMouseDown={() => setShowGroups(false)}><section className="rss-modal rss-group-manager" onMouseDown={event => event.stopPropagation()}><header><div><small>SOURCE GROUPS</small><h2>管理分组</h2></div><button onClick={() => setShowGroups(false)}><i className="ri-close-line" /></button></header><div className="rss-group-create"><input value={newGroup} placeholder="新分组名称" onChange={event => setNewGroup(event.target.value)} /><button onClick={() => void createGroup()}>创建</button></div>{persistedGroups.map((group, index) => <div className="rss-group-manage-row" key={group.id}><strong>{group.name}</strong><span>{subscriptions.filter(source => source.category === group.name).length} 个来源</span><button disabled={index === 0} title="上移" onClick={() => void moveGroup(group, -1)}><i className="ri-arrow-up-line" /></button><button disabled={index === persistedGroups.length - 1} title="下移" onClick={() => void moveGroup(group, 1)}><i className="ri-arrow-down-line" /></button><button onClick={() => void renameGroup(group)}><i className="ri-edit-line" /></button><button onClick={() => void deleteGroup(group)}><i className="ri-delete-bin-line" /></button></div>)}</section></div>}
     {editingSource && <div className="rss-modal-backdrop" onMouseDown={() => setEditingSource(null)}><section className="rss-modal" onMouseDown={event => event.stopPropagation()}><header><div><small>SOURCE SETTINGS</small><h2>{displayName(editingSource)}</h2></div><button onClick={() => setEditingSource(null)}><i className="ri-close-line" /></button></header><SourcePanel source={editingSource} groups={groupNames} busy={busy} onRefresh={() => void refreshSource(editingSource)} onRemove={() => void removeSource(editingSource)} onSaved={() => { setEditingSource(null); void load(); }} /></section></div>}
     {lightbox && <div className="rss-lightbox" onClick={() => setLightbox('')}><img src={lightbox} alt="" /><span>ESC 关闭</span></div>}

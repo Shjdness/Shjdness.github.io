@@ -24,7 +24,7 @@ Home
 - `.github/workflows/`：前端、后端与 RSSHub 定时任务。
 - `docs/`：当前架构、环境变量和设计记录。
 
-Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 的 Bilibili、Pixiv 与 X 来源由 GitHub Actions 在新加坡时间 07:00、11:00、14:00、17:00 临时启动 RSSHub 抓取；任务结束即释放实例，不依赖公共 RSSHub 或长期服务器。YouTube 使用官方频道 Feed。
+Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 的 Bilibili 与 X 来源由 GitHub Actions 在新加坡时间 07:00、11:00、14:00、17:00 临时启动 RSSHub 抓取；任务结束即释放实例，不依赖公共 RSSHub 或长期服务器。YouTube 使用官方频道 Feed；Pixiv 接入已停用。
 
 ## 部署
 
