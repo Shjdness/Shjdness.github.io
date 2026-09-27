@@ -41,6 +41,9 @@ jobs:
         env:
           RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
           RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
+          RSS_PIXIV_CONFIGURED: ${{ secrets.PIXIV_REFRESHTOKEN != '' }}
+          RSS_BILIBILI_CONFIGURED: ${{ secrets.BILIBILI_COOKIE != '' }}
+          RSS_X_CONFIGURED: ${{ secrets.TWITTER_AUTH_TOKEN != '' }}
         run: node scripts/rsshub-sync.mjs
 
       - name: Show RSSHub logs on failure
