@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { client, endpoint } from '../main';
@@ -19,6 +19,7 @@ type RssGroup = { id: number; name: string; sortOrder: number };
 type RssItem = { id: number; subscriptionId: number; externalId?: string; title: string; url: string; summary: string; author: string; publishedAt: Date; read: number; starred: number; readAt?: Date | null; starredAt?: Date | null; mediaType: 'text' | 'video' | 'image' | 'audio' | 'external'; mediaUrl: string; embedUrl: string; thumbnailUrl: string; mediaJson?: string; duration: number; contentHtml: string };
 type RssData = { subscriptions: RssSubscription[]; groups?: RssGroup[]; items: RssItem[]; counts: { all: number; unread: number; starred: number }; page?: { limit: number; offset: number; total: number; hasMore: boolean } };
 type RssContentType = 'all' | 'text' | 'video' | 'image';
+type RssStorage = { backend: { usedBytes: number; limitBytes: number }; rssBytes: number; local?: { usedBytes: number; limitBytes: number } };
 type RssActivity = { id: number; title: string; url: string; readAt: Date | null; starredAt: Date | null };
 type CalendarData = { habits: Habit[]; logs: Log[]; sessions: PomodoroSession[]; rss: RssActivity[]; notes: DailyNote[]; basics: DailyBasic[] };
 type LifeOverviewData = {
@@ -424,6 +425,15 @@ function readableRssError(error: unknown, fallback: string) {
   try { const value = JSON.parse(error.message) as { summary?: string; message?: string }; return value.summary || value.message || fallback; } catch { return error.message || fallback; }
 }
 
+function RssCardCarousel({ images, title }: { images: string[]; title: string }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => setIndex(0), [images.join('|')]);
+  const move = (event: React.MouseEvent, direction: -1 | 1) => { event.stopPropagation(); setIndex(current => (current + direction + images.length) % images.length); };
+  return <div className="rss-rich-media"><img src={images[index]} alt={`${title} ${index + 1}`} loading="lazy" />{images.length > 1 && <><button className="previous" aria-label="上一张" onClick={event => move(event, -1)}><i className="ri-arrow-left-s-line" /></button><button className="next" aria-label="下一张" onClick={event => move(event, 1)}><i className="ri-arrow-right-s-line" /></button><span>{index + 1}/{images.length}</span></>}</div>;
+}
+
+const formatBytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(0, value / 1024).toFixed(0)} KB`;
+
 function RssView() {
   const { timer: pomodoroTimer, running: pomodoroRunning, clock: pomodoroClock } = usePomodoro();
   const [data, setData] = useState<RssData | null>(null);
@@ -447,6 +457,9 @@ function RssView() {
   const [newGroup, setNewGroup] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [storage, setStorage] = useState<RssStorage | null>(null);
+  const [readerImageIndex, setReaderImageIndex] = useState(0);
+  const swipeStart = useRef<number | null>(null);
   const cacheKey = `life:rss:v5:${filter}:${contentType}:${selectedGroup || 'all'}:${sourceId || 'all'}`;
 
   const load = async (append = false) => {
@@ -463,6 +476,7 @@ function RssView() {
   };
   useEffect(() => { setOffset(0); setSelectedItem(null); void load(); }, [filter, contentType, sourceId, selectedGroup]);
   useEffect(() => { if (!lightbox) return; const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setLightbox(''); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [lightbox]);
+  useEffect(() => { void (async () => { try { const remote = await lifeApi<Omit<RssStorage, 'local'>>('/rss/storage'); const local = await navigator.storage?.estimate?.(); setStorage({ ...remote, local: { usedBytes: local?.usage || 0, limitBytes: local?.quota || 0 } }); } catch { /* Storage information is informative and must not block the reader. */ } })(); }, []);
 
   const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }) => {
     const now = new Date(); const apply = (value: RssItem) => ({ ...value, ...(patch.read === undefined ? {} : { read: patch.read ? 1 : 0, readAt: patch.read ? now : null }), ...(patch.starred === undefined ? {} : { starred: patch.starred ? 1 : 0, starredAt: patch.starred ? now : null }) });
@@ -470,7 +484,7 @@ function RssView() {
     setData(current => current ? { ...current, items: current.items.map(value => value.id === item.id ? apply(value) : value) } : current);
     try { await lifeApi(`/rss/items/${item.id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('rss', 'update', { id: item.id, patch }); }
   };
-  const openItem = async (item: RssItem) => { setSelectedItem(item); if (!item.read) await updateItem(item, { read: true }); };
+  const openItem = async (item: RssItem) => { setReaderImageIndex(0); setSelectedItem(item); if (!item.read) await updateItem(item, { read: true }); };
   const markAllRead = async () => { if (!data?.counts.unread || !window.confirm(`将 ${data.counts.unread} 条未读全部标记为已读？`)) return; const now = new Date(); setData(current => current ? { ...current, items: current.items.map(item => ({ ...item, read: 1, readAt: item.readAt || now })), counts: { ...current.counts, unread: 0 } } : current); setBusy(true); try { await lifeApi('/rss/items/mark-all-read', { method: 'POST' }); setMessage('未读内容已全部清除。'); await load(); } catch { await enqueueMutation('rss', 'mark-all-read', {}); setMessage('已在本地清除未读，联网后自动同步。'); } finally { setBusy(false); } };
   const refreshAll = async () => { if (busy) return; setBusy(true); try { const result = await lifeApi<{ refreshed: number; total: number; added: number; failed: number; queued?: number; repaired?: number; failures?: Array<{ title: string; error: string }> }>('/rss/refresh', { method: 'POST' }, 60_000); const detail = result.failures?.slice(0, 2).map(item => `${item.title}：${item.error}`).join('；'); setMessage(`已更新 ${result.refreshed}/${result.total ?? result.refreshed} 个直接来源，新增 ${result.added} 条${result.queued ? `；${result.queued} 个 RSSHub 来源按定时任务更新` : ''}${result.repaired ? `，修复 ${result.repaired} 个旧来源` : ''}${result.failed ? `，${result.failed} 个失败${detail ? `（${detail}）` : ''}` : ''}。`); await load(); } catch (error) { setMessage(readableRssError(error, '更新失败，已缓存内容仍可阅读。')); } finally { setBusy(false); } };
   const detect = async () => { if (!sourceUrl.trim() || busy) return; setBusy(true); setMessage(''); setCandidates([]); setCandidate(null); try { const result = await lifeApi<{ candidates: ResolvedFeed[] }>('/rss/resolve', { method: 'POST', body: JSON.stringify({ sourceUrl: sourceUrl.trim() }) }); const first = result.candidates[0] || null; setCandidates(result.candidates); setCandidate(first); setAlias(first?.title || ''); setCategory(first?.category || '其他'); } catch (error) { setMessage(readableRssError(error, '未发现可订阅源')); } finally { setBusy(false); } };
@@ -484,21 +498,37 @@ function RssView() {
 
   const subscriptions = data?.subscriptions || []; const items = data?.items || []; const counts = data?.counts || { all: 0, unread: 0, starred: 0 };
   const persistedGroups = data?.groups || [];
-  const subscriptionsForView = contentType === 'all' ? subscriptions : subscriptions.filter(source => source.contentType === contentType);
+  const platformOf = (source?: RssSubscription) => { if (!source) return 'other'; if (['youtube', 'bilibili', 'x'].includes(source.platform)) return source.platform; const value = `${source.sourceUrl} ${source.feedUrl}`.toLowerCase(); return value.includes('bilibili') ? 'bilibili' : value.includes('youtube') ? 'youtube' : value.includes('twitter') || value.includes('/x/') || value.includes('x.com/') ? 'x' : source.platform; };
+  const sourceViewType = (source: RssSubscription) => { const platform = platformOf(source); return platform === 'youtube' || platform === 'bilibili' ? 'video' : platform === 'x' ? 'image' : source.contentType; };
+  const subscriptionsForView = contentType === 'all' ? subscriptions : subscriptions.filter(source => sourceViewType(source) === contentType);
   const groupNames = [...new Set(subscriptionsForView.map(source => source.category || '其他'))];
   const displayName = (source: RssSubscription) => source.alias || source.title || new URL(source.feedUrl).hostname;
   const sourceOf = (item: RssItem) => subscriptions.find(source => source.id === item.subscriptionId);
-  const itemImage = (item: RssItem) => item.thumbnailUrl || item.mediaUrl;
-  const itemImages = (item: RssItem) => { try { const values = JSON.parse(item.mediaJson || '[]'); return Array.isArray(values) ? values.filter(value => typeof value === 'string' && /^https?:\/\//.test(value)) : []; } catch { return item.mediaUrl ? [item.mediaUrl] : []; } };
+  const isProxyable = (value: string) => { try { const host = new URL(value).hostname.toLowerCase(); return host === 'pbs.twimg.com' || host === 'abs.twimg.com' || host.endsWith('.hdslb.com') || host.endsWith('.biliimg.com'); } catch { return false; } };
+  const mediaUrlFor = (value: string, download = false) => isProxyable(value) ? `${endpoint}/rss/media?url=${encodeURIComponent(value)}${download ? '&download=1' : ''}` : value;
+  const rawItemImages = (item: RssItem) => { try { const values = JSON.parse(item.mediaJson || '[]'); return [...new Set([...(Array.isArray(values) ? values : []), item.mediaUrl, item.thumbnailUrl].filter(value => typeof value === 'string' && /^https?:\/\//.test(value)))]; } catch { return [item.mediaUrl, item.thumbnailUrl].filter(value => /^https?:\/\//.test(value)); } };
+  const itemImages = (item: RssItem) => rawItemImages(item).map(value => mediaUrlFor(value));
+  const itemImage = (item: RssItem) => itemImages(item)[0] || '';
   const embedFor = (item: RssItem) => {
-    if (!item.embedUrl) return '';
-    if (!item.embedUrl.includes('youtube.com/embed/')) return item.embedUrl;
-    const url = new URL(item.embedUrl); url.searchParams.set('playsinline', '1'); url.searchParams.set('rel', '0'); url.searchParams.set('origin', window.location.origin); url.searchParams.set('hl', 'zh-CN'); url.searchParams.set('cc_load_policy', '1'); url.searchParams.set('cc_lang_pref', 'zh-CN'); url.searchParams.set('vq', 'hd1440'); return url.toString();
+    const source = sourceOf(item); let embed = item.embedUrl;
+    if (!embed && platformOf(source) === 'bilibili') { const bvid = item.url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1] || item.externalId?.match(/(BV[\w]+)/i)?.[1]; if (bvid) embed = `https://player.bilibili.com/player.html?bvid=${bvid}&high_quality=1&danmaku=0`; }
+    if (!embed) return '';
+    if (!embed.includes('youtube.com/embed/')) return embed;
+    const url = new URL(embed); url.searchParams.set('playsinline', '1'); url.searchParams.set('rel', '0'); url.searchParams.set('origin', window.location.origin); url.searchParams.set('hl', 'zh-CN'); url.searchParams.set('cc_load_policy', '1'); url.searchParams.set('cc_lang_pref', 'zh-CN'); url.searchParams.set('vq', 'hd1440'); return url.toString();
   };
   const renderCard = (item: RssItem) => {
-    const source = sourceOf(item); const kind = item.mediaType === 'video' ? 'video' : item.mediaType === 'image' ? 'image' : 'text';
-    return <article key={item.id} className={`rss-card rss-card-${kind} ${item.read ? 'is-read' : ''}`} onClick={() => void openItem(item)}>{itemImage(item) ? <div className="rss-card-media"><img src={itemImage(item)} alt="" loading="lazy" />{kind === 'video' && <i className="ri-play-large-fill" />}</div> : <div className="rss-card-placeholder"><i className={kind === 'video' ? 'ri-video-line' : 'ri-article-line'} /></div>}<div className="rss-card-copy"><strong>{item.title}</strong>{kind === 'text' && item.summary && <p>{item.summary}</p>}<span>{source ? displayName(source) : item.author || '订阅内容'} · {new Date(item.publishedAt).toLocaleDateString()}</span></div><button className={item.starred ? 'starred' : ''} title="收藏" onClick={event => { event.stopPropagation(); void updateItem(item, { starred: !item.starred }); }}><i className={item.starred ? 'ri-star-fill' : 'ri-star-line'} /></button></article>;
+    const source = sourceOf(item); const platform = platformOf(source); const kind = platform === 'youtube' || platform === 'bilibili' ? 'video' : platform === 'x' || item.mediaType === 'image' ? 'image' : 'text';
+    const images = itemImages(item); const richImages = images.length ? images : platform === 'x' ? ['/rss-x-default.jpg'] : [];
+    return <article key={item.id} className={`rss-card rss-card-${kind} ${richImages.length ? 'has-media' : 'no-media'} ${item.read ? 'is-read' : ''}`} onClick={() => void openItem(item)}>{kind === 'image' ? (richImages.length ? <RssCardCarousel images={richImages} title={item.title} /> : null) : itemImage(item) ? <div className="rss-card-media"><img src={itemImage(item)} alt="" loading="lazy" />{kind === 'video' && <i className="ri-play-large-fill" />}</div> : kind === 'video' ? <div className="rss-card-placeholder"><i className="ri-video-line" /></div> : null}<div className="rss-card-copy"><span>{source ? displayName(source) : item.author || '订阅内容'} · {new Date(item.publishedAt).toLocaleDateString()}</span><strong>{item.title}</strong>{kind !== 'video' && item.summary && <p>{item.summary}</p>}</div><button className={item.starred ? 'starred' : ''} title="收藏" onClick={event => { event.stopPropagation(); void updateItem(item, { starred: !item.starred }); }}><i className={item.starred ? 'ri-star-fill' : 'ri-star-line'} /></button></article>;
   };
+  const selectedSource = selectedItem ? sourceOf(selectedItem) : undefined;
+  const selectedPlatform = platformOf(selectedSource);
+  const selectedKind = !selectedItem ? 'text' : selectedPlatform === 'youtube' || selectedPlatform === 'bilibili' ? 'video' : selectedPlatform === 'x' || selectedItem.mediaType === 'image' ? 'image' : 'text';
+  const selectedRawImages = selectedItem ? rawItemImages(selectedItem) : [];
+  const selectedImages = selectedRawImages.length ? selectedRawImages.map(value => mediaUrlFor(value)) : selectedPlatform === 'x' ? ['/rss-x-default.jpg'] : [];
+  const safeImageIndex = Math.min(readerImageIndex, Math.max(0, selectedImages.length - 1));
+  const closeReader = () => { setSelectedItem(null); setReaderImageIndex(0); };
+  const finishSwipe = (clientX: number) => { if (swipeStart.current !== null && swipeStart.current - clientX > 72) closeReader(); swipeStart.current = null; };
 
   return <main className="rss-standalone"><Helmet><title>RSS | Shjdshy</title></Helmet><section className="rss-standalone-shell">
     {pomodoroRunning && <Link href="/life/pomodoro" className="rss-pomodoro-status" title="打开番茄钟"><i className="ri-timer-line" />{pomodoroTimer.taskName.trim() ? `${pomodoroTimer.taskName.trim()} · ${pomodoroClock}` : pomodoroClock}</Link>}
@@ -520,20 +550,21 @@ function RssView() {
           </section>
           <section className="rss-sidebar-card">
             <div className="rss-side-heading"><span>内容视角</span></div>
-            {([['all','全部类型','ri-layout-grid-line'],['text','文章','ri-article-line'],['video','视频','ri-video-line'],['image','图片','ri-image-line']] as Array<[RssContentType,string,string]>).map(([key,name,icon]) => <button key={key} className={contentType === key ? 'active' : ''} onClick={() => { setContentType(key); setSelectedGroup(null); setSourceId(null); }}><i className={icon} /><span>{name}</span></button>)}
+            {([['all','全部类型','ri-layout-grid-line'],['text','文章','ri-article-line'],['video','视频','ri-video-line'],['image','图文','ri-image-line']] as Array<[RssContentType,string,string]>).map(([key,name,icon]) => <button key={key} className={contentType === key ? 'active' : ''} onClick={() => { setContentType(key); setSelectedGroup(null); setSourceId(null); }}><i className={icon} /><span>{name}</span></button>)}
           </section>
           <section className="rss-sidebar-card rss-source-card">
             <div className="rss-side-heading"><span>来源</span><span className="rss-heading-actions"><button onClick={() => setShowGroups(true)} title="管理分组"><i className="ri-folder-settings-line" /></button><button onClick={() => setCollapsed(current => current.size ? new Set() : new Set(groupNames))} title={collapsed.size ? '展开所有分组' : '收起所有分组'}><i className={collapsed.size ? 'ri-expand-up-down-line' : 'ri-collapse-diagonal-line'} /></button></span></div>
             <button className={!selectedGroup && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(null); setSourceId(null); }}><i className="ri-folders-line" /><span>全部分组</span></button>
             {groupNames.map(group => { const sources = subscriptionsForView.filter(source => (source.category || '其他') === group); if (!sources.length) return null; const folded = collapsed.has(group); return <section className="rss-source-group" key={group}><div className="rss-source-group-head"><button className={selectedGroup === group && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(group); setSourceId(null); }}><strong>{group}</strong><b>{sources.length}</b></button><button title={folded ? '展开' : '收起'} onClick={() => setCollapsed(current => { const next = new Set(current); next.has(group) ? next.delete(group) : next.add(group); return next; })}><i className={folded ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'} /></button></div>{!folded && sources.map(source => <div className="rss-source-row" key={source.id}><button className={sourceId === source.id ? 'active' : ''} onClick={() => { setSourceId(source.id); setSelectedGroup(group); }}><img src={source.favicon || '/favicon.png'} alt="" loading="lazy" /><span>{displayName(source)}</span></button><button title="来源设置" onClick={() => setEditingSource(source)}><i className="ri-more-2-fill" /></button></div>)}</section>; })}
           </section>
+          {storage && <section className="rss-sidebar-card rss-storage-card"><div className="rss-side-heading"><span>存储空间</span></div><label><span>D1 后端 <b>{formatBytes(storage.backend.usedBytes)} / {formatBytes(storage.backend.limitBytes)}</b></span><i><em style={{ width: `${Math.min(100, storage.backend.usedBytes / Math.max(1, storage.backend.limitBytes) * 100)}%` }} /></i></label>{storage.local?.limitBytes ? <label><span>本机缓存 <b>{formatBytes(storage.local.usedBytes)} / {formatBytes(storage.local.limitBytes)}</b></span><i><em style={{ width: `${Math.min(100, storage.local.usedBytes / storage.local.limitBytes * 100)}%` }} /></i></label> : null}<small>RSS 文字数据约 {formatBytes(storage.rssBytes)}；图片与视频不存入数据库。</small></section>}
         </div>
       </aside>
-      <section className={`rss-main ${selectedItem ? `is-reader is-${selectedItem.mediaType}` : 'is-library'}`}>
-        {selectedItem ? <article className="rss-reader">
-          <header><button onClick={() => setSelectedItem(null)}><i className="ri-arrow-left-line" /> 返回</button><div><button className={selectedItem.starred ? 'starred' : ''} onClick={() => void updateItem(selectedItem, { starred: !selectedItem.starred })}><i className={selectedItem.starred ? 'ri-star-fill' : 'ri-star-line'} /> 收藏</button><a href={selectedItem.url} target="_blank" rel="noreferrer">{sourceOf(selectedItem)?.platform === 'youtube' ? '在 YouTube 打开' : '原始链接'} <i className="ri-external-link-line" /></a></div></header>
-          {selectedItem.mediaType === 'video' && selectedItem.embedUrl ? <iframe className="rss-reader-video" src={embedFor(selectedItem)} title={selectedItem.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : selectedItem.mediaType === 'video' && itemImage(selectedItem) ? <a href={selectedItem.url} target="_blank" rel="noreferrer" className="rss-reader-video-fallback"><img src={itemImage(selectedItem)} alt="" /><span>前往原站播放</span></a> : null}
-          {selectedItem.mediaType === 'image' && itemImages(selectedItem).length > 0 && <><div className="rss-reader-gallery">{itemImages(selectedItem).slice(0, 6).map((image, index) => <button key={`${image}-${index}`} onClick={() => setLightbox(image)}><img src={image} alt={`${selectedItem.title} ${index + 1}`} loading="lazy" /></button>)}</div><a className="rss-download" href={itemImages(selectedItem)[0]} download target="_blank" rel="noreferrer"><i className="ri-download-line" /> 下载原图</a></>}
+      <section className={`rss-main ${selectedItem ? `is-reader is-${selectedKind}` : 'is-library'}`}>
+        {selectedItem ? <article className="rss-reader" onTouchStart={event => { swipeStart.current = event.changedTouches[0]?.clientX ?? null; }} onTouchEnd={event => finishSwipe(event.changedTouches[0]?.clientX ?? 0)}>
+          <header><button onClick={closeReader}><i className="ri-arrow-left-line" /> 返回</button><div><button className={selectedItem.starred ? 'starred' : ''} onClick={() => void updateItem(selectedItem, { starred: !selectedItem.starred })}><i className={selectedItem.starred ? 'ri-star-fill' : 'ri-star-line'} /> 收藏</button><a href={selectedItem.url} target="_blank" rel="noreferrer">{selectedPlatform === 'youtube' ? '在 YouTube 打开' : '原始链接'} <i className="ri-external-link-line" /></a></div></header>
+          {selectedKind === 'video' && embedFor(selectedItem) ? <iframe className="rss-reader-video" src={embedFor(selectedItem)} title={selectedItem.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : selectedKind === 'video' && itemImage(selectedItem) ? <div className="rss-reader-video-fallback"><img src={itemImage(selectedItem)} alt="" /><span>该视频暂时无法站内播放，可使用下方原始链接。</span></div> : null}
+          {selectedKind === 'image' && selectedImages.length > 0 && <><div className="rss-reader-gallery"><button className="rss-reader-image-current" onClick={() => setLightbox(selectedImages[safeImageIndex])}><img src={selectedImages[safeImageIndex]} alt={`${selectedItem.title} ${safeImageIndex + 1}`} /></button>{selectedImages.length > 1 && <div className="rss-reader-gallery-controls"><button onClick={() => setReaderImageIndex(current => (current - 1 + selectedImages.length) % selectedImages.length)}><i className="ri-arrow-left-s-line" /> 上一张</button><span>{safeImageIndex + 1} / {selectedImages.length}</span><button onClick={() => setReaderImageIndex(current => (current + 1) % selectedImages.length)}>下一张 <i className="ri-arrow-right-s-line" /></button></div>}</div><a className="rss-download" href={selectedRawImages[safeImageIndex] ? mediaUrlFor(selectedRawImages[safeImageIndex], true) : selectedImages[safeImageIndex]} download target="_blank" rel="noreferrer"><i className="ri-download-line" /> 下载当前原图</a></>}
           <div className="rss-reader-body"><span>{sourceOf(selectedItem) ? displayName(sourceOf(selectedItem)!) : selectedItem.author} · {new Date(selectedItem.publishedAt).toLocaleString()}</span><h2>{selectedItem.title}</h2>{(selectedItem.contentHtml || selectedItem.summary) && <p>{selectedItem.contentHtml || selectedItem.summary}</p>}</div>
         </article> : <><div className={`rss-card-grid rss-card-grid-${contentType}`}>{items.map(renderCard)}</div>{!items.length && <p className="rss-empty">这里暂时没有内容。</p>}{data?.page?.hasMore && <button className="rss-load-more" onClick={() => void load(true)}>加载更早内容</button>}</>}
       </section>
