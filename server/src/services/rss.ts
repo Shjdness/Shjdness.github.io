@@ -10,6 +10,17 @@ const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_
 const asArray = <T>(value: T | T[] | undefined | null): T[] => value == null ? [] : Array.isArray(value) ? value : [value];
 const text = (value: any): string => typeof value === 'string' || typeof value === 'number' ? String(value) : value && typeof value === 'object' ? text(value['#text'] ?? value.__cdata ?? value['@_href'] ?? value['@_url'] ?? value.href ?? value.url ?? '') : '';
 const clean = (value: unknown, length = 1800) => text(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, length);
+const cleanMultiline = (value: unknown, length = 20_000) => text(value)
+  .replace(/<br\s*\/?\s*>/gi, '\n')
+  .replace(/<\/(?:p|div|li|blockquote|h[1-6])\s*>/gi, '\n')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;|&#160;/gi, ' ')
+  .replace(/\r\n?/g, '\n')
+  .replace(/[\t\f\v ]+/g, ' ')
+  .replace(/ *\n */g, '\n')
+  .replace(/\n{4,}/g, '\n\n\n')
+  .trim()
+  .slice(0, length);
 const dateOf = (value: unknown) => { const parsed = new Date(text(value)); return Number.isNaN(parsed.getTime()) ? new Date() : parsed; };
 
 function validatedFeedUrl(value: string) {
@@ -50,6 +61,7 @@ const feedAccept = 'application/rss+xml, application/atom+xml, application/feed+
 type MediaType = 'text' | 'video' | 'image' | 'audio' | 'external';
 type ParsedItem = { externalId: string; title: string; url: string; summary: string; author: string; publishedAt: Date; mediaType: MediaType; mediaUrl: string; embedUrl: string; thumbnailUrl: string; mediaJson: string; duration: number; contentHtml: string };
 const youtubeId = (url: string, fallback = '') => { try { const parsed = new URL(url); return parsed.searchParams.get('v') || (parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1) : parsed.pathname.match(/\/shorts\/([^/?]+)/)?.[1]) || fallback; } catch { return fallback; } };
+const bilibiliEmbed = (bvid: string) => `https://player.bilibili.com/player.html?bvid=${bvid}&page=1&as_wide=1&high_quality=1&quality=80&qn=80&danmaku=0&autoplay=0`;
 const decodeUrl = (value: string) => value.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#47;/g, '/');
 const absoluteMediaUrl = (value: string) => { const decoded = decodeUrl(value.trim()); return decoded.startsWith('//') ? `https:${decoded}` : decoded; };
 const imagesFrom = (value: unknown) => [...new Set([...text(value).matchAll(/<img\b[^>]*(?:src|data-src)=["']([^"']+)["']/gi)].map(match => absoluteMediaUrl(match[1])).filter(url => /^https?:\/\//i.test(url)))].slice(0, 16);
@@ -60,7 +72,7 @@ function mediaFor(entry: Record<string, any>, url: string) {
   const images = imagesFrom(content); let mediaUrl = absoluteMediaUrl(text(media['@_url'] || enclosure['@_url'] || enclosure.url)); const mime = text(media['@_type'] || enclosure['@_type'] || enclosure.type).toLowerCase(); const videoId = clean(entry['yt:videoId'], 100) || youtubeId(url);
   if (videoId || mime.startsWith('video/')) return { mediaType: 'video' as const, mediaUrl, embedUrl: videoId ? `https://www.youtube.com/embed/${videoId}` : '', thumbnailUrl: absoluteMediaUrl(text(thumb['@_url'])) || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : mediaUrl), mediaJson: '[]', duration: Number(media['@_duration'] || 0) || 0 };
   const bilibiliId = url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1];
-  if (bilibiliId) return { mediaType: 'video' as const, mediaUrl: '', embedUrl: `https://player.bilibili.com/player.html?bvid=${bilibiliId}&high_quality=1&danmaku=0`, thumbnailUrl: absoluteMediaUrl(text(thumb['@_url'])) || images[0] || '', mediaJson: '[]', duration: 0 };
+  if (bilibiliId) return { mediaType: 'video' as const, mediaUrl: '', embedUrl: bilibiliEmbed(bilibiliId), thumbnailUrl: absoluteMediaUrl(text(thumb['@_url'])) || images[0] || '', mediaJson: '[]', duration: 0 };
   if (!mediaUrl) mediaUrl = images[0] || '';
   const gallery = [...new Set([mediaUrl, ...images].filter(Boolean))];
   if (mime.startsWith('image/') || gallery.length || /\.(png|jpe?g|gif|webp|avif)(?:\?|$)/i.test(mediaUrl)) return { mediaType: 'image' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']) || mediaUrl, mediaJson: JSON.stringify(gallery), duration: 0 };
@@ -70,12 +82,12 @@ function mediaFor(entry: Record<string, any>, url: string) {
 
 function parseFeed(body: string, fallbackUrl: string) {
   if (body.trim().startsWith('{')) {
-    const json = JSON.parse(body) as Record<string, any>; const items = asArray(json.items as Record<string, any>[]).map(item => { const url = clean(item.url || item.external_url || fallbackUrl, 2000); const attachments = asArray(item.attachments); const attachment = attachments[0] || {}; const mime = text(attachment.mime_type).toLowerCase(); const mediaUrl = clean(attachment.url, 2000); const images = attachments.filter(value => text(value.mime_type).toLowerCase().startsWith('image/')).map(value => clean(value.url, 2000)).filter(Boolean); const mediaType: MediaType = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') || images.length ? 'image' : mime.startsWith('audio/') ? 'audio' : 'text'; return { externalId: clean(item.id || url, 1000), title: clean(item.title || '未命名条目', 500), url, summary: clean(item.summary || item.content_text || item.content_html), author: clean((asArray(item.authors)[0] || {}).name || item.author || '', 200), publishedAt: dateOf(item.date_published || item.date_modified), mediaType, mediaUrl, embedUrl: '', thumbnailUrl: clean(item.image || item.banner_image || (mediaType === 'image' ? mediaUrl : ''), 2000), mediaJson: JSON.stringify(images.length ? images : mediaType === 'image' && mediaUrl ? [mediaUrl] : []), duration: Number(attachment.duration_in_seconds || 0) || 0, contentHtml: clean(item.content_text || item.content_html || item.summary, 20_000) }; }).filter(item => item.externalId && item.url);
+    const json = JSON.parse(body) as Record<string, any>; const items = asArray(json.items as Record<string, any>[]).map(item => { const url = clean(item.url || item.external_url || fallbackUrl, 2000); const attachments = asArray(item.attachments); const attachment = attachments[0] || {}; const mime = text(attachment.mime_type).toLowerCase(); const mediaUrl = clean(attachment.url, 2000); const images = attachments.filter(value => text(value.mime_type).toLowerCase().startsWith('image/')).map(value => clean(value.url, 2000)).filter(Boolean); const mediaType: MediaType = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') || images.length ? 'image' : mime.startsWith('audio/') ? 'audio' : 'text'; const content = item.content_text || item.content_html || item.summary; return { externalId: clean(item.id || url, 1000), title: clean(item.title || '未命名条目', 500), url, summary: cleanMultiline(item.summary || content, 4000), author: clean((asArray(item.authors)[0] || {}).name || item.author || '', 200), publishedAt: dateOf(item.date_published || item.date_modified), mediaType, mediaUrl, embedUrl: '', thumbnailUrl: clean(item.image || item.banner_image || (mediaType === 'image' ? mediaUrl : ''), 2000), mediaJson: JSON.stringify(images.length ? images : mediaType === 'image' && mediaUrl ? [mediaUrl] : []), duration: Number(attachment.duration_in_seconds || 0) || 0, contentHtml: cleanMultiline(content) }; }).filter(item => item.externalId && item.url);
     return { title: clean(json.title || new URL(fallbackUrl).hostname, 160), description: clean(json.description, 500), siteUrl: clean(json.home_page_url || fallbackUrl, 2000), icon: clean(json.icon || json.favicon, 2000), items };
   }
   const document = parser.parse(body) as Record<string, any>; const channel = document.rss?.channel || document.channel; const atom = document.feed; const source = channel || atom; if (!source) throw new Error('无法识别 RSS、Atom 或 JSON Feed 格式');
   const entries = channel ? asArray(source.item) : asArray(source.entry); const siteLink = channel ? text(source.link) : text(asArray(source.link).find((link: any) => link?.['@_rel'] !== 'self') || source.link);
-  const items = entries.map((entry: Record<string, any>) => { const rawLink = channel ? entry.link : asArray(entry.link).find((link: any) => !link?.['@_rel'] || link?.['@_rel'] === 'alternate') || entry.link; const author = entry.author && typeof entry.author === 'object' ? text(entry.author.name) : text(entry.author || entry['dc:creator']); const url = text(rawLink) || fallbackUrl; const content = entry['content:encoded'] || entry.content || entry.description || entry.summary; return { externalId: clean(entry.guid || entry.id || url, 1000), title: clean(entry.title || '未命名条目', 500), url: clean(url, 2000), summary: clean(content), author: clean(author, 200), publishedAt: dateOf(entry.pubDate || entry.published || entry.updated), ...mediaFor(entry, url), contentHtml: clean(content, 20_000) }; }).filter((item: ParsedItem) => item.externalId && item.url && !/youtube\.com\/shorts\//i.test(item.url) && !/(^|\s)#shorts?(\s|$)/i.test(`${item.title} ${item.summary}`));
+  const items = entries.map((entry: Record<string, any>) => { const rawLink = channel ? entry.link : asArray(entry.link).find((link: any) => !link?.['@_rel'] || link?.['@_rel'] === 'alternate') || entry.link; const author = entry.author && typeof entry.author === 'object' ? text(entry.author.name) : text(entry.author || entry['dc:creator']); const url = text(rawLink) || fallbackUrl; const content = entry['content:encoded'] || entry.content || entry.description || entry.summary; return { externalId: clean(entry.guid || entry.id || url, 1000), title: clean(entry.title || '未命名条目', 500), url: clean(url, 2000), summary: cleanMultiline(content, 4000), author: clean(author, 200), publishedAt: dateOf(entry.pubDate || entry.published || entry.updated), ...mediaFor(entry, url), contentHtml: cleanMultiline(content) }; }).filter((item: ParsedItem) => item.externalId && item.url && !/youtube\.com\/shorts\//i.test(item.url) && !/(^|\s)#shorts?(\s|$)/i.test(`${item.title} ${item.summary}`));
   return { title: clean(source.title || new URL(fallbackUrl).hostname, 160), description: clean(source.description || source.subtitle, 500), siteUrl: siteLink || fallbackUrl, icon: clean(source.icon || source.logo, 2000), items };
 }
 
@@ -162,18 +174,19 @@ async function ingestParsedFeed(db: ReturnType<typeof getDB>, subscription: type
   if (platform === 'bilibili') {
     parsed.items = parsed.items.map(item => {
       const bvid = item.url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1];
-      return { ...item, mediaType: 'video' as const, embedUrl: bvid ? `https://player.bilibili.com/player.html?bvid=${bvid}&high_quality=1&danmaku=0` : item.embedUrl, thumbnailUrl: item.thumbnailUrl || item.mediaUrl || imagesFrom(item.contentHtml)[0] || '', mediaJson: '[]' };
+      return { ...item, mediaType: 'video' as const, embedUrl: bvid ? bilibiliEmbed(bvid) : item.embedUrl, thumbnailUrl: item.thumbnailUrl || item.mediaUrl || imagesFrom(item.contentHtml)[0] || '', mediaJson: '[]' };
     });
     await db.update(rssItems).set({ mediaType: 'video', mediaJson: '[]', updatedAt: now }).where(and(eq(rssItems.subscriptionId, subscription.id), eq(rssItems.ownerId, subscription.ownerId)));
   }
-  const existingIds = platform === 'bilibili' ? new Set((await db.select({ externalId: rssItems.externalId }).from(rssItems).where(and(eq(rssItems.subscriptionId, subscription.id), eq(rssItems.ownerId, subscription.ownerId)))).map(item => item.externalId)) : new Set<string>();
+  const refreshExisting = platform === 'bilibili' || platform === 'x';
+  const existingIds = refreshExisting ? new Set((await db.select({ externalId: rssItems.externalId }).from(rssItems).where(and(eq(rssItems.subscriptionId, subscription.id), eq(rssItems.ownerId, subscription.ownerId)))).map(item => item.externalId)) : new Set<string>();
   let added = 0;
   for (const item of parsed.items.slice(0, 500)) {
     const insert = db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId: subscription.ownerId, ...item });
-    const result = platform === 'bilibili'
-      ? await insert.onConflictDoUpdate({ target: [rssItems.subscriptionId, rssItems.externalId], set: { title: item.title, url: item.url, summary: item.summary, author: item.author, mediaType: 'video', mediaUrl: item.mediaUrl, embedUrl: item.embedUrl, thumbnailUrl: item.thumbnailUrl, mediaJson: '[]', duration: item.duration, contentHtml: item.contentHtml, publishedAt: item.publishedAt, updatedAt: now } }).returning({ id: rssItems.id })
+    const result = refreshExisting
+      ? await insert.onConflictDoUpdate({ target: [rssItems.subscriptionId, rssItems.externalId], set: { title: item.title, url: item.url, summary: item.summary, author: item.author, mediaType: platform === 'bilibili' ? 'video' : item.mediaType, mediaUrl: item.mediaUrl, embedUrl: item.embedUrl, thumbnailUrl: item.thumbnailUrl, mediaJson: platform === 'bilibili' ? '[]' : item.mediaJson, duration: item.duration, contentHtml: item.contentHtml, publishedAt: item.publishedAt, updatedAt: now } }).returning({ id: rssItems.id })
       : await insert.onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id });
-    added += platform === 'bilibili' && existingIds.has(item.externalId) ? 0 : result.length;
+    added += refreshExisting && existingIds.has(item.externalId) ? 0 : result.length;
   }
   const stableType = platform === 'youtube' || platform === 'bilibili' ? 'video' : platform === 'x' ? 'image' : '';
   const inferredType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : subscription.contentType;
