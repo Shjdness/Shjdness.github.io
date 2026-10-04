@@ -14,10 +14,9 @@ S3_ACCESS_HOST = "<YourS3AccessHost>"
 S3_BUCKET = "<YourS3BucketName>"
 S3_FORCE_PATH_STYLE = "false"
 WEBHOOK_URL = "https://<YourWebhookURL>"
-# Set RSS_SYNC_TOKEN as a Worker secret. It authenticates the scheduled RSSHub bridge.
 
 [triggers]
-crons = ["0 3,6,9,23 * * *"]
+crons = ["15 20 * * *"]
 
 [[d1_databases]]
 binding = "DB"

@@ -1,9 +1,9 @@
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE = `shjdness-static-${CACHE_VERSION}`;
 const PAGE_CACHE = `shjdness-pages-${CACHE_VERSION}`;
 const FIXED_ASSETS = [
   '/', '/index.html', '/manifest.webmanifest', '/favicon.png', '/avatar.jpg', '/guest-avatar.jpg',
-  '/background-home-v2.jpg', '/background-inner.jpg', '/rss-x-default.jpg', '/life-guide.json',
+  '/background-home-v2.jpg', '/background-inner.jpg', '/life-guide.json',
   '/cantarell_5.0.12_latin-400-normal.woff2', '/cantarell_5.0.13_latin-400-normal.woff',
 ];
 

@@ -28,6 +28,7 @@ async function publish({
   summary,
   tags,
   draft,
+  kind,
   createdAt,
   onCompleted,
   showAlert
@@ -38,6 +39,7 @@ async function publish({
   summary: string;
   tags: string[];
   draft: boolean;
+  kind: 'article' | 'diary';
   alias?: string;
   createdAt?: Date;
   onCompleted?: () => void;
@@ -53,6 +55,7 @@ async function publish({
       tags,
       listed,
       draft,
+      kind,
       createdAt,
     },
     {
@@ -82,6 +85,7 @@ async function update({
   tags,
   listed,
   draft,
+  kind,
   createdAt,
   onCompleted,
   showAlert
@@ -94,6 +98,7 @@ async function update({
   summary?: string;
   tags?: string[];
   draft?: boolean;
+  kind?: 'article' | 'diary';
   createdAt?: Date;
   onCompleted?: () => void;
   showAlert: ShowAlertType;
@@ -108,6 +113,7 @@ async function update({
       tags,
       listed,
       draft,
+      kind,
       createdAt,
     },
     {
@@ -167,7 +173,9 @@ export function WritingPage({ id }: { id?: number }) {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [alias, setAlias] = cache.useCache("alias", "");
-  const [draft, setDraft] = useState(false);
+  const [kind, setKind] = useState<'article' | 'diary'>('article');
+  const [currentId, setCurrentId] = useState<number | undefined>(id);
+  const [saveState, setSaveState] = useState('本地已保存');
   const [listed, setListed] = useState(true);
   const [content, setContent] = cache.useCache("content", "");
   const [createdAt, setCreatedAt] = useState<Date | undefined>(new Date());
@@ -178,10 +186,8 @@ export function WritingPage({ id }: { id?: number }) {
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
-  const diaryMode = selectedTagNames.includes('日记');
-  useEffect(() => {
-    if (diaryMode) { setDraft(true); setListed(false); }
-  }, [diaryMode]);
+  const diaryMode = kind === 'diary';
+  useEffect(() => { if (diaryMode) setListed(false); }, [diaryMode]);
   const saveTagNames = (names: string[]) => {
     const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(Boolean))];
     setTags(unique.map(name => `#${name}`).join(' '));
@@ -223,16 +229,17 @@ export function WritingPage({ id }: { id?: number }) {
         .split("#")
         .filter((tag) => tag !== "")
         .map((tag) => tag.trim()) || [];
-    if (id !== undefined) {
+    if (currentId !== undefined) {
       setPublishing(true)
       update({
-        id,
+        id: currentId,
         title,
         content,
         summary,
         alias,
         tags: tagsplit,
-        draft: diaryMode ? true : draft,
+        draft: false,
+        kind,
         listed: diaryMode ? false : listed,
         createdAt,
         onCompleted: () => {
@@ -255,7 +262,8 @@ export function WritingPage({ id }: { id?: number }) {
         content,
         summary,
         tags: tagsplit,
-        draft: diaryMode ? true : draft,
+        draft: false,
+        kind,
         alias,
         listed: diaryMode ? false : listed,
         createdAt,
@@ -265,6 +273,24 @@ export function WritingPage({ id }: { id?: number }) {
         showAlert
       });
     }
+  }
+
+  async function saveDraftToCloud() {
+    if (publishing) return;
+    setPublishing(true); setSaveState('正在上传草稿…');
+    const payload = { title: title.trim() || '未命名草稿', content, summary, alias, tags: selectedTagNames, draft: true, kind, listed: false, createdAt };
+    try {
+      if (currentId !== undefined) {
+        const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
+        if (error) throw new Error(String(error.value));
+      } else {
+        const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
+        if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
+        setCurrentId(data.insertedId); window.history.replaceState({}, '', `/blog/writing/${data.insertedId}`);
+      }
+      setSaveState(`云端已备份 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
+    } catch (error) { setSaveState(error instanceof Error ? error.message : '云端备份失败，本地稿仍保留'); }
+    finally { setPublishing(false); }
   }
 
 
@@ -331,9 +357,6 @@ export function WritingPage({ id }: { id?: number }) {
     )
   }
   useEffect(() => {
-    client.tag.index.get().then(({ data }) => {
-      if (data && typeof data !== 'string') setAvailableTags(data.map(tag => tag.name));
-    });
     if (id) {
       client
         .feed({ id })
@@ -349,12 +372,19 @@ export function WritingPage({ id }: { id?: number }) {
             if (content == "") setContent(data.content);
             if (summary == "") setSummary(data.summary);
             setListed(data.listed === 1);
-            setDraft(data.draft === 1);
+            setKind(data.kind === 'diary' ? 'diary' : 'article');
             setCreatedAt(new Date(data.createdAt));
           }
         });
     }
   }, []);
+  useEffect(() => {
+    client.tag.index.get({ query: { kind } }).then(({ data }) => {
+      if (data && typeof data !== 'string') {
+        setAvailableTags(data.filter(tag => tag.feeds > 0).map(tag => tag.name));
+      }
+    });
+  }, [kind]);
   const debouncedUpdate = useCallback(
     _.debounce(() => {
       mermaid.initialize({
@@ -390,6 +420,12 @@ export function WritingPage({ id }: { id?: number }) {
             setValue={setTitle}
             placeholder={t("title")}
           />
+          <label className="writing-kind mt-4">
+            <span>内容类型</span>
+            <select value={kind} onChange={event => setKind(event.target.value as 'article' | 'diary')}>
+              <option value="article">普通文章</option><option value="diary">私人日记</option>
+            </select>
+          </label>
           <Input
             id={id}
             value={summary}
@@ -425,18 +461,6 @@ export function WritingPage({ id }: { id?: number }) {
             placeholder={t("alias")}
             className="mt-4"
           />
-          <div
-            className={`select-none flex flex-row justify-between items-center mt-6 mb-2 px-4 ${diaryMode ? 'opacity-50' : ''}`}
-            onClick={() => { if (!diaryMode) setDraft(!draft); }}
-          >
-            <p>{t('visible.self_only')}{diaryMode ? '（日记固定）' : ''}</p>
-            <Checkbox
-              id="draft"
-              value={diaryMode || draft}
-              setValue={value => { if (!diaryMode) setDraft(value); }}
-              placeholder={t('draft')}
-            />
-          </div>
           <div
             className={`select-none flex flex-row justify-between items-center mt-6 mb-2 px-4 ${diaryMode ? 'opacity-50' : ''}`}
             onClick={() => { if (!diaryMode) setListed(!listed); }}
@@ -562,7 +586,8 @@ export function WritingPage({ id }: { id?: number }) {
               </div>
             </div>
           </div>
-          <div className="visible md:hidden flex flex-row justify-center mt-8">
+          <div className="visible md:hidden flex flex-row justify-center gap-3 mt-8">
+            <button onClick={() => void saveDraftToCloud()} className="basis-1/2 writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
               className="basis-1/2 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
@@ -578,7 +603,9 @@ export function WritingPage({ id }: { id?: number }) {
         </div>
         <div className="hidden md:visible max-w-96 md:flex flex-col">
           {MetaInput({ className: "glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
-          <div className="flex flex-row justify-center mt-8">
+          <div className="writing-save-state">{saveState}</div>
+          <div className="flex flex-row justify-center gap-3 mt-4">
+            <button onClick={() => void saveDraftToCloud()} className="basis-1/2 writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
               className="basis-1/2 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"

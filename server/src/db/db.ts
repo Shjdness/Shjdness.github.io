@@ -21,8 +21,6 @@ export interface Env {
     WEBHOOK_URL: string,
     S3_FORCE_PATH_STYLE: string,
     GUEST_ACCESS_CODE: string,
-    /** Shared secret used only by the scheduled GitHub RSSHub bridge. */
-    RSS_SYNC_TOKEN: string,
 }
 
 export function db(env: Env) {

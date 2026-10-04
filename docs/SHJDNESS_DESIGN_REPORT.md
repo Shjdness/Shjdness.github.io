@@ -149,39 +149,23 @@ RSS 独立页面
 
 ### 6.2 支持的来源
 
-直接支持：
-
-- RSS 2.0
-- Atom
-- JSON Feed
-- 具有标准 `<link rel="alternate">` 的普通网站自动发现
-- YouTube 官方频道 Feed、频道主页、`/channel/UC...` 地址和部分 Handle 页面
-- RSSHub 路由
-- Bilibili 用户空间地址
-- X/Twitter 用户主页
-
-媒体识别支持文章、视频、图片和音频；YouTube 使用 `youtube-nocookie.com` 嵌入，Bilibili 视频按 BV 号生成播放器地址。
+RSS 阅读器现已收束为 YouTube 视频订阅，支持官方频道 Feed、频道主页、
+`/channel/UC...` 地址和 Handle 页面。视频使用 `youtube-nocookie.com` 嵌入，
+不再包含 RSSHub、Bilibili、X、文章或图片阅读分支。
 
 ### 6.3 抓取与存储策略
 
 - Worker 只抓取 Feed XML/JSON 和缩略图地址，不下载视频原文件。
-- 每次来源最多保存最近 250 条，数据库以 subscription + externalId 去重。
+- 数据库以 subscription + externalId 去重。
 - 前端一次读取最多 200 条，并支持加载更早内容。
 - YouTube 缩略图使用较小规格并懒加载。
-- 刷新不再一次并发请求全部来源，而是最多 3 个并发任务，返回具体失败来源。
-- Worker 增加每 6 小时一次的 scheduled refresh，让来源逐步积累历史内容。
+- YouTube WebSub 推送负责新视频的近实时更新。
+- Worker 每天运行一次补偿同步，避免通知丢失，不需要高频轮询。
 
-### 6.4 RSSHub 限制与内部实例接口
+### 6.4 更新可靠性
 
-公共 `rsshub.app` 可能返回 Cloudflare 人机验证、403 或资源超限，Worker 无法安全绕过。当前代码会把这类错误明确显示为“公共 RSSHub 拒绝服务器访问”，而不是伪装成成功。
-
-已经预留：
-
-```text
-RSSHUB_BASE_URL=https://你的自建实例
-```
-
-切换后，Bilibili/X 路由和以 `/...` 开头的 RSSHub 路由使用该实例；原有公共 `rsshub.app` 地址也会在刷新时迁移到新实例的同一路径。自建 RSSHub 应部署在适合运行 Node/Docker 的 VPS、Render、Railway 等环境，不建议直接塞进 Cloudflare Worker。
+新增订阅时会先读取官方 Feed，并注册 WebSub 回调；即使 WebSub 暂时注册失败，
+订阅和手动更新仍然可用，每日补偿任务也会继续抓取，避免单点故障。
 
 ## 7. HowToLiveBetter 生活指南
 
@@ -310,11 +294,10 @@ GitHub main
 
 以下不是前端代码缺陷，而是外部服务条件：
 
-1. Bilibili、X 等 RSSHub 路由的稳定性取决于 RSSHub 实例、目标站点登录限制和 Cookie/代理配置；Pixiv 接入已停用。
-2. 公共 RSSHub 的 403/人机验证不能由网站合法绕过，需要自建 RSSHub 并设置 `RSSHUB_BASE_URL`。
-3. YouTube 官方 Feed 本身只提供有限的最新条目；想获得完整历史需要长期定时抓取、RSSHub 或 YouTube Data API。
-4. 本地离线数据只有在同步队列成功后才会跨设备出现；应在设置或状态栏提示最后同步时间和 pending 数量。
-5. 项目仍保留部分 Rin 的历史国际化/兼容代码，后续可在确认没有旧路由依赖后再做代码级清理。
+1. YouTube 官方 Feed 只提供有限的最新条目；网站从订阅时开始持续积累，无法一次补齐频道全部历史。
+2. YouTube 嵌入播放器的清晰度与登录验证由 YouTube 决定，页面只能给出画质偏好，不能绕过平台限制。
+3. 本地离线数据只有在同步队列成功后才会跨设备出现；应在设置或状态栏提示最后同步时间和 pending 数量。
+4. 项目仍保留部分 Rin 的历史国际化/兼容代码，后续可在确认没有旧路由依赖后再做代码级清理。
 
 ## 13. 可复用的实施方法
 
@@ -334,7 +317,7 @@ GitHub main
 ## 14. 后续优先级
 
 ```text
-高：验证定时 RSSHub 的 Bilibili/X 抓取与凭据状态
+高：验证 YouTube WebSub 回调与每日补偿同步
 高：RSS 状态栏显示最后同步时间、待同步数和失败来源
 中：彻底移除不再使用的旧友链/多语言兼容代码
 中：把 RSS 分组、收藏和订阅设置纳入更完整的跨设备同步

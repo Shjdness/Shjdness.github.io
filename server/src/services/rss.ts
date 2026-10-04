@@ -1,301 +1,817 @@
-import { and, count, desc, eq, inArray, like, or } from 'drizzle-orm';
-import type { SQL } from 'drizzle-orm';
-import Elysia, { t } from 'elysia';
-import { XMLParser } from 'fast-xml-parser';
-import { rssItems, rssSourceGroups, rssSubscriptions } from '../db/schema';
-import { setup } from '../setup';
-import { getDB, getEnv } from '../utils/di';
+import { XMLParser } from "fast-xml-parser";
+import { and, count, desc, eq, inArray, SQL } from "drizzle-orm";
+import Elysia, { t } from "elysia";
+import type { DB } from "../_worker";
+import { rssItems, rssSourceGroups, rssSubscriptions } from "../db/schema";
+import { setup } from "../setup";
+import { getDB, getEnv } from "../utils/di";
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', trimValues: true });
-const asArray = <T>(value: T | T[] | undefined | null): T[] => value == null ? [] : Array.isArray(value) ? value : [value];
-const text = (value: any): string => typeof value === 'string' || typeof value === 'number' ? String(value) : value && typeof value === 'object' ? text(value['#text'] ?? value.__cdata ?? value['@_href'] ?? value['@_url'] ?? value.href ?? value.url ?? '') : '';
-const clean = (value: unknown, length = 1800) => text(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, length);
-const cleanMultiline = (value: unknown, length = 20_000) => text(value)
-  .replace(/<br\s*\/?\s*>/gi, '\n')
-  .replace(/<\/(?:p|div|li|blockquote|h[1-6])\s*>/gi, '\n')
-  .replace(/<[^>]*>/g, ' ')
-  .replace(/&nbsp;|&#160;/gi, ' ')
-  .replace(/\r\n?/g, '\n')
-  .replace(/[\t\f\v ]+/g, ' ')
-  .replace(/ *\n */g, '\n')
-  .replace(/\n{4,}/g, '\n\n\n')
-  .trim()
-  .slice(0, length);
-const dateOf = (value: unknown) => { const parsed = new Date(text(value)); return Number.isNaN(parsed.getTime()) ? new Date() : parsed; };
+const HUB = "https://pubsubhubbub.appspot.com/subscribe";
+const FEED = "https://www.youtube.com/feeds/videos.xml?channel_id=";
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+});
+const list = <T>(value: T | T[] | undefined): T[] =>
+  value === undefined ? [] : Array.isArray(value) ? value : [value];
+const text = (value: unknown) =>
+  typeof value === "string" || typeof value === "number" ? String(value) : "";
+const clean = (value: unknown, max = 4000) =>
+  text(value)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
 
-function validatedFeedUrl(value: string) {
-  let url: URL; try { url = new URL(value.trim()); } catch { return null; }
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  const privateHost = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host === '0.0.0.0' || host === '::1' || host === 'metadata.google.internal'
-    || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) || /^(fc|fd|fe80):/i.test(host);
-  const literalAddress = /^\d+(?:\.\d+){0,3}$/.test(host) || host.includes(':');
-  return url.protocol === 'https:' && !url.username && !url.password && !privateHost && !literalAddress ? url : null;
-}
-
-const RSSHUB_DESCRIPTOR_ORIGIN = 'https://rsshub.internal.invalid';
-
-function normalizedSource(value: string) {
-  let normalized = value.trim();
-  if (normalized.startsWith('/')) normalized = `${RSSHUB_DESCRIPTOR_ORIGIN}${normalized}`;
-  else if (normalized.startsWith('feed://')) normalized = `https://${normalized.slice(7)}`;
-  else if (normalized.startsWith('http://')) normalized = `https://${normalized.slice(7)}`;
-  else if (!/^https?:\/\//i.test(normalized) && /^[\w.-]+\//.test(normalized)) normalized = `https://${normalized}`;
-  return normalized;
-}
-
-async function safeFetch(value: string, accept: string, conditional?: { etag: string; lastModified: string }, redirects = 0): Promise<{ unchanged: boolean; response: Response; body: string; finalUrl: string }> {
-  const url = validatedFeedUrl(value); if (!url) throw new Error('仅支持公开 HTTPS 地址'); if (redirects > 5) throw new Error('重定向次数过多');
-  const headers = new Headers({ Accept: accept, 'User-Agent': 'Shjdness-RSS/2.0 (+https://shjdness.github.io/life/rss)' }); if (conditional?.etag) headers.set('If-None-Match', conditional.etag); if (conditional?.lastModified) headers.set('If-Modified-Since', conditional.lastModified);
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15_000);
-  const response = await fetch(url.toString(), { headers, redirect: 'manual', signal: controller.signal }).finally(() => clearTimeout(timeout));
-  if (response.status >= 300 && response.status < 400) { const location = response.headers.get('location'); if (!location) throw new Error('重定向无有效地址'); return safeFetch(new URL(location, url).toString(), accept, conditional, redirects + 1); }
-  if (response.status === 304) return { unchanged: true, response, body: '', finalUrl: url.toString() };
-  if (!response.ok) {
-    throw new Error(`来源返回 ${response.status}`);
+function channelIdFromFeed(value: string) {
+  try {
+    return new URL(value).searchParams.get("channel_id") || "";
+  } catch {
+    return "";
   }
-  if (Number(response.headers.get('content-length') || 0) > 4_000_000) throw new Error('来源内容超过 4MB'); const body = await response.text(); if (body.length > 4_000_000) throw new Error('来源内容超过 4MB');
-  return { unchanged: false, response, body, finalUrl: url.toString() };
 }
 
-const feedAccept = 'application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, application/json;q=0.9';
-type MediaType = 'text' | 'video' | 'image' | 'audio' | 'external';
-type ParsedItem = { externalId: string; title: string; url: string; summary: string; author: string; publishedAt: Date; mediaType: MediaType; mediaUrl: string; embedUrl: string; thumbnailUrl: string; mediaJson: string; duration: number; contentHtml: string };
-const youtubeId = (url: string, fallback = '') => { try { const parsed = new URL(url); return parsed.searchParams.get('v') || (parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1) : parsed.pathname.match(/\/shorts\/([^/?]+)/)?.[1]) || fallback; } catch { return fallback; } };
-const bilibiliEmbed = (bvid: string) => `https://player.bilibili.com/player.html?bvid=${bvid}&page=1&as_wide=1&high_quality=1&quality=80&qn=80&danmaku=0&autoplay=0`;
-const decodeUrl = (value: string) => value.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#47;/g, '/');
-const absoluteMediaUrl = (value: string) => { const decoded = decodeUrl(value.trim()); return decoded.startsWith('//') ? `https:${decoded}` : decoded; };
-const imagesFrom = (value: unknown) => [...new Set([...text(value).matchAll(/<img\b[^>]*(?:src|data-src)=["']([^"']+)["']/gi)].map(match => absoluteMediaUrl(match[1])).filter(url => /^https?:\/\//i.test(url)))].slice(0, 16);
-
-function mediaFor(entry: Record<string, any>, url: string) {
-  const enclosure = asArray(entry.enclosure)[0] || {}; const media = asArray(entry['media:content'])[0] || {}; const thumb = asArray(entry['media:thumbnail'])[0] || {};
-  const content = entry['content:encoded'] || entry.description || entry.content || entry.summary;
-  const images = imagesFrom(content); let mediaUrl = absoluteMediaUrl(text(media['@_url'] || enclosure['@_url'] || enclosure.url)); const mime = text(media['@_type'] || enclosure['@_type'] || enclosure.type).toLowerCase(); const videoId = clean(entry['yt:videoId'], 100) || youtubeId(url);
-  if (videoId || mime.startsWith('video/')) return { mediaType: 'video' as const, mediaUrl, embedUrl: videoId ? `https://www.youtube.com/embed/${videoId}` : '', thumbnailUrl: absoluteMediaUrl(text(thumb['@_url'])) || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : mediaUrl), mediaJson: '[]', duration: Number(media['@_duration'] || 0) || 0 };
-  const bilibiliId = url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1];
-  if (bilibiliId) return { mediaType: 'video' as const, mediaUrl: '', embedUrl: bilibiliEmbed(bilibiliId), thumbnailUrl: absoluteMediaUrl(text(thumb['@_url'])) || images[0] || '', mediaJson: '[]', duration: 0 };
-  if (!mediaUrl) mediaUrl = images[0] || '';
-  const gallery = [...new Set([mediaUrl, ...images].filter(Boolean))];
-  if (mime.startsWith('image/') || gallery.length || /\.(png|jpe?g|gif|webp|avif)(?:\?|$)/i.test(mediaUrl)) return { mediaType: 'image' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']) || mediaUrl, mediaJson: JSON.stringify(gallery), duration: 0 };
-  if (mime.startsWith('audio/')) return { mediaType: 'audio' as const, mediaUrl, embedUrl: '', thumbnailUrl: text(thumb['@_url']), mediaJson: '[]', duration: Number(media['@_duration'] || 0) || 0 };
-  return { mediaType: 'text' as const, mediaUrl: '', embedUrl: '', thumbnailUrl: text(thumb['@_url']), mediaJson: '[]', duration: 0 };
+function parseYouTubeFeed(xml: string) {
+  const root = parser.parse(xml)?.feed || {};
+  const author = clean(root.author?.name, 200);
+  const videos = list<Record<string, any>>(root.entry)
+    .map((entry) => {
+      const id = clean(
+        entry["yt:videoId"] || text(entry.id).replace("yt:video:", ""),
+        100,
+      );
+      const media = entry["media:group"] || {};
+      const alternate = list<Record<string, any>>(entry.link).find(
+        (link) => link?.["@_rel"] === "alternate",
+      );
+      const url =
+        text(alternate?.["@_href"]) || `https://www.youtube.com/watch?v=${id}`;
+      return {
+        externalId: id,
+        title: clean(entry.title || media["media:title"] || "未命名视频", 500),
+        url,
+        summary: clean(media["media:description"] || entry.content || "", 4000),
+        author: clean(entry.author?.name || author, 200),
+        publishedAt: new Date(entry.published || entry.updated || Date.now()),
+        thumbnailUrl:
+          text(media["media:thumbnail"]?.["@_url"]) ||
+          `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${id}`,
+      };
+    })
+    .filter(
+      (video) =>
+        video.externalId &&
+        !/youtube\.com\/shorts\//i.test(video.url) &&
+        !/(^|\s)#shorts?(\s|$)/i.test(`${video.title} ${video.summary}`),
+    );
+  const self = list<Record<string, any>>(root.link).find(
+    (link) => link?.["@_rel"] === "self",
+  );
+  return {
+    channelId: clean(
+      root["yt:channelId"] || channelIdFromFeed(text(self?.["@_href"])),
+      100,
+    ),
+    title: clean(root.title || author || "YouTube", 160),
+    videos,
+  };
 }
 
-function parseFeed(body: string, fallbackUrl: string) {
-  if (body.trim().startsWith('{')) {
-    const json = JSON.parse(body) as Record<string, any>; const items = asArray(json.items as Record<string, any>[]).map(item => { const url = clean(item.url || item.external_url || fallbackUrl, 2000); const attachments = asArray(item.attachments); const attachment = attachments[0] || {}; const mime = text(attachment.mime_type).toLowerCase(); const mediaUrl = clean(attachment.url, 2000); const images = attachments.filter(value => text(value.mime_type).toLowerCase().startsWith('image/')).map(value => clean(value.url, 2000)).filter(Boolean); const mediaType: MediaType = mime.startsWith('video/') ? 'video' : mime.startsWith('image/') || images.length ? 'image' : mime.startsWith('audio/') ? 'audio' : 'text'; const content = item.content_text || item.content_html || item.summary; return { externalId: clean(item.id || url, 1000), title: clean(item.title || '未命名条目', 500), url, summary: cleanMultiline(item.summary || content, 4000), author: clean((asArray(item.authors)[0] || {}).name || item.author || '', 200), publishedAt: dateOf(item.date_published || item.date_modified), mediaType, mediaUrl, embedUrl: '', thumbnailUrl: clean(item.image || item.banner_image || (mediaType === 'image' ? mediaUrl : ''), 2000), mediaJson: JSON.stringify(images.length ? images : mediaType === 'image' && mediaUrl ? [mediaUrl] : []), duration: Number(attachment.duration_in_seconds || 0) || 0, contentHtml: cleanMultiline(content) }; }).filter(item => item.externalId && item.url);
-    return { title: clean(json.title || new URL(fallbackUrl).hostname, 160), description: clean(json.description, 500), siteUrl: clean(json.home_page_url || fallbackUrl, 2000), icon: clean(json.icon || json.favicon, 2000), items };
+async function fetchText(
+  url: string,
+  accept = "application/atom+xml,text/html",
+) {
+  const response = await fetch(url, {
+    redirect: "follow",
+    headers: {
+      Accept: accept,
+      "User-Agent": "Mozilla/5.0 Shjdness-YouTube/1.0",
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`YouTube 返回 ${response.status}`);
+  return { body: await response.text(), finalUrl: response.url };
+}
+
+async function resolveChannelId(input: string) {
+  let source: URL;
+  try {
+    source = new URL(input.trim());
+  } catch {
+    throw new Error("请粘贴 YouTube 频道或官方 Feed 地址");
   }
-  const document = parser.parse(body) as Record<string, any>; const channel = document.rss?.channel || document.channel; const atom = document.feed; const source = channel || atom; if (!source) throw new Error('无法识别 RSS、Atom 或 JSON Feed 格式');
-  const entries = channel ? asArray(source.item) : asArray(source.entry); const siteLink = channel ? text(source.link) : text(asArray(source.link).find((link: any) => link?.['@_rel'] !== 'self') || source.link);
-  const items = entries.map((entry: Record<string, any>) => { const rawLink = channel ? entry.link : asArray(entry.link).find((link: any) => !link?.['@_rel'] || link?.['@_rel'] === 'alternate') || entry.link; const author = entry.author && typeof entry.author === 'object' ? text(entry.author.name) : text(entry.author || entry['dc:creator']); const url = text(rawLink) || fallbackUrl; const content = entry['content:encoded'] || entry.content || entry.description || entry.summary; return { externalId: clean(entry.guid || entry.id || url, 1000), title: clean(entry.title || '未命名条目', 500), url: clean(url, 2000), summary: cleanMultiline(content, 4000), author: clean(author, 200), publishedAt: dateOf(entry.pubDate || entry.published || entry.updated), ...mediaFor(entry, url), contentHtml: cleanMultiline(content) }; }).filter((item: ParsedItem) => item.externalId && item.url && !/youtube\.com\/shorts\//i.test(item.url) && !/(^|\s)#shorts?(\s|$)/i.test(`${item.title} ${item.summary}`));
-  return { title: clean(source.title || new URL(fallbackUrl).hostname, 160), description: clean(source.description || source.subtitle, 500), siteUrl: siteLink || fallbackUrl, icon: clean(source.icon || source.logo, 2000), items };
+  if (
+    source.protocol !== "https:" ||
+    !/(^|\.)youtube\.com$/.test(source.hostname)
+  )
+    throw new Error("目前仅支持 YouTube 频道");
+  const fromFeed =
+    source.pathname === "/feeds/videos.xml"
+      ? source.searchParams.get("channel_id")
+      : "";
+  const fromChannel =
+    source.pathname.match(/^\/channel\/(UC[\w-]+)/)?.[1] || "";
+  if (fromFeed || fromChannel)
+    return { channelId: fromFeed || fromChannel, sourceUrl: source.toString() };
+  const page = await fetchText(source.toString(), "text/html");
+  const id =
+    page.body.match(/"channelId":"(UC[\w-]+)"/)?.[1] ||
+    page.body.match(/<meta itemprop="channelId" content="(UC[\w-]+)"/)?.[1] ||
+    page.body.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1];
+  if (!id)
+    throw new Error(
+      "无法识别频道 ID；请使用 /channel/UC… 或 feeds/videos.xml?channel_id=UC…",
+    );
+  return { channelId: id, sourceUrl: source.toString() };
 }
 
-const platformFor = (value: string) => { const url = new URL(value); const host = url.hostname.toLowerCase(); const path = url.pathname.toLowerCase(); if (host.includes('youtube.com') || host === 'youtu.be' || path.includes('/youtube/')) return 'youtube'; if (host.includes('bilibili.com') || path.includes('/bilibili/')) return 'bilibili'; if (host.includes('pixiv.net') || path.includes('/pixiv/')) return 'pixiv'; if (host === 'x.com' || host.includes('twitter.com') || path.includes('/twitter/') || path.includes('/x/')) return 'x'; if (host.includes('rsshub')) return 'rsshub'; return 'other'; };
-const effectivePlatform = (source: Pick<typeof rssSubscriptions.$inferSelect, 'platform' | 'sourceUrl' | 'feedUrl'>) => {
-  if (['youtube', 'bilibili', 'x', 'pixiv'].includes(source.platform)) return source.platform;
-  for (const value of [source.sourceUrl, source.feedUrl]) { try { const detected = platformFor(normalizedSource(value)); if (detected !== 'other' && detected !== 'rsshub') return detected; } catch { /* Try the next stored address. */ } }
-  return source.platform || 'other';
-};
-const sourceViewType = (source: Pick<typeof rssSubscriptions.$inferSelect, 'platform' | 'sourceUrl' | 'feedUrl' | 'contentType'>) => { const platform = effectivePlatform(source); return platform === 'youtube' || platform === 'bilibili' ? 'video' : platform === 'x' ? 'image' : source.contentType; };
-const bridgePlatform = (platform: string) => ['bilibili', 'x', 'rsshub'].includes(platform);
-const isBridgeSubscription = (source: Pick<typeof rssSubscriptions.$inferSelect, 'platform' | 'provider' | 'feedUrl' | 'sourceUrl'>) => source.provider === 'rsshub' || bridgePlatform(effectivePlatform(source)) || source.feedUrl.includes('rsshub');
-function bridgeCandidate(sourceUrl: string, route: string, platform: 'bilibili' | 'x', externalId: string) {
-  const title = platform === 'bilibili' ? `Bilibili ${externalId}` : `@${externalId}`;
-  const parsed = { title, description: '内容由站点的定时 RSSHub 任务更新', siteUrl: sourceUrl, icon: '', items: [] };
-  return candidate(parsed, sourceUrl, `${RSSHUB_DESCRIPTOR_ORIGIN}${route}`, 'rsshub', platform, externalId);
+export async function resolveYouTubeSource(input: string) {
+  const { channelId, sourceUrl } = await resolveChannelId(input);
+  const feedUrl = `${FEED}${channelId}`;
+  const parsed = parseYouTubeFeed((await fetchText(feedUrl)).body);
+  return {
+    sourceUrl,
+    feedUrl,
+    provider: "native",
+    platform: "youtube",
+    externalId: channelId,
+    title: parsed.title,
+    description: "",
+    siteUrl: `https://www.youtube.com/channel/${channelId}`,
+    icon: "",
+    category: "视频",
+    contentType: "video",
+    preview: parsed.videos
+      .slice(0, 3)
+      .map((video) => ({ ...video, mediaType: "video" })),
+  };
 }
-async function resolveSource(value: string) {
-  const source = validatedFeedUrl(normalizedSource(value)); if (!source) throw new Error('请输入公开订阅地址'); const platform = platformFor(source.toString());
-  if (platform === 'bilibili' && source.hostname.includes('bilibili.com')) { const uid = source.hostname === 'space.bilibili.com' ? source.pathname.split('/').filter(Boolean)[0] : ''; if (!uid || !/^\d+$/.test(uid)) throw new Error('请粘贴 Bilibili 用户空间地址或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/bilibili/user/video/${uid}`, 'bilibili', uid)]; }
-  if (platform === 'pixiv') throw new Error('Pixiv 接入已停用；现有缓存不会被删除');
-  if (platform === 'x' && (source.hostname === 'x.com' || source.hostname.includes('twitter.com'))) { const username = source.pathname.split('/').filter(Boolean)[0]; if (!username || ['home','explore','search','i'].includes(username.toLowerCase())) throw new Error('请粘贴 X 用户主页或 RSSHub 订阅地址'); return [bridgeCandidate(source.toString(), `/twitter/user/${username}`, 'x', username)]; }
-  if (source.hostname.includes('rsshub')) {
-    const path = source.pathname.replace(/\/$/, '');
-    const bili = path.match(/^\/bilibili\/user\/(?:video|dynamic)\/(\d+)$/); if (bili) return [bridgeCandidate(source.toString(), `/bilibili/user/video/${bili[1]}`, 'bilibili', bili[1])];
-    if (/^\/pixiv\//.test(path)) throw new Error('Pixiv 接入已停用；现有缓存不会被删除');
-    const twitter = path.match(/^\/(?:twitter|x)\/user\/([^/]+)$/); if (twitter) return [bridgeCandidate(source.toString(), `/twitter/user/${twitter[1]}`, 'x', twitter[1])];
-    throw new Error('该 RSSHub 路由暂未加入安全的定时同步白名单');
-  }
-  if (platform === 'youtube' && !source.pathname.includes('/feeds/videos.xml')) {
-    const pathId = source.pathname.match(/\/channel\/(UC[\w-]+)/)?.[1];
-    let channelId = pathId || '';
-    if (!channelId) {
-      const attempts = [source.toString(), new URL(`${source.pathname.replace(/\/$/, '')}/videos`, source.origin).toString()];
-      for (const pageUrl of [...new Set(attempts)]) {
-        try {
-          const page = await safeFetch(pageUrl, 'text/html,application/xhtml+xml');
-          channelId = page.body.match(/"channelId":"(UC[\w-]+)"/)?.[1]
-            || page.body.match(/"browseId":"(UC[\w-]+)"/)?.[1]
-            || page.body.match(/itemprop=["'](?:identifier|channelId)["'][^>]*content=["'](UC[\w-]+)["']/i)?.[1]
-            || page.body.match(/youtube\.com\/channel\/(UC[\w-]+)/)?.[1]
-            || '';
-          if (channelId) break;
-        } catch { /* Try the channel videos page next. */ }
-      }
-    }
-    if (!channelId) throw new Error('未识别 YouTube 频道，请粘贴 /channel/UC… 地址或官方 Feed');
-    const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`; const feed = await safeFetch(feedUrl, feedAccept); const parsed = parseFeed(feed.body, feedUrl); return [candidate(parsed, source.toString(), feedUrl, 'native', 'youtube', channelId)];
-  }
-  const fetched = await safeFetch(source.toString(), `${feedAccept}, text/html;q=0.8`);
-  try { const parsed = parseFeed(fetched.body, fetched.finalUrl); return [candidate(parsed, parsed.siteUrl || source.toString(), fetched.finalUrl, 'native', platform, '')]; } catch {}
-  const hrefs = [...fetched.body.matchAll(/<link\b[^>]*>/gi)].map(match => match[0]).filter(tag => /rel=["'][^"']*alternate/i.test(tag) && /type=["'](?:application\/(?:rss\+xml|atom\+xml|feed\+json)|application\/json)/i.test(tag)).map(tag => tag.match(/href=["']([^"']+)["']/i)?.[1]).filter(Boolean) as string[]; const results = [] as any[];
-  for (const href of [...new Set(hrefs)].slice(0, 5)) { const feedUrl = new URL(href, fetched.finalUrl).toString(); if (!validatedFeedUrl(feedUrl)) continue; try { const feed = await safeFetch(feedUrl, feedAccept); results.push(candidate(parseFeed(feed.body, feedUrl), fetched.finalUrl, feedUrl, 'autodiscovery', platform, '')); } catch {} }
-  if (!results.length) throw new Error('未发现可订阅源；也可以直接粘贴 Feed 地址'); return results;
-}
-function candidate(parsed: ReturnType<typeof parseFeed>, sourceUrl: string, feedUrl: string, provider: string, platform: string, externalId: string) { const contentType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : 'text'; const category = platform === 'youtube' || platform === 'bilibili' ? '视频' : platform === 'pixiv' ? '图片' : platform === 'x' ? '社交媒体' : '其他'; return { sourceUrl, feedUrl, provider, platform, externalId, title: parsed.title, description: parsed.description, siteUrl: parsed.siteUrl, icon: parsed.icon, category, contentType, preview: parsed.items.slice(0, 3) }; }
 
-async function repairSubscriptionSource(db: ReturnType<typeof getDB>, subscription: typeof rssSubscriptions.$inferSelect) {
-  const candidates = await resolveSource(subscription.sourceUrl || subscription.feedUrl);
-  const resolved = candidates.find(item => item.platform === subscription.platform) || candidates[0];
-  if (!resolved) throw new Error('无法重新识别来源');
-  await db.update(rssSubscriptions).set({
-    feedUrl: resolved.feedUrl,
-    sourceUrl: resolved.sourceUrl,
-    title: resolved.title || subscription.title,
-    siteUrl: resolved.siteUrl || subscription.siteUrl,
-    favicon: resolved.icon || subscription.favicon,
-    provider: resolved.provider,
-    platform: resolved.platform,
-    externalId: resolved.externalId || subscription.externalId,
-    contentType: resolved.contentType || subscription.contentType,
-    etag: '',
-    lastModified: '',
-    lastError: '',
-    updatedAt: new Date(),
-  }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, subscription.ownerId)));
+async function ingest(
+  db: DB,
+  subscription: typeof rssSubscriptions.$inferSelect,
+  xml: string,
+) {
+  const parsed = parseYouTubeFeed(xml);
+  if (
+    parsed.channelId &&
+    subscription.externalId &&
+    parsed.channelId !== subscription.externalId
+  )
+    throw new Error("频道校验失败");
+  let added = 0;
+  const now = new Date();
+  for (const video of parsed.videos) {
+    const before = await db.query.rssItems.findFirst({
+      where: and(
+        eq(rssItems.subscriptionId, subscription.id),
+        eq(rssItems.externalId, video.externalId),
+      ),
+    });
+    await db
+      .insert(rssItems)
+      .values({
+        subscriptionId: subscription.id,
+        ownerId: subscription.ownerId,
+        externalId: video.externalId,
+        title: video.title,
+        url: video.url,
+        summary: video.summary,
+        author: video.author,
+        mediaType: "video",
+        embedUrl: video.embedUrl,
+        thumbnailUrl: video.thumbnailUrl,
+        publishedAt: video.publishedAt,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [rssItems.subscriptionId, rssItems.externalId],
+        set: {
+          title: video.title,
+          summary: video.summary,
+          author: video.author,
+          url: video.url,
+          embedUrl: video.embedUrl,
+          thumbnailUrl: video.thumbnailUrl,
+          publishedAt: video.publishedAt,
+          updatedAt: now,
+        },
+      });
+    if (!before) added += 1;
+  }
+  await db
+    .update(rssSubscriptions)
+    .set({
+      title: parsed.title || subscription.title,
+      platform: "youtube",
+      provider: "native",
+      contentType: "video",
+      lastFetchedAt: now,
+      lastError: "",
+      updatedAt: now,
+    })
+    .where(eq(rssSubscriptions.id, subscription.id));
+  return { added, unchanged: added === 0 };
+}
+
+async function refreshOne(
+  db: DB,
+  subscription: typeof rssSubscriptions.$inferSelect,
+) {
+  try {
+    return await ingest(
+      db,
+      subscription,
+      (await fetchText(subscription.feedUrl)).body,
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message.slice(0, 240) : "更新失败";
+    await db
+      .update(rssSubscriptions)
+      .set({
+        lastFetchedAt: new Date(),
+        lastError: message,
+        updatedAt: new Date(),
+      })
+      .where(eq(rssSubscriptions.id, subscription.id));
+    throw error;
+  }
+}
+
+async function subscribeWebSub(
+  db: DB,
+  subscription: typeof rssSubscriptions.$inferSelect,
+  origin?: string,
+) {
+  const key = subscription.websubKey || crypto.randomUUID().replace(/-/g, "");
+  const callback = origin
+    ? `${origin}/rss/websub/${subscription.id}/${key}`
+    : subscription.websubCallback;
+  if (!callback) return false;
+  // The hub can verify the callback immediately. Persist the secret first so
+  // that the verification request cannot race the database update.
+  await db
+    .update(rssSubscriptions)
+    .set({ websubKey: key, websubCallback: callback, updatedAt: new Date() })
+    .where(eq(rssSubscriptions.id, subscription.id));
+  const form = new URLSearchParams({
+    "hub.mode": "subscribe",
+    "hub.topic": subscription.feedUrl,
+    "hub.callback": callback,
+    "hub.verify": "async",
+    "hub.lease_seconds": "864000",
+  });
+  const response = await fetch(HUB, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
+  });
+  if (!response.ok && response.status !== 202)
+    throw new Error(`WebSub 订阅失败：${response.status}`);
   return true;
 }
 
-async function ingestParsedFeed(db: ReturnType<typeof getDB>, subscription: typeof rssSubscriptions.$inferSelect, body: string) {
-  const now = new Date();
-  const parsed = parseFeed(body, subscription.feedUrl);
-  const platform = effectivePlatform(subscription);
-  if (platform === 'bilibili') {
-    parsed.items = parsed.items.map(item => {
-      const bvid = item.url.match(/bilibili\.com\/video\/(BV[\w]+)/i)?.[1];
-      return { ...item, mediaType: 'video' as const, embedUrl: bvid ? bilibiliEmbed(bvid) : item.embedUrl, thumbnailUrl: item.thumbnailUrl || item.mediaUrl || imagesFrom(item.contentHtml)[0] || '', mediaJson: '[]' };
-    });
-    await db.update(rssItems).set({ mediaType: 'video', mediaJson: '[]', updatedAt: now }).where(and(eq(rssItems.subscriptionId, subscription.id), eq(rssItems.ownerId, subscription.ownerId)));
-  }
-  const refreshExisting = platform === 'bilibili' || platform === 'x';
-  const existingIds = refreshExisting ? new Set((await db.select({ externalId: rssItems.externalId }).from(rssItems).where(and(eq(rssItems.subscriptionId, subscription.id), eq(rssItems.ownerId, subscription.ownerId)))).map(item => item.externalId)) : new Set<string>();
+async function refreshMany(
+  db: DB,
+  subscriptions: Array<typeof rssSubscriptions.$inferSelect>,
+  origin?: string,
+) {
   let added = 0;
-  for (const item of parsed.items.slice(0, 500)) {
-    const insert = db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId: subscription.ownerId, ...item });
-    const result = refreshExisting
-      ? await insert.onConflictDoUpdate({ target: [rssItems.subscriptionId, rssItems.externalId], set: { title: item.title, url: item.url, summary: item.summary, author: item.author, mediaType: platform === 'bilibili' ? 'video' : item.mediaType, mediaUrl: item.mediaUrl, embedUrl: item.embedUrl, thumbnailUrl: item.thumbnailUrl, mediaJson: platform === 'bilibili' ? '[]' : item.mediaJson, duration: item.duration, contentHtml: item.contentHtml, publishedAt: item.publishedAt, updatedAt: now } }).returning({ id: rssItems.id })
-      : await insert.onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id });
-    added += refreshExisting && existingIds.has(item.externalId) ? 0 : result.length;
-  }
-  const stableType = platform === 'youtube' || platform === 'bilibili' ? 'video' : platform === 'x' ? 'image' : '';
-  const inferredType = parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : subscription.contentType;
-  await db.update(rssSubscriptions).set({ title: parsed.title || subscription.title, siteUrl: parsed.siteUrl || subscription.siteUrl, favicon: parsed.icon || subscription.favicon, platform, lastFetchedAt: now, lastError: '', contentType: stableType || inferredType, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, subscription.ownerId)));
-  return { added, total: parsed.items.length };
-}
-
-export async function refreshSubscription(db: ReturnType<typeof getDB>, ownerId: number, subscription: typeof rssSubscriptions.$inferSelect) {
-  if (isBridgeSubscription(subscription)) throw new Error('该来源由定时 RSSHub 任务更新');
-  const now = new Date(); try { const effectiveFeedUrl = normalizedSource(subscription.feedUrl); const fetched = await safeFetch(effectiveFeedUrl, feedAccept, subscription); if (fetched.unchanged) { await db.update(rssSubscriptions).set({ feedUrl: effectiveFeedUrl, lastFetchedAt: now, lastError: '', updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); return { added: 0, unchanged: true }; }
-    const parsed = parseFeed(fetched.body, subscription.feedUrl); let added = 0; for (const item of parsed.items.slice(0, 500)) { const result = await db.insert(rssItems).values({ subscriptionId: subscription.id, ownerId, ...item }).onConflictDoNothing({ target: [rssItems.subscriptionId, rssItems.externalId] }).returning({ id: rssItems.id }); added += result.length; }
-    const origin = new URL(effectiveFeedUrl).origin; await db.update(rssSubscriptions).set({ feedUrl: effectiveFeedUrl, title: parsed.title || subscription.title, siteUrl: parsed.siteUrl || effectiveFeedUrl, favicon: parsed.icon || subscription.favicon || `${origin}/favicon.ico`, etag: fetched.response.headers.get('etag') || '', lastModified: fetched.response.headers.get('last-modified') || '', lastFetchedAt: now, lastError: '', contentType: parsed.items.some(item => item.mediaType === 'video') ? 'video' : parsed.items.some(item => item.mediaType === 'image') ? 'image' : subscription.contentType, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); return { added, unchanged: false };
-  } catch (error) { const message = error instanceof Error ? error.message.slice(0, 240) : '更新失败'; await db.update(rssSubscriptions).set({ lastFetchedAt: now, lastError: message, updatedAt: now }).where(and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, ownerId))); throw new Error(message); }
-}
-
-export async function refreshSubscriptions(db: ReturnType<typeof getDB>, subscriptions: Array<typeof rssSubscriptions.$inferSelect>) {
-  const results: PromiseSettledResult<{ added: number; unchanged: boolean }>[] = new Array(subscriptions.length);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < subscriptions.length) {
-      const index = cursor++;
-      try { results[index] = { status: 'fulfilled', value: await refreshSubscription(db, subscriptions[index].ownerId, subscriptions[index]) }; }
-      catch (reason) { results[index] = { status: 'rejected', reason }; }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(3, subscriptions.length) }, worker));
-  const failures = results.flatMap((result, index) => result?.status === 'rejected' ? [{ id: subscriptions[index].id, title: subscriptions[index].alias || subscriptions[index].title, error: result.reason instanceof Error ? result.reason.message : '更新失败' }] : []);
-  return { refreshed: subscriptions.length - failures.length, total: subscriptions.length, added: results.reduce((sum, result) => sum + (result?.status === 'fulfilled' ? result.value.added : 0), 0), failed: failures.length, failures };
-}
-
-export async function refreshSubscriptionsWithRepair(db: ReturnType<typeof getDB>, subscriptions: Array<typeof rssSubscriptions.$inferSelect>) {
-  subscriptions = subscriptions.filter(source => !isBridgeSubscription(source));
-  let repaired = 0;
-  const prepared = await Promise.all(subscriptions.map(async source => {
-    if (!source.lastError && !source.feedUrl.includes('rsshub.app')) return source;
+  const failures: Array<{ id: number; title: string; error: string }> = [];
+  for (const source of subscriptions) {
     try {
-      await repairSubscriptionSource(db, source);
-      const updated = await db.query.rssSubscriptions.findFirst({ where: eq(rssSubscriptions.id, source.id) });
-      if (updated) { repaired += 1; return updated; }
-    } catch { /* Keep the previous source in this batch when automatic repair is unavailable. */ }
-    return source;
-  }));
-  return { ...await refreshSubscriptions(db, prepared), repaired };
+      added += (await refreshOne(db, source)).added;
+      try {
+        await subscribeWebSub(db, source, origin);
+      } catch {
+        /* Daily feed refresh remains the fallback. */
+      }
+    } catch (error) {
+      failures.push({
+        id: source.id,
+        title: source.alias || source.title,
+        error: error instanceof Error ? error.message : "更新失败",
+      });
+    }
+  }
+  return {
+    refreshed: subscriptions.length - failures.length,
+    total: subscriptions.length,
+    added,
+    failed: failures.length,
+    failures,
+  };
+}
+
+export async function refreshYouTubeSubscriptions(db: DB) {
+  const subscriptions = await db.query.rssSubscriptions.findMany({
+    where: and(
+      eq(rssSubscriptions.active, 1),
+      eq(rssSubscriptions.platform, "youtube"),
+    ),
+  });
+  return refreshMany(db, subscriptions);
 }
 
 export function RssService() {
-  const db = getDB(); const requireLife = ({ uid, lifeAccess, set }: { uid?: number; lifeAccess?: boolean; set: { status?: number | string } }) => { if (!uid || !lifeAccess) { set.status = 403; return false; } return true; };
-  return new Elysia({ aot: false }).use(setup()).group('/rss', group => group
-    .get('/media', async ({ query, set }) => {
-      let url: URL; try { url = new URL(query.url); } catch { set.status = 400; return 'Invalid media URL'; }
-      const host = url.hostname.toLowerCase();
-      const allowed = host === 'pbs.twimg.com' || host === 'abs.twimg.com' || host.endsWith('.hdslb.com') || host.endsWith('.biliimg.com');
-      if (url.protocol !== 'https:' || !allowed) { set.status = 403; return 'Media host is not allowed'; }
-      const cacheKey = new Request(`https://rss-media-cache.invalid/${encodeURIComponent(url.toString())}`);
-      const cache = (caches as unknown as { default: Cache }).default;
-      let response = await cache.match(cacheKey);
-      if (!response) {
-        const upstream = await fetch(url.toString(), { headers: { Accept: 'image/avif,image/webp,image/*', Referer: host.includes('twimg.com') ? 'https://x.com/' : 'https://www.bilibili.com/', 'User-Agent': 'Mozilla/5.0 Shjdness-RSS/2.0' } });
-        const type = upstream.headers.get('content-type') || '';
-        if (!upstream.ok || !type.startsWith('image/') || Number(upstream.headers.get('content-length') || 0) > 8_000_000) { set.status = 422; return 'Unable to load image'; }
-        const body = await upstream.arrayBuffer(); if (body.byteLength > 8_000_000) { set.status = 413; return 'Image is too large'; }
-        response = new Response(body, { headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800, s-maxage=2592000', 'X-Content-Type-Options': 'nosniff' } });
-        await cache.put(cacheKey, response.clone());
-      }
-      const headers = new Headers(response.headers); if (query.download === '1') { const subtype = (headers.get('content-type') || 'image/jpeg').split('/')[1]?.split(';')[0].replace('jpeg', 'jpg') || 'jpg'; headers.set('Content-Disposition', `attachment; filename="rss-image.${subtype}"`); }
-      return new Response(response.body, { status: response.status, headers });
-    }, { query: t.Object({ url: t.String({ maxLength: 2000 }), download: t.Optional(t.String()) }) })
-    .get('/bridge/sources', async ({ headers, set }) => {
-      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
-      const sources = await db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.active, 1) });
-      return { sources: sources.filter(isBridgeSubscription).filter(source => effectivePlatform(source) !== 'pixiv').map(source => { const url = new URL(normalizedSource(source.feedUrl)); const storedRoute = url.pathname + url.search; const route = effectivePlatform(source) === 'bilibili' ? storedRoute.replace(/^\/bilibili\/user\/dynamic\//, '/bilibili/user/video/') : storedRoute; return { id: source.id, title: source.alias || source.title, route }; }) };
-    })
-    .post('/bridge/ingest', async ({ headers, set, body }) => {
-      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
-      const source = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, body.subscriptionId), eq(rssSubscriptions.active, 1)) });
-      if (!source || !isBridgeSubscription(source)) { set.status = 404; return 'Source not found'; }
-      try { return await ingestParsedFeed(db, source, body.feed); } catch (error) { const message = error instanceof Error ? error.message.slice(0, 240) : '解析失败'; await db.update(rssSubscriptions).set({ lastFetchedAt: new Date(), lastError: message, updatedAt: new Date() }).where(eq(rssSubscriptions.id, source.id)); set.status = 422; return message; }
-    }, { body: t.Object({ subscriptionId: t.Number(), feed: t.String({ maxLength: 8_000_000 }) }) })
-    .post('/bridge/error', async ({ headers, set, body }) => {
-      if (!getEnv().RSS_SYNC_TOKEN || headers.authorization !== `Bearer ${getEnv().RSS_SYNC_TOKEN}`) { set.status = 401; return 'Unauthorized'; }
-      await db.update(rssSubscriptions).set({ lastFetchedAt: new Date(), lastError: body.error.slice(0, 240), updatedAt: new Date() }).where(eq(rssSubscriptions.id, body.subscriptionId)); return 'OK';
-    }, { body: t.Object({ subscriptionId: t.Number(), error: t.String({ maxLength: 500 }) }) })
-    .get('/storage', async ({ uid, lifeAccess, set }) => {
-      if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-      const [probe, rssEstimate] = await Promise.all([
-        getEnv().DB.prepare('SELECT 1 AS ok').run(),
-        getEnv().DB.prepare(`SELECT COALESCE(SUM(length(title)+length(url)+length(summary)+length(author)+length(media_url)+length(embed_url)+length(thumbnail_url)+length(media_json)+length(content_html)), 0) AS bytes FROM rss_items WHERE owner_id = ?`).bind(uid!).first<{ bytes: number }>(),
-      ]);
-      return { backend: { usedBytes: Number((probe.meta as Record<string, unknown>)?.size_after || rssEstimate?.bytes || 0), limitBytes: 500 * 1024 * 1024 }, rssBytes: Number(rssEstimate?.bytes || 0) };
-    })
-    .get('/', async ({ uid, lifeAccess, set, query }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const limit = Math.min(200, Math.max(10, Number(query.limit || 90))); const offset = Math.max(0, Number(query.offset || 0)); const ownedSubscriptions = await db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.ownerId, uid!) }); const matchingSources = ownedSubscriptions.filter(source => (!query.sourceId || source.id === Number(query.sourceId)) && (!query.category || source.category === query.category)); const conditions: SQL[] = [eq(rssItems.ownerId, uid!)]; if (query.filter === 'unread') conditions.push(eq(rssItems.read, 0)); if (query.filter === 'starred') conditions.push(eq(rssItems.starred, 1)); if (query.sourceId || query.category) conditions.push(matchingSources.length ? inArray(rssItems.subscriptionId, matchingSources.map(source => source.id)) : eq(rssItems.subscriptionId, -1)); if (query.contentType && query.contentType !== 'all') { const viewSources = ownedSubscriptions.filter(source => sourceViewType(source) === query.contentType); conditions.push(viewSources.length ? inArray(rssItems.subscriptionId, viewSources.map(source => source.id)) : eq(rssItems.subscriptionId, -1)); } if (query.search?.trim()) { const term = `%${query.search.trim()}%`; conditions.push(or(like(rssItems.title, term), like(rssItems.summary, term), like(rssItems.author, term))!); } const where = and(...conditions);
-      const [subscriptions, groups, items, filteredCount, allCount, unreadCount, starredCount] = await Promise.all([db.query.rssSubscriptions.findMany({ where: eq(rssSubscriptions.ownerId, uid!), orderBy: [desc(rssSubscriptions.updatedAt)] }), db.select().from(rssSourceGroups).where(eq(rssSourceGroups.ownerId, uid!)).orderBy(rssSourceGroups.sortOrder, rssSourceGroups.id), db.select().from(rssItems).where(where).orderBy(desc(rssItems.publishedAt), desc(rssItems.id)).limit(limit).offset(offset), db.select({ value: count() }).from(rssItems).where(where), db.select({ value: count() }).from(rssItems).where(eq(rssItems.ownerId, uid!)), db.select({ value: count() }).from(rssItems).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))), db.select({ value: count() }).from(rssItems).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.starred, 1)))]); const total = filteredCount[0]?.value || 0; return { subscriptions, groups, items, counts: { all: allCount[0]?.value || 0, unread: unreadCount[0]?.value || 0, starred: starredCount[0]?.value || 0 }, page: { limit, offset, total, hasMore: offset + items.length < total } };
-    }, { query: t.Object({ filter: t.Optional(t.Union([t.Literal('all'), t.Literal('unread'), t.Literal('starred')])), contentType: t.Optional(t.String()), sourceId: t.Optional(t.String()), category: t.Optional(t.String({ maxLength: 80 })), search: t.Optional(t.String({ maxLength: 120 })), limit: t.Optional(t.String()), offset: t.Optional(t.String()) }) })
-    .post('/resolve', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; try { return { candidates: await resolveSource(body.sourceUrl) }; } catch (error) { set.status = 422; return error instanceof Error ? error.message : '无法识别该来源'; } }, { body: t.Object({ sourceUrl: t.String({ maxLength: 2000 }) }) })
-    .post('/subscriptions', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const feedUrl = validatedFeedUrl(body.feedUrl)?.toString(); if (!feedUrl) { set.status = 400; return '请输入公开 HTTPS 订阅地址'; } const existing = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.feedUrl, feedUrl)) }); if (existing) { set.status = 409; return '该订阅已存在'; } const category = body.category?.trim() || '其他'; await db.insert(rssSourceGroups).values({ ownerId: uid!, name: category }).onConflictDoNothing({ target: [rssSourceGroups.ownerId, rssSourceGroups.name] }); const inserted = await db.insert(rssSubscriptions).values({ ownerId: uid!, feedUrl, sourceUrl: body.sourceUrl || feedUrl, title: body.title?.trim() || '', alias: body.alias?.trim() || '', description: body.description?.trim() || '', category, provider: body.provider || 'manual', platform: body.platform || 'other', externalId: body.externalId || '', contentType: body.contentType || 'text', favicon: body.icon || '' }).returning({ id: rssSubscriptions.id }); const subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, inserted[0].id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 500; return '无法创建订阅'; } if (isBridgeSubscription(subscription)) return { subscriptionId: subscription.id, added: 0, queued: true, warning: '订阅已保存，将在下一个定时同步时获取内容' }; try { return { subscriptionId: subscription.id, ...await refreshSubscription(db, uid!, subscription) }; } catch (error) { return { subscriptionId: subscription.id, added: 0, warning: error instanceof Error ? error.message : '首次更新失败，可稍后重试' }; }
-    }, { body: t.Object({ feedUrl: t.String({ maxLength: 2000 }), sourceUrl: t.Optional(t.String({ maxLength: 2000 })), title: t.Optional(t.String({ maxLength: 160 })), alias: t.Optional(t.String({ maxLength: 160 })), description: t.Optional(t.String({ maxLength: 500 })), category: t.Optional(t.String({ maxLength: 80 })), provider: t.Optional(t.String()), platform: t.Optional(t.String()), externalId: t.Optional(t.String()), contentType: t.Optional(t.String()), icon: t.Optional(t.String({ maxLength: 2000 })) }) })
-    .post('/subscriptions/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const existing = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, id), eq(rssSubscriptions.ownerId, uid!)) }); if (!existing) { set.status = 404; return '订阅不存在'; } const category = body.category?.trim(); if (category) await db.insert(rssSourceGroups).values({ ownerId: uid!, name: category }).onConflictDoNothing({ target: [rssSourceGroups.ownerId, rssSourceGroups.name] }); await db.update(rssSubscriptions).set({ alias: body.alias?.trim(), description: body.description?.trim(), category, updatedAt: new Date() }).where(and(eq(rssSubscriptions.id, id), eq(rssSubscriptions.ownerId, uid!))); return 'OK'; }, { body: t.Object({ alias: t.Optional(t.String({ maxLength: 160 })), description: t.Optional(t.String({ maxLength: 500 })), category: t.Optional(t.String({ maxLength: 80 })) }) })
-    .post('/groups', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const name = body.name.trim(); const existing = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.ownerId, uid!), eq(rssSourceGroups.name, name)) }); if (existing) return existing; const inserted = await db.insert(rssSourceGroups).values({ ownerId: uid!, name }).returning(); return inserted[0]; }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }) }) })
-    .post('/groups/reorder', async ({ uid, lifeAccess, set, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const groups = await db.select({ id: rssSourceGroups.id }).from(rssSourceGroups).where(eq(rssSourceGroups.ownerId, uid!)); const owned = new Set(groups.map(item => item.id)); const ids = body.ids as number[]; if (ids.length !== owned.size || ids.some((id: number) => !owned.has(id))) { set.status = 400; return '分组顺序不完整'; } await Promise.all(ids.map((id: number, sortOrder: number) => db.update(rssSourceGroups).set({ sortOrder, updatedAt: new Date() }).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))))); return 'OK'; }, { body: t.Object({ ids: t.Array(t.Number()) }) })
-    .post('/groups/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const groupItem = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!)) }); if (!groupItem) { set.status = 404; return '分组不存在'; } const name = body.name.trim(); await db.update(rssSourceGroups).set({ name, updatedAt: new Date() }).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))); await db.update(rssSubscriptions).set({ category: name, updatedAt: new Date() }).where(and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.category, groupItem.name))); return 'OK'; }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }) }) })
-    .delete('/groups/:id', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const id = Number(params.id); const groupItem = await db.query.rssSourceGroups.findFirst({ where: and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!)) }); if (!groupItem) { set.status = 404; return '分组不存在'; } await db.update(rssSubscriptions).set({ category: '其他', updatedAt: new Date() }).where(and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.category, groupItem.name))); await db.delete(rssSourceGroups).where(and(eq(rssSourceGroups.id, id), eq(rssSourceGroups.ownerId, uid!))); return 'OK'; })
-    .post('/refresh', async ({ uid, lifeAccess, set }) => {
-      if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-      const subscriptions = await db.query.rssSubscriptions.findMany({ where: and(eq(rssSubscriptions.ownerId, uid!), eq(rssSubscriptions.active, 1)) });
-      const queued = subscriptions.filter(isBridgeSubscription).length; return { ...await refreshSubscriptionsWithRepair(db, subscriptions), queued };
-    })
-    .post('/subscriptions/:id/refresh', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; let subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) { set.status = 404; return '订阅不存在'; } if (isBridgeSubscription(subscription)) return { added: 0, queued: true, warning: '该来源按每日四个时段统一同步' }; try { if (subscription.lastError) { await repairSubscriptionSource(db, subscription); subscription = await db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id, subscription.id), eq(rssSubscriptions.ownerId, uid!)) }); if (!subscription) throw new Error('订阅修复后读取失败'); } return await refreshSubscription(db, uid!, subscription); } catch (error) { set.status = 422; return error instanceof Error ? error.message : '更新失败'; } })
-    .post('/items/mark-all-read', async ({ uid, lifeAccess, set }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const now = new Date(); await db.update(rssItems).set({ read: 1, readAt: now, updatedAt: now }).where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))); return 'OK'; })
-    .post('/items/:id', async ({ uid, lifeAccess, set, params, body }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const item = await db.query.rssItems.findFirst({ where: and(eq(rssItems.id, Number(params.id)), eq(rssItems.ownerId, uid!)) }); if (!item) { set.status = 404; return '条目不存在'; } const now = new Date(); await db.update(rssItems).set({ ...(body.read === undefined ? {} : { read: body.read ? 1 : 0, readAt: body.read ? (item.readAt || now) : null }), ...(body.starred === undefined ? {} : { starred: body.starred ? 1 : 0, starredAt: body.starred ? (item.starredAt || now) : null }), updatedAt: now }).where(and(eq(rssItems.id, item.id), eq(rssItems.ownerId, uid!))); return 'OK'; }, { body: t.Object({ read: t.Optional(t.Boolean()), starred: t.Optional(t.Boolean()) }) })
-    .delete('/subscriptions/:id', async ({ uid, lifeAccess, set, params }) => { if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required'; const result = await db.delete(rssSubscriptions).where(and(eq(rssSubscriptions.id, Number(params.id)), eq(rssSubscriptions.ownerId, uid!))).returning({ id: rssSubscriptions.id }); if (!result.length) { set.status = 404; return '订阅不存在'; } return 'OK'; })
+  const db: DB = getDB();
+  const requireLife = ({
+    uid,
+    lifeAccess,
+    set,
+  }: {
+    uid?: number;
+    lifeAccess?: boolean;
+    set: { status?: number | string };
+  }) => {
+    if (!uid || !lifeAccess) {
+      set.status = 403;
+      return false;
+    }
+    return true;
+  };
+  return new Elysia({ aot: false }).use(setup()).group("/rss", (group) =>
+    group
+      .get("/websub/:id/:key", async ({ params, request, set }) => {
+        const source = await db.query.rssSubscriptions.findFirst({
+          where: eq(rssSubscriptions.id, Number(params.id)),
+        });
+        const query = new URL(request.url).searchParams;
+        const challenge = query.get("hub.challenge");
+        if (
+          !source ||
+          source.websubKey !== params.key ||
+          query.get("hub.topic") !== source.feedUrl ||
+          !challenge
+        ) {
+          set.status = 404;
+          return "Not found";
+        }
+        const lease = Number(query.get("hub.lease_seconds") || 0);
+        await db
+          .update(rssSubscriptions)
+          .set({
+            websubLeaseExpiresAt: lease
+              ? new Date(Date.now() + lease * 1000)
+              : source.websubLeaseExpiresAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(rssSubscriptions.id, source.id));
+        return challenge;
+      })
+      .post("/websub/:id/:key", async ({ params, request, set }) => {
+        const source = await db.query.rssSubscriptions.findFirst({
+          where: eq(rssSubscriptions.id, Number(params.id)),
+        });
+        if (
+          !source ||
+          source.websubKey !== params.key ||
+          source.platform !== "youtube"
+        ) {
+          set.status = 404;
+          return "Not found";
+        }
+        try {
+          await ingest(db, source, await request.text());
+          return "OK";
+        } catch {
+          set.status = 422;
+          return "Invalid notification";
+        }
+      })
+      .get("/storage", async ({ uid, lifeAccess, set }) => {
+        if (!requireLife({ uid, lifeAccess, set }))
+          return "Private Life access is required";
+        const estimate = await getEnv()
+          .DB.prepare(
+            "SELECT COALESCE(SUM(length(title)+length(url)+length(summary)+length(author)+length(embed_url)+length(thumbnail_url)), 0) AS bytes FROM rss_items WHERE owner_id = ?",
+          )
+          .bind(uid!)
+          .first<{ bytes: number }>();
+        return {
+          backend: {
+            usedBytes: Number(estimate?.bytes || 0),
+            limitBytes: 500 * 1024 * 1024,
+          },
+          rssBytes: Number(estimate?.bytes || 0),
+        };
+      })
+      .get(
+        "/",
+        async ({ uid, lifeAccess, set, query }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const limit = Math.min(200, Math.max(10, Number(query.limit || 90)));
+          const offset = Math.max(0, Number(query.offset || 0));
+          const subscriptions = await db.query.rssSubscriptions.findMany({
+            where: and(
+              eq(rssSubscriptions.ownerId, uid!),
+              eq(rssSubscriptions.platform, "youtube"),
+            ),
+            orderBy: [desc(rssSubscriptions.updatedAt)],
+          });
+          const sourceIds = subscriptions
+            .filter(
+              (source) =>
+                (!query.sourceId || source.id === Number(query.sourceId)) &&
+                (!query.category || source.category === query.category),
+            )
+            .map((source) => source.id);
+          const conditions: SQL[] = [eq(rssItems.ownerId, uid!)];
+          if (query.filter === "unread") conditions.push(eq(rssItems.read, 0));
+          if (query.filter === "starred")
+            conditions.push(eq(rssItems.starred, 1));
+          if (query.sourceId || query.category)
+            conditions.push(
+              sourceIds.length
+                ? inArray(rssItems.subscriptionId, sourceIds)
+                : eq(rssItems.subscriptionId, -1),
+            );
+          const where = and(...conditions);
+          const [groups, items, filtered, all, unread, starred] =
+            await Promise.all([
+              db
+                .select()
+                .from(rssSourceGroups)
+                .where(eq(rssSourceGroups.ownerId, uid!))
+                .orderBy(rssSourceGroups.sortOrder),
+              db
+                .select()
+                .from(rssItems)
+                .where(where)
+                .orderBy(desc(rssItems.publishedAt), desc(rssItems.id))
+                .limit(limit)
+                .offset(offset),
+              db.select({ value: count() }).from(rssItems).where(where),
+              db
+                .select({ value: count() })
+                .from(rssItems)
+                .where(eq(rssItems.ownerId, uid!)),
+              db
+                .select({ value: count() })
+                .from(rssItems)
+                .where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0))),
+              db
+                .select({ value: count() })
+                .from(rssItems)
+                .where(
+                  and(eq(rssItems.ownerId, uid!), eq(rssItems.starred, 1)),
+                ),
+            ]);
+          const total = filtered[0]?.value || 0;
+          return {
+            subscriptions,
+            groups,
+            items,
+            counts: {
+              all: all[0]?.value || 0,
+              unread: unread[0]?.value || 0,
+              starred: starred[0]?.value || 0,
+            },
+            page: {
+              limit,
+              offset,
+              total,
+              hasMore: offset + items.length < total,
+            },
+          };
+        },
+        {
+          query: t.Object({
+            filter: t.Optional(t.String()),
+            contentType: t.Optional(t.String()),
+            sourceId: t.Optional(t.String()),
+            category: t.Optional(t.String()),
+            search: t.Optional(t.String()),
+            limit: t.Optional(t.String()),
+            offset: t.Optional(t.String()),
+          }),
+        },
+      )
+      .post(
+        "/resolve",
+        async ({ uid, lifeAccess, set, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          try {
+            return { candidates: [await resolveYouTubeSource(body.sourceUrl)] };
+          } catch (error) {
+            set.status = 422;
+            return error instanceof Error
+              ? error.message
+              : "无法识别 YouTube 频道";
+          }
+        },
+        { body: t.Object({ sourceUrl: t.String({ maxLength: 2000 }) }) },
+      )
+      .post(
+        "/subscriptions",
+        async ({ uid, lifeAccess, set, body, request }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const resolved = await resolveYouTubeSource(
+            body.sourceUrl || body.feedUrl,
+          );
+          const existing = await db.query.rssSubscriptions.findFirst({
+            where: and(
+              eq(rssSubscriptions.ownerId, uid!),
+              eq(rssSubscriptions.externalId, resolved.externalId),
+            ),
+          });
+          if (existing) {
+            set.status = 409;
+            return "该 YouTube 频道已订阅";
+          }
+          const category = body.category?.trim() || "视频";
+          await db
+            .insert(rssSourceGroups)
+            .values({ ownerId: uid!, name: category })
+            .onConflictDoNothing({
+              target: [rssSourceGroups.ownerId, rssSourceGroups.name],
+            });
+          const inserted = await db
+            .insert(rssSubscriptions)
+            .values({
+              ownerId: uid!,
+              sourceUrl: resolved.sourceUrl,
+              feedUrl: resolved.feedUrl,
+              provider: resolved.provider,
+              platform: resolved.platform,
+              externalId: resolved.externalId,
+              title: resolved.title,
+              description: resolved.description,
+              siteUrl: resolved.siteUrl,
+              favicon: resolved.icon,
+              contentType: resolved.contentType,
+              alias: body.alias?.trim() || "",
+              category,
+            })
+            .returning();
+          const source = inserted[0];
+          const first = await refreshOne(db, source);
+          let websubActive = false;
+          try {
+            websubActive = await subscribeWebSub(
+              db,
+              source,
+              new URL(request.url).origin,
+            );
+          } catch {
+            /* The daily reconciliation job keeps the subscription usable. */
+          }
+          return { subscriptionId: source.id, websubActive, ...first };
+        },
+        {
+          body: t.Object({
+            feedUrl: t.String(),
+            sourceUrl: t.Optional(t.String()),
+            title: t.Optional(t.String()),
+            alias: t.Optional(t.String()),
+            description: t.Optional(t.String()),
+            category: t.Optional(t.String()),
+            provider: t.Optional(t.String()),
+            platform: t.Optional(t.String()),
+            externalId: t.Optional(t.String()),
+            contentType: t.Optional(t.String()),
+            icon: t.Optional(t.String()),
+          }),
+        },
+      )
+      .post(
+        "/subscriptions/:id",
+        async ({ uid, lifeAccess, set, params, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const category = body.category?.trim();
+          if (category)
+            await db
+              .insert(rssSourceGroups)
+              .values({ ownerId: uid!, name: category })
+              .onConflictDoNothing({
+                target: [rssSourceGroups.ownerId, rssSourceGroups.name],
+              });
+          await db
+            .update(rssSubscriptions)
+            .set({
+              alias: body.alias?.trim(),
+              description: body.description?.trim(),
+              category,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(rssSubscriptions.id, Number(params.id)),
+                eq(rssSubscriptions.ownerId, uid!),
+              ),
+            );
+          return "OK";
+        },
+        {
+          body: t.Object({
+            alias: t.Optional(t.String()),
+            description: t.Optional(t.String()),
+            category: t.Optional(t.String()),
+          }),
+        },
+      )
+      .post(
+        "/groups",
+        async ({ uid, lifeAccess, set, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const inserted = await db
+            .insert(rssSourceGroups)
+            .values({ ownerId: uid!, name: body.name.trim() })
+            .onConflictDoNothing({
+              target: [rssSourceGroups.ownerId, rssSourceGroups.name],
+            })
+            .returning();
+          return inserted[0] || { name: body.name };
+        },
+        { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }) }) },
+      )
+      .post(
+        "/groups/reorder",
+        async ({ uid, lifeAccess, set, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          await Promise.all(
+            body.ids.map((id, sortOrder) =>
+              db
+                .update(rssSourceGroups)
+                .set({ sortOrder })
+                .where(
+                  and(
+                    eq(rssSourceGroups.id, id),
+                    eq(rssSourceGroups.ownerId, uid!),
+                  ),
+                ),
+            ),
+          );
+          return "OK";
+        },
+        { body: t.Object({ ids: t.Array(t.Number()) }) },
+      )
+      .post(
+        "/groups/:id",
+        async ({ uid, lifeAccess, set, params, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const groupItem = await db.query.rssSourceGroups.findFirst({
+            where: and(
+              eq(rssSourceGroups.id, Number(params.id)),
+              eq(rssSourceGroups.ownerId, uid!),
+            ),
+          });
+          if (!groupItem) {
+            set.status = 404;
+            return "分组不存在";
+          }
+          await db
+            .update(rssSourceGroups)
+            .set({ name: body.name })
+            .where(eq(rssSourceGroups.id, groupItem.id));
+          await db
+            .update(rssSubscriptions)
+            .set({ category: body.name })
+            .where(
+              and(
+                eq(rssSubscriptions.ownerId, uid!),
+                eq(rssSubscriptions.category, groupItem.name),
+              ),
+            );
+          return "OK";
+        },
+        { body: t.Object({ name: t.String() }) },
+      )
+      .delete("/groups/:id", async ({ uid, lifeAccess, set, params }) => {
+        if (!requireLife({ uid, lifeAccess, set }))
+          return "Private Life access is required";
+        const item = await db.query.rssSourceGroups.findFirst({
+          where: and(
+            eq(rssSourceGroups.id, Number(params.id)),
+            eq(rssSourceGroups.ownerId, uid!),
+          ),
+        });
+        if (item) {
+          await db
+            .update(rssSubscriptions)
+            .set({ category: "其他" })
+            .where(
+              and(
+                eq(rssSubscriptions.ownerId, uid!),
+                eq(rssSubscriptions.category, item.name),
+              ),
+            );
+          await db
+            .delete(rssSourceGroups)
+            .where(eq(rssSourceGroups.id, item.id));
+        }
+        return "OK";
+      })
+      .post("/refresh", async ({ uid, lifeAccess, set, request }) => {
+        if (!requireLife({ uid, lifeAccess, set }))
+          return "Private Life access is required";
+        const sources = await db.query.rssSubscriptions.findMany({
+          where: and(
+            eq(rssSubscriptions.ownerId, uid!),
+            eq(rssSubscriptions.platform, "youtube"),
+            eq(rssSubscriptions.active, 1),
+          ),
+        });
+        return refreshMany(db, sources, new URL(request.url).origin);
+      })
+      .post(
+        "/subscriptions/:id/refresh",
+        async ({ uid, lifeAccess, set, params, request }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const source = await db.query.rssSubscriptions.findFirst({
+            where: and(
+              eq(rssSubscriptions.id, Number(params.id)),
+              eq(rssSubscriptions.ownerId, uid!),
+              eq(rssSubscriptions.platform, "youtube"),
+            ),
+          });
+          if (!source) {
+            set.status = 404;
+            return "订阅不存在";
+          }
+          const result = await refreshOne(db, source);
+          await subscribeWebSub(db, source, new URL(request.url).origin);
+          return result;
+        },
+      )
+      .post("/items/mark-all-read", async ({ uid, lifeAccess, set }) => {
+        if (!requireLife({ uid, lifeAccess, set }))
+          return "Private Life access is required";
+        const now = new Date();
+        await db
+          .update(rssItems)
+          .set({ read: 1, readAt: now, updatedAt: now })
+          .where(and(eq(rssItems.ownerId, uid!), eq(rssItems.read, 0)));
+        return "OK";
+      })
+      .post(
+        "/items/:id",
+        async ({ uid, lifeAccess, set, params, body }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          const item = await db.query.rssItems.findFirst({
+            where: and(
+              eq(rssItems.id, Number(params.id)),
+              eq(rssItems.ownerId, uid!),
+            ),
+          });
+          if (!item) {
+            set.status = 404;
+            return "条目不存在";
+          }
+          const now = new Date();
+          await db
+            .update(rssItems)
+            .set({
+              ...(body.read === undefined
+                ? {}
+                : {
+                    read: body.read ? 1 : 0,
+                    readAt: body.read ? item.readAt || now : null,
+                  }),
+              ...(body.starred === undefined
+                ? {}
+                : {
+                    starred: body.starred ? 1 : 0,
+                    starredAt: body.starred ? item.starredAt || now : null,
+                  }),
+              updatedAt: now,
+            })
+            .where(eq(rssItems.id, item.id));
+          return "OK";
+        },
+        {
+          body: t.Object({
+            read: t.Optional(t.Boolean()),
+            starred: t.Optional(t.Boolean()),
+          }),
+        },
+      )
+      .delete(
+        "/subscriptions/:id",
+        async ({ uid, lifeAccess, set, params }) => {
+          if (!requireLife({ uid, lifeAccess, set }))
+            return "Private Life access is required";
+          await db
+            .delete(rssSubscriptions)
+            .where(
+              and(
+                eq(rssSubscriptions.id, Number(params.id)),
+                eq(rssSubscriptions.ownerId, uid!),
+              ),
+            );
+          return "OK";
+        },
+      ),
   );
 }

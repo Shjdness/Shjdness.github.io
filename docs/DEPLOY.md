@@ -48,10 +48,8 @@ S3_SECRET_ACCESS_KEY=<你的S3SecretAccessKey>
 
 [环境变量列表](./ENV.md)
 
-Bilibili 与 X 由 `.github/workflows/rss-sync.yaml` 定时启动临时 RSSHub，
-无需长期服务器或域名。请在 GitHub Actions Secrets 与 Worker Secrets 中保存同一个
-`RSS_SYNC_TOKEN`，并把 Actions Variable `RSS_SYNC_ENDPOINT` 指向 Worker 地址。
-YouTube 官方 Feed 不依赖 RSSHub。
+RSS 阅读器只使用 YouTube 官方 Atom Feed，不依赖 RSSHub 或平台 Cookie。
+Worker 通过 WebSub 接收新视频通知，并以每日计划任务做一次补偿同步。
 
 > [!TIP]
 > 下文代码块中若出现形如 <文字> 的内容表示需要根据文字提示替换为自己的内容（`<`和`>`不要保留），如：

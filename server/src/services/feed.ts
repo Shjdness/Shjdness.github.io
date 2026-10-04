@@ -1,7 +1,7 @@
-import { and, count, desc, eq, like, notExists, or } from "drizzle-orm";
+import { and, count, desc, eq, like, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
-import { feedHashtags, feeds, hashtags, visits } from "../db/schema";
+import { feeds, visits } from "../db/schema";
 import { setup } from "../setup";
 import { ClientConfig, PublicCache } from "../utils/cache";
 import { getDB } from "../utils/di";
@@ -9,410 +9,564 @@ import { extractImage } from "../utils/image";
 import { bindTagToPost } from "./tag";
 
 export function FeedService() {
-    const db: DB = getDB();
-    return new Elysia({ aot: false })
-        .use(setup())
-        .group('/feed', (group) =>
-            group
-                .get('/', async ({ admin, writer, uid, set, query: { page, limit, type, contentType } }) => {
-                    const privateList = type === 'draft' || type === 'unlisted';
-                    if (privateList && !writer) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-                    const cache = PublicCache();
-                    const page_num = (page ? page > 0 ? page : 1 : 1) - 1;
-                    const limit_num = limit ? +limit > 50 ? 50 : +limit : 20;
-                    const cacheKey = `feeds_${type}_${contentType || 'all'}_${page_num}_${limit_num}`;
-                    if (!privateList) {
-                        const cached = await cache.get(cacheKey);
-                        if (cached) return cached;
-                    }
-                    const visibility = type === 'draft'
-                        ? eq(feeds.draft, 1)
-                        : type === 'unlisted'
-                            ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
-                            : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
-                    const diaryTag = db.select({ id: feedHashtags.feedId }).from(feedHashtags)
-                        .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id))
-                        .where(and(eq(feedHashtags.feedId, feeds.id), eq(hashtags.name, '日记')));
-                    const contentFilter = contentType === 'normal' ? notExists(diaryTag) : undefined;
-                    const ownerFilter = privateList && !admin ? eq(feeds.uid, uid!) : undefined;
-                    const where = and(visibility, ownerFilter, contentFilter);
-                    const size = await db.select({ count: count() }).from(feeds).where(where);
-                    if (size[0].count === 0) {
-                        return {
-                            size: 0,
-                            data: [],
-                            hasNext: false
-                        }
-                    }
-                    const feed_list = (await db.query.feeds.findMany({
-                        where: where,
-                        columns: admin || privateList ? undefined : {
-                            draft: false,
-                            listed: false
-                        },
-                        with: {
-                            hashtags: {
-                                columns: {},
-                                with: {
-                                    hashtag: {
-                                        columns: { id: true, name: true }
-                                    }
-                                }
-                            }, user: {
-                                columns: { id: true, username: true, avatar: true }
-                            }
-                        },
-                        orderBy: [desc(feeds.top), desc(feeds.createdAt), desc(feeds.updatedAt)],
-                        offset: page_num * limit_num,
-                        limit: limit_num + 1,
-                    })).map(({ content, hashtags, summary, ...other }) => {
-                        // 提取首图
-                        const avatar = extractImage(content);
-                        return {
-                            summary: summary.length > 0 ? summary : content.length > 100 ? content.slice(0, 100) : content,
-                            hashtags: hashtags.map(({ hashtag }) => hashtag),
-                            avatar,
-                            ...other
-                        }
-                    });
-                    let hasNext = false
-                    if (feed_list.length === limit_num + 1) {
-                        feed_list.pop();
-                        hasNext = true;
-                    }
-                    const data = {
-                        size: size[0].count,
-                        data: feed_list,
-                        hasNext
-                    }
-                    if (!privateList)
-                        await cache.set(cacheKey, data);
-                    return data
-                }, {
-                    query: t.Object({
-                        page: t.Optional(t.Numeric()),
-                        limit: t.Optional(t.Numeric()),
-                        type: t.Optional(t.String()),
-                        contentType: t.Optional(t.Literal('normal'))
-                    })
-                })
-                .get('/timeline', async () => {
-                    const diaryTag = db.select({ id: feedHashtags.feedId }).from(feedHashtags)
-                        .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id))
-                        .where(and(eq(feedHashtags.feedId, feeds.id), eq(hashtags.name, '日记')));
-                    const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1), notExists(diaryTag));
-                    return (await db.query.feeds.findMany({
-                        where: where,
-                        columns: {
-                            id: true,
-                            title: true,
-                            createdAt: true,
-                        },
-                        with: { hashtags: { columns: {}, with: { hashtag: { columns: { name: true } } } } },
-                        orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
-                    })).map(({ hashtags, ...feed }) => ({ ...feed, hashtags: hashtags.map(({ hashtag }) => hashtag) }))
-                })
-                .post('/', async ({ writer, set, uid, body: { title, alias, listed, content, summary, draft, tags, createdAt } }) => {
-                    if (!writer || !uid) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-                    // input check
-                    if (!title) {
-                        set.status = 400;
-                        return 'Title is required';
-                    }
-                    if (!content) {
-                        set.status = 400;
-                        return 'Content is required';
-                    }
-
-                    // check exist
-                    const exist = await db.query.feeds.findFirst({
-                        where: or(eq(feeds.title, title), eq(feeds.content, content))
-                    });
-                    if (exist) {
-                        set.status = 400;
-                        return 'Content already exists';
-                    }
-                    const date = createdAt ? new Date(createdAt) : new Date();
-                    const diary = tags.includes('日记');
-                    const result = await db.insert(feeds).values({
-                        title,
-                        content,
-                        summary,
-                        uid,
-                        alias,
-                        listed: diary ? 0 : listed ? 1 : 0,
-                        draft: diary ? 1 : draft ? 1 : 0,
-                        createdAt: date,
-                        updatedAt: date
-                    }).returning({ insertedId: feeds.id });
-                    await bindTagToPost(db, result[0].insertedId, tags);
-                    await PublicCache().deletePrefix('feeds_');
-                    if (result.length === 0) {
-                        set.status = 500;
-                        return 'Failed to insert';
-                    } else {
-                        return result[0];
-                    }
-                }, {
-                    body: t.Object({
-                        title: t.String(),
-                        content: t.String(),
-                        summary: t.String(),
-                        alias: t.Optional(t.String()),
-                        draft: t.Boolean(),
-                        listed: t.Boolean(),
-                        createdAt: t.Optional(t.Date()),
-                        tags: t.Array(t.String())
-                    })
-                })
-                .get('/:id', async ({ uid, admin, set, headers, params: { id } }) => {
-                    const id_num = parseInt(id);
-                    const cache = PublicCache();
-                    const cacheKey = `feed_${id}`;
-                    const feed = await cache.getOrSet(cacheKey, () => (db.query.feeds.findFirst({
-                        where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
-                        with: {
-                            hashtags: {
-                                columns: {},
-                                with: {
-                                    hashtag: {
-                                        columns: { id: true, name: true }
-                                    }
-                                }
-                            }, user: {
-                                columns: { id: true, username: true, avatar: true }
-                            }
-                        }
-                    })));
-                    if (!feed) {
-                        set.status = 404;
-                        return 'Not found';
-                    }
-                    // permission check
-                    const isDiary = feed.hashtags.some(({ hashtag }) => hashtag.name === '日记');
-                    if ((feed.draft || isDiary) && feed.uid !== uid && !admin) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-
-                    const { hashtags, ...other } = feed;
-                    const hashtags_flatten = hashtags.map((f) => f.hashtag);
-
-
-                    // update visits
-                    const config = ClientConfig()
-                    const enableVisit = await config.getOrDefault('counter.enabled', true);
-                    let pv = 0;
-                    let uv = 0;
-                    if (enableVisit) {
-                        const ip = headers['cf-connecting-ip'] || headers['x-real-ip'] || "UNK"
-                        await db.insert(visits).values({
-                            feedId: feed.id,
-                            ip: ip,
-                        });
-                        const visit = await db.query.visits.findMany({
-                            where: eq(visits.feedId, feed.id),
-                            columns: { id: true, ip: true }
-                        });
-                        pv = visit.length;
-                        uv = new Set(visit.map((v) => v.ip)).size;
-                    }
-                    const data = {
-                        ...other,
-                        hashtags: hashtags_flatten,
-                        pv,
-                        uv
-                    };
-                    return data;
-                })
-                .post('/:id', async ({
-                    admin,
-                    writer,
-                    set,
-                    uid,
-                    params: { id },
-                    body: { title, listed, content, summary, alias, draft, top, tags, createdAt }
-                }) => {
-                    const id_num = parseInt(id);
-                    const feed = await db.query.feeds.findFirst({
-                        where: eq(feeds.id, id_num),
-                        with: {
-                            hashtags: {
-                                columns: {},
-                                with: { hashtag: { columns: { name: true } } }
-                            }
-                        }
-                    });
-                    if (!feed) {
-                        set.status = 404;
-                        return 'Not found';
-                    }
-                    if (!admin && (!writer || feed.uid !== uid)) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-                    const diary = tags
-                        ? tags.includes('日记')
-                        : feed.hashtags.some(({ hashtag }) => hashtag.name === '日记');
-                    await db.update(feeds).set({
-                        title,
-                        content,
-                        summary,
-                        alias,
-                        top: admin ? top : undefined,
-                        listed: diary ? 0 : listed ? 1 : 0,
-                        draft: diary ? 1 : draft ? 1 : 0,
-                        createdAt: createdAt ? new Date(createdAt) : undefined,
-                        updatedAt: new Date()
-                    }).where(eq(feeds.id, id_num));
-                    if (tags) {
-                        await bindTagToPost(db, id_num, tags);
-                    }
-                    await clearFeedCache(id_num, feed.alias, alias || null);
-                    return 'Updated';
-                }, {
-                    body: t.Object({
-                        title: t.Optional(t.String()),
-                        alias: t.Optional(t.String()),
-                        content: t.Optional(t.String()),
-                        summary: t.Optional(t.String()),
-                        listed: t.Boolean(),
-                        draft: t.Optional(t.Boolean()),
-                        createdAt: t.Optional(t.Date()),
-                        tags: t.Optional(t.Array(t.String())),
-                        top: t.Optional(t.Integer())
-                    })
-                })
-                .post('/top/:id', async ({
-                    admin,
-                    set,
-                    params: { id },
-                    body: { top }
-                }) => {
-                    if (!admin) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-                    const id_num = parseInt(id);
-                    const feed = await db.query.feeds.findFirst({
-                        where: eq(feeds.id, id_num)
-                    });
-                    if (!feed) {
-                        set.status = 404;
-                        return 'Not found';
-                    }
-                    await db.update(feeds).set({
-                        top
-                    }).where(eq(feeds.id, feed.id));
-                    await clearFeedCache(feed.id, null, null);
-                    return 'Updated';
-                }, {
-                    body: t.Object({
-                        top: t.Integer()
-                    })
-                })
-                .delete('/:id', async ({ admin, writer, set, uid, params: { id } }) => {
-                    const id_num = parseInt(id);
-                    const feed = await db.query.feeds.findFirst({
-                        where: eq(feeds.id, id_num)
-                    });
-                    if (!feed) {
-                        set.status = 404;
-                        return 'Not found';
-                    }
-                    if (!admin && (!writer || feed.uid !== uid)) {
-                        set.status = 403;
-                        return 'Permission denied';
-                    }
-                    await db.delete(feeds).where(eq(feeds.id, id_num));
-                    await clearFeedCache(id_num, feed.alias, null);
-                    return 'Deleted';
-                })
-        )
-        .get('/search/:keyword', async ({ admin, params: { keyword }, query: { page, limit } }) => {
-            keyword = decodeURI(keyword);
+  const db: DB = getDB();
+  return new Elysia({ aot: false })
+    .use(setup())
+    .group("/feed", (group) =>
+      group
+        .get(
+          "/",
+          async ({
+            admin,
+            writer,
+            uid,
+            set,
+            query: { page, limit, type, contentType },
+          }) => {
+            const privateList = type === "draft" || type === "unlisted";
+            if (privateList && !writer) {
+              set.status = 403;
+              return "Permission denied";
+            }
             const cache = PublicCache();
-            const page_num = (page ? page > 0 ? page : 1 : 1) - 1;
-            const limit_num = limit ? +limit > 50 ? 50 : +limit : 20;
-            if (keyword === undefined || keyword.trim().length === 0) {
-                return {
-                    size: 0,
-                    data: [],
-                    hasNext: false
-                }
+            const page_num = (page ? (page > 0 ? page : 1) : 1) - 1;
+            const limit_num = limit ? (+limit > 50 ? 50 : +limit) : 20;
+            const cacheKey = `feeds_${type}_${contentType || "all"}_${page_num}_${limit_num}`;
+            if (!privateList) {
+              const cached = await cache.get(cacheKey);
+              if (cached) return cached;
             }
-            const cacheKey = `search_${keyword}`;
-            const searchKeyword = `%${keyword}%`;
-            const feed_list = (await cache.getOrSet(cacheKey, () => db.query.feeds.findMany({
-                where: or(like(feeds.title, searchKeyword),
-                    like(feeds.content, searchKeyword),
-                    like(feeds.summary, searchKeyword),
-                    like(feeds.alias, searchKeyword)),
-                columns: admin ? undefined : {
-                    draft: false,
-                    listed: false
-                },
+            const visibility =
+              type === "draft"
+                ? eq(feeds.draft, 1)
+                : type === "unlisted"
+                  ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
+                  : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+            const contentFilter =
+              contentType === "normal" ? eq(feeds.kind, "article") : undefined;
+            const ownerFilter =
+              privateList && !admin ? eq(feeds.uid, uid!) : undefined;
+            const where = and(visibility, ownerFilter, contentFilter);
+            const size = await db
+              .select({ count: count() })
+              .from(feeds)
+              .where(where);
+            if (size[0].count === 0) {
+              return {
+                size: 0,
+                data: [],
+                hasNext: false,
+              };
+            }
+            const feed_list = (
+              await db.query.feeds.findMany({
+                where: where,
+                columns:
+                  admin || privateList
+                    ? undefined
+                    : {
+                        draft: false,
+                        listed: false,
+                      },
                 with: {
-                    hashtags: {
-                        columns: {},
-                        with: {
-                            hashtag: {
-                                columns: { id: true, name: true }
-                            }
-                        }
-                    }, user: {
-                        columns: { id: true, username: true, avatar: true }
-                    }
+                  hashtags: {
+                    columns: {},
+                    with: {
+                      hashtag: {
+                        columns: { id: true, name: true },
+                      },
+                    },
+                  },
+                  user: {
+                    columns: { id: true, username: true, avatar: true },
+                  },
                 },
-                orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
-            }))).map(({ content, hashtags, summary, ...other }) => {
-                return {
-                    summary: summary.length > 0 ? summary : content.length > 100 ? content.slice(0, 100) : content,
-                    hashtags: hashtags.map(({ hashtag }) => hashtag),
-                    ...other
-                }
+                orderBy: [
+                  desc(feeds.top),
+                  desc(feeds.createdAt),
+                  desc(feeds.updatedAt),
+                ],
+                offset: page_num * limit_num,
+                limit: limit_num + 1,
+              })
+            ).map(({ content, hashtags, summary, ...other }) => {
+              // 提取首图
+              const avatar = extractImage(content);
+              return {
+                summary:
+                  summary.length > 0
+                    ? summary
+                    : content.length > 100
+                      ? content.slice(0, 100)
+                      : content,
+                hashtags: hashtags.map(({ hashtag }) => hashtag),
+                avatar,
+                ...other,
+              };
             });
-            if (feed_list.length <= page_num * limit_num) {
-                return {
-                    size: feed_list.length,
-                    data: [],
-                    hasNext: false
-                }
-            } else if (feed_list.length <= page_num * limit_num + limit_num) {
-                return {
-                    size: feed_list.length,
-                    data: feed_list.slice(page_num * limit_num),
-                    hasNext: false
-                }
-            } else {
-                return {
-                    size: feed_list.length,
-                    data: feed_list.slice(page_num * limit_num, page_num * limit_num + limit_num),
-                    hasNext: true
-                }
+            let hasNext = false;
+            if (feed_list.length === limit_num + 1) {
+              feed_list.pop();
+              hasNext = true;
             }
-        }, {
+            const data = {
+              size: size[0].count,
+              data: feed_list,
+              hasNext,
+            };
+            if (!privateList) await cache.set(cacheKey, data);
+            return data;
+          },
+          {
             query: t.Object({
-                page: t.Optional(t.Numeric()),
-                limit: t.Optional(t.Numeric()),
+              page: t.Optional(t.Numeric()),
+              limit: t.Optional(t.Numeric()),
+              type: t.Optional(t.String()),
+              contentType: t.Optional(t.Literal("normal")),
+            }),
+          },
+        )
+        .get("/timeline", async () => {
+          const where = and(
+            eq(feeds.draft, 0),
+            eq(feeds.listed, 1),
+            eq(feeds.kind, "article"),
+          );
+          return (
+            await db.query.feeds.findMany({
+              where: where,
+              columns: {
+                id: true,
+                title: true,
+                createdAt: true,
+              },
+              with: {
+                hashtags: {
+                  columns: {},
+                  with: { hashtag: { columns: { name: true } } },
+                },
+              },
+              orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
             })
+          ).map(({ hashtags, ...feed }) => ({
+            ...feed,
+            hashtags: hashtags.map(({ hashtag }) => hashtag),
+          }));
         })
+        .get("/diary", async ({ uid, writer, admin, set }) => {
+          if (!uid || (!writer && !admin)) {
+            set.status = 403;
+            return "Permission denied";
+          }
+          return (
+            await db.query.feeds.findMany({
+              where: and(
+                eq(feeds.uid, uid),
+                eq(feeds.kind, "diary"),
+                eq(feeds.draft, 0),
+              ),
+              with: {
+                hashtags: {
+                  columns: {},
+                  with: { hashtag: { columns: { id: true, name: true } } },
+                },
+                user: { columns: { id: true, username: true, avatar: true } },
+              },
+              orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
+            })
+          ).map(({ hashtags, ...feed }) => ({
+            ...feed,
+            hashtags: hashtags.map(({ hashtag }) => hashtag),
+          }));
+        })
+        .post(
+          "/",
+          async ({
+            writer,
+            set,
+            uid,
+            body: {
+              title,
+              alias,
+              listed,
+              content,
+              summary,
+              draft,
+              kind,
+              tags,
+              createdAt,
+            },
+          }) => {
+            if (!writer || !uid) {
+              set.status = 403;
+              return "Permission denied";
+            }
+            // input check
+            if (!draft && !title) {
+              set.status = 400;
+              return "Title is required";
+            }
+            if (!draft && !content) {
+              set.status = 400;
+              return "Content is required";
+            }
+
+            // check exist
+            const exist = draft
+              ? null
+              : await db.query.feeds.findFirst({
+                  where: or(eq(feeds.title, title), eq(feeds.content, content)),
+                });
+            if (exist) {
+              set.status = 400;
+              return "Content already exists";
+            }
+            const date = createdAt ? new Date(createdAt) : new Date();
+            const diary = kind === "diary";
+            const result = await db
+              .insert(feeds)
+              .values({
+                title: title || "未命名草稿",
+                content: content || "",
+                summary,
+                uid,
+                alias,
+                listed: diary ? 0 : listed ? 1 : 0,
+                draft: draft ? 1 : 0,
+                kind: diary ? "diary" : "article",
+                createdAt: date,
+                updatedAt: date,
+              })
+              .returning({ insertedId: feeds.id });
+            await bindTagToPost(db, result[0].insertedId, tags);
+            await PublicCache().deletePrefix("feeds_");
+            if (result.length === 0) {
+              set.status = 500;
+              return "Failed to insert";
+            } else {
+              return result[0];
+            }
+          },
+          {
+            body: t.Object({
+              title: t.String(),
+              content: t.String(),
+              summary: t.String(),
+              alias: t.Optional(t.String()),
+              draft: t.Boolean(),
+              listed: t.Boolean(),
+              createdAt: t.Optional(t.Date()),
+              tags: t.Array(t.String()),
+              kind: t.Optional(
+                t.Union([t.Literal("article"), t.Literal("diary")]),
+              ),
+            }),
+          },
+        )
+        .get("/:id", async ({ uid, admin, set, headers, params: { id } }) => {
+          const id_num = parseInt(id);
+          const cache = PublicCache();
+          const cacheKey = `feed_${id}`;
+          const feed = await cache.getOrSet(cacheKey, () =>
+            db.query.feeds.findFirst({
+              where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
+              with: {
+                hashtags: {
+                  columns: {},
+                  with: {
+                    hashtag: {
+                      columns: { id: true, name: true },
+                    },
+                  },
+                },
+                user: {
+                  columns: { id: true, username: true, avatar: true },
+                },
+              },
+            }),
+          );
+          if (!feed) {
+            set.status = 404;
+            return "Not found";
+          }
+          // permission check
+          if (
+            (feed.draft || feed.kind === "diary") &&
+            feed.uid !== uid &&
+            !admin
+          ) {
+            set.status = 403;
+            return "Permission denied";
+          }
+
+          const { hashtags, ...other } = feed;
+          const hashtags_flatten = hashtags.map((f) => f.hashtag);
+
+          // update visits
+          const config = ClientConfig();
+          const enableVisit = await config.getOrDefault(
+            "counter.enabled",
+            true,
+          );
+          let pv = 0;
+          let uv = 0;
+          if (enableVisit) {
+            const ip =
+              headers["cf-connecting-ip"] || headers["x-real-ip"] || "UNK";
+            await db.insert(visits).values({
+              feedId: feed.id,
+              ip: ip,
+            });
+            const visit = await db.query.visits.findMany({
+              where: eq(visits.feedId, feed.id),
+              columns: { id: true, ip: true },
+            });
+            pv = visit.length;
+            uv = new Set(visit.map((v) => v.ip)).size;
+          }
+          const data = {
+            ...other,
+            hashtags: hashtags_flatten,
+            pv,
+            uv,
+          };
+          return data;
+        })
+        .post(
+          "/:id",
+          async ({
+            admin,
+            writer,
+            set,
+            uid,
+            params: { id },
+            body: {
+              title,
+              listed,
+              content,
+              summary,
+              alias,
+              draft,
+              kind,
+              top,
+              tags,
+              createdAt,
+            },
+          }) => {
+            const id_num = parseInt(id);
+            const feed = await db.query.feeds.findFirst({
+              where: eq(feeds.id, id_num),
+              with: {
+                hashtags: {
+                  columns: {},
+                  with: { hashtag: { columns: { name: true } } },
+                },
+              },
+            });
+            if (!feed) {
+              set.status = 404;
+              return "Not found";
+            }
+            if (!admin && (!writer || feed.uid !== uid)) {
+              set.status = 403;
+              return "Permission denied";
+            }
+            const diary = (kind || feed.kind) === "diary";
+            await db
+              .update(feeds)
+              .set({
+                title,
+                content,
+                summary,
+                alias,
+                top: admin ? top : undefined,
+                listed: diary ? 0 : listed ? 1 : 0,
+                draft: draft === undefined ? undefined : draft ? 1 : 0,
+                kind: diary ? "diary" : "article",
+                createdAt: createdAt ? new Date(createdAt) : undefined,
+                updatedAt: new Date(),
+              })
+              .where(eq(feeds.id, id_num));
+            if (tags) {
+              await bindTagToPost(db, id_num, tags);
+            }
+            await clearFeedCache(id_num, feed.alias, alias || null);
+            return "Updated";
+          },
+          {
+            body: t.Object({
+              title: t.Optional(t.String()),
+              alias: t.Optional(t.String()),
+              content: t.Optional(t.String()),
+              summary: t.Optional(t.String()),
+              listed: t.Boolean(),
+              draft: t.Optional(t.Boolean()),
+              createdAt: t.Optional(t.Date()),
+              tags: t.Optional(t.Array(t.String())),
+              kind: t.Optional(
+                t.Union([t.Literal("article"), t.Literal("diary")]),
+              ),
+              top: t.Optional(t.Integer()),
+            }),
+          },
+        )
+        .post(
+          "/top/:id",
+          async ({ admin, set, params: { id }, body: { top } }) => {
+            if (!admin) {
+              set.status = 403;
+              return "Permission denied";
+            }
+            const id_num = parseInt(id);
+            const feed = await db.query.feeds.findFirst({
+              where: eq(feeds.id, id_num),
+            });
+            if (!feed) {
+              set.status = 404;
+              return "Not found";
+            }
+            await db
+              .update(feeds)
+              .set({
+                top,
+              })
+              .where(eq(feeds.id, feed.id));
+            await clearFeedCache(feed.id, null, null);
+            return "Updated";
+          },
+          {
+            body: t.Object({
+              top: t.Integer(),
+            }),
+          },
+        )
+        .delete("/:id", async ({ admin, writer, set, uid, params: { id } }) => {
+          const id_num = parseInt(id);
+          const feed = await db.query.feeds.findFirst({
+            where: eq(feeds.id, id_num),
+          });
+          if (!feed) {
+            set.status = 404;
+            return "Not found";
+          }
+          if (!admin && (!writer || feed.uid !== uid)) {
+            set.status = 403;
+            return "Permission denied";
+          }
+          await db.delete(feeds).where(eq(feeds.id, id_num));
+          await clearFeedCache(id_num, feed.alias, null);
+          return "Deleted";
+        }),
+    )
+    .get(
+      "/search/:keyword",
+      async ({ admin, params: { keyword }, query: { page, limit } }) => {
+        keyword = decodeURI(keyword);
+        const cache = PublicCache();
+        const page_num = (page ? (page > 0 ? page : 1) : 1) - 1;
+        const limit_num = limit ? (+limit > 50 ? 50 : +limit) : 20;
+        if (keyword === undefined || keyword.trim().length === 0) {
+          return {
+            size: 0,
+            data: [],
+            hasNext: false,
+          };
+        }
+        const cacheKey = `search_${admin ? "admin" : "public"}_${keyword}`;
+        const searchKeyword = `%${keyword}%`;
+        const matchingText = or(
+          like(feeds.title, searchKeyword),
+          like(feeds.content, searchKeyword),
+          like(feeds.summary, searchKeyword),
+          like(feeds.alias, searchKeyword),
+        );
+        const feed_list = (
+          await cache.getOrSet(cacheKey, () =>
+            db.query.feeds.findMany({
+              where: admin
+                ? matchingText
+                : and(
+                    eq(feeds.draft, 0),
+                    eq(feeds.listed, 1),
+                    eq(feeds.kind, "article"),
+                    matchingText,
+                  ),
+              columns: admin
+                ? undefined
+                : {
+                    draft: false,
+                    listed: false,
+                  },
+              with: {
+                hashtags: {
+                  columns: {},
+                  with: {
+                    hashtag: {
+                      columns: { id: true, name: true },
+                    },
+                  },
+                },
+                user: {
+                  columns: { id: true, username: true, avatar: true },
+                },
+              },
+              orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
+            }),
+          )
+        ).map(({ content, hashtags, summary, ...other }) => {
+          return {
+            summary:
+              summary.length > 0
+                ? summary
+                : content.length > 100
+                  ? content.slice(0, 100)
+                  : content,
+            hashtags: hashtags.map(({ hashtag }) => hashtag),
+            ...other,
+          };
+        });
+        if (feed_list.length <= page_num * limit_num) {
+          return {
+            size: feed_list.length,
+            data: [],
+            hasNext: false,
+          };
+        } else if (feed_list.length <= page_num * limit_num + limit_num) {
+          return {
+            size: feed_list.length,
+            data: feed_list.slice(page_num * limit_num),
+            hasNext: false,
+          };
+        } else {
+          return {
+            size: feed_list.length,
+            data: feed_list.slice(
+              page_num * limit_num,
+              page_num * limit_num + limit_num,
+            ),
+            hasNext: true,
+          };
+        }
+      },
+      {
+        query: t.Object({
+          page: t.Optional(t.Numeric()),
+          limit: t.Optional(t.Numeric()),
+        }),
+      },
+    );
 }
 
-async function clearFeedCache(id: number, alias: string | null, newAlias: string | null) {
-    const cache = PublicCache()
-    await cache.deletePrefix('feeds_');
-    await cache.deletePrefix('search_');
-    await cache.delete(`feed_${id}`, false);
-    if (alias === newAlias) return;
-    if (alias)
-        await cache.delete(`feed_${alias}`, false);
-    if (newAlias)
-        await cache.delete(`feed_${newAlias}`, false);
+async function clearFeedCache(
+  id: number,
+  alias: string | null,
+  newAlias: string | null,
+) {
+  const cache = PublicCache();
+  await cache.deletePrefix("feeds_");
+  await cache.deletePrefix("search_");
+  await cache.delete(`feed_${id}`, false);
+  if (alias === newAlias) return;
+  if (alias) await cache.delete(`feed_${alias}`, false);
+  if (newAlias) await cache.delete(`feed_${newAlias}`, false);
 }

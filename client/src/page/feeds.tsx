@@ -9,7 +9,6 @@ import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { tryInt } from "../utils/int"
 import { useTranslation } from "react-i18next";
-import { getNormalPosts } from "../data/blog";
 
 type FeedsData = {
     size: number,
@@ -23,11 +22,11 @@ type FeedsMap = {
     [key in FeedType]: FeedsData
 }
 
-export function FeedsPage() {
+export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const { t } = useTranslation()
     const query = new URLSearchParams(useSearch());
     const profile = useContext(ProfileContext);
-    const [listState, _setListState] = useState<FeedType>(query.get("type") as FeedType || 'normal')
+    const [listState, _setListState] = useState<FeedType>(fixedType || query.get("type") as FeedType || 'normal')
     const [status, setStatus] = useState<'loading' | 'idle'>('idle')
     const [feeds, setFeeds] = useState<FeedsMap>({
         draft: { size: 0, data: [], hasNext: false },
@@ -50,7 +49,7 @@ export function FeedsPage() {
             if (data && typeof data !== 'string') {
                 setFeeds({
                     ...feeds,
-                    [type]: type === 'normal' ? { ...data, data: getNormalPosts(data.data) } : data
+                    [type]: data
                 })
                 setStatus('idle')
             }
@@ -59,7 +58,7 @@ export function FeedsPage() {
     useEffect(() => {
         const key = `${query.get("page")} ${query.get("type")}`
         if (ref.current == key) return
-        const type = query.get("type") as FeedType || 'normal'
+        const type = fixedType || query.get("type") as FeedType || 'normal'
         if (type !== listState) {
             _setListState(type)
         }
@@ -87,7 +86,7 @@ export function FeedsPage() {
                             <p className="text-sm mt-4 text-neutral-500 font-normal">
                                 {t('article.total$count', { count: feeds[listState]?.size })}
                             </p>
-                            {profile?.canWrite &&
+                            {profile?.canWrite && !fixedType &&
                                 <div className="flex flex-row space-x-4">
                                     <Link href={listState === 'draft' ? '/blog/articles?type=normal' : '/blog/articles?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
                                         {t('draft_bin')}

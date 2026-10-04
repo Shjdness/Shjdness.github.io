@@ -10,8 +10,6 @@ import { client } from './main'
 import { CallbackPage } from './page/callback'
 import { FeedPage, TOCHeader } from './page/feed'
 import { FeedsPage } from './page/feeds'
-import { HashtagPage } from './page/hashtag.tsx'
-import { HashtagsPage } from './page/hashtags.tsx'
 import { TimelinePage } from './page/timeline'
 import { ClientConfigContext, ConfigWrapper, defaultClientConfig } from './state/config.tsx'
 import { Profile, ProfileContext } from './state/profile'
@@ -144,13 +142,10 @@ function App() {
 
             <RouteMe path="/blog"><BlogHomePage /></RouteMe>
             <RouteMe path="/blog/articles"><FeedsPage /></RouteMe>
+            <RouteMe path="/blog/drafts"><FeedsPage fixedType="draft" /></RouteMe>
             <RouteMe path="/blog/timeline"><TimelinePage /></RouteMe>
             <RouteMe path="/blog/diary"><DiaryPage /></RouteMe>
-            <RouteMe path="/blog/tags"><HashtagsPage /></RouteMe>
             <RouteMe path="/blog/gallery"><GalleryPage /></RouteMe>
-            <RouteMe path="/blog/tag/:name">
-              {params => decodeURIComponent(params.name || '') === '日记' ? <Redirect to="/blog/diary" /> : <HashtagPage name={params.name || ""} />}
-            </RouteMe>
             <RouteMe path="/blog/search/:keyword">
               {params => <SearchPage keyword={params.keyword || ""} />}
             </RouteMe>
@@ -168,11 +163,11 @@ function App() {
             </RouteWithIndex>
 
             <Route path="/timeline"><Redirect to="/blog/timeline" /></Route>
-            <Route path="/hashtags"><Redirect to="/blog/tags" /></Route>
+            <Route path="/hashtags"><Redirect to="/blog/timeline" /></Route>
 
             <Route path="/gallery"><Redirect to="/blog/gallery" /></Route>
 
-            <Route path="/hashtag/:name">{params => <Redirect to={`/blog/tag/${params.name || ''}`} />}</Route>
+            <Route path="/hashtag/:name"><Redirect to="/blog/timeline" /></Route>
             <Route path="/search/:keyword">{params => <Redirect to={`/blog/search/${params.keyword || ''}`} />}</Route>
             <Route path="/writing"><Redirect to="/blog/writing" /></Route>
             <Route path="/writing/:id">{params => <Redirect to={`/blog/writing/${params.id || ''}`} />}</Route>

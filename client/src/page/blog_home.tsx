@@ -3,7 +3,6 @@ import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { FeedCard } from '../components/feed_card';
 import { Waiting } from '../components/loading';
-import { getNormalPosts } from '../data/blog';
 import { client } from '../main';
 import { headersWithAuth } from '../utils/auth';
 import { siteName } from '../utils/constants';
@@ -12,7 +11,7 @@ export function BlogHomePage() {
   const [feeds, setFeeds] = useState<any[] | null>(null);
   useEffect(() => {
     client.feed.index.get({ query: { page: 1, limit: 8, type: 'normal', contentType: 'normal' }, headers: headersWithAuth() }).then(({ data }: any) => {
-      setFeeds(data && typeof data !== 'string' ? getNormalPosts(data.data) : []);
+      setFeeds(data && typeof data !== 'string' ? data.data : []);
     });
   }, []);
   const pinned = (feeds || []).filter(feed => feed.top === 1);

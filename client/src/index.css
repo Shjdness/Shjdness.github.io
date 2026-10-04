@@ -547,6 +547,15 @@ h3,
 
 [data-color-mode="dark"] .tag-picker-create input { background: rgb(8 17 31 / 0.56); }
 
+.writing-kind { display:grid; gap:.45rem; padding:.85rem 1rem; border:1px solid rgb(148 163 184 / .24); border-radius:1rem; }
+.writing-kind span { font-size:.72rem; font-weight:800; letter-spacing:.12em; color:#64748b; }
+.writing-kind select { width:100%; padding:.7rem .8rem; border-radius:.75rem; background:rgb(255 255 255 / .45); }
+.writing-save-draft { border:1px solid rgb(225 29 98 / .45); color:#e11d62; padding:1rem; border-radius:999px; font-weight:700; }
+.writing-save-state { margin:1rem 2rem 0; text-align:center; color:#64748b; font-size:.78rem; }
+.inline-tag-filter { display:flex; flex-wrap:wrap; gap:.55rem; margin:0 auto 1.25rem; }
+.inline-tag-filter button { padding:.5rem .8rem; border:1px solid rgb(148 163 184 / .28); border-radius:999px; font-size:.78rem; background:rgb(255 255 255 / .18); }
+.inline-tag-filter button.active { color:white; border-color:#e11d62; background:#e11d62; }
+
 [data-color-mode="dark"] .site-shell .dark\:text-white {
   color: #edf4ff !important;
 }
@@ -1479,7 +1488,6 @@ a.toc-link {
 .rss-group-create { display:grid; grid-template-columns:1fr auto; gap:.5rem; margin:1rem 0; }.rss-group-create button{padding:.65rem 1rem;border-radius:.7rem;background:#e11d62;color:#fff}.rss-group-manage-row{display:grid;grid-template-columns:minmax(0,1fr) auto repeat(4,2rem);align-items:center;gap:.45rem;padding:.65rem 0;border-top:1px solid rgb(148 163 184 / .18)}.rss-group-manage-row span{color:#64748b;font-size:.7rem}.rss-group-manage-row button{color:#64748b}.rss-group-manage-row button:disabled{opacity:.28}
 .rss-source-group-head{display:grid;grid-template-columns:minmax(0,1fr) 2rem;align-items:center}.rss-source-group-head>button{display:flex;min-width:0;align-items:center;gap:.45rem;padding:.48rem .55rem;border-radius:.65rem;color:#94a3b8;text-align:left;font-size:.73rem}.rss-source-group-head>button:first-child strong{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rss-source-group-head>button.active{background:rgb(225 29 98 / .13);color:#fb4b7b}.rss-source-group-head>button:last-child{justify-content:center;padding:.48rem 0}
 .rss-modal-message { padding:.65rem .75rem; border-radius:.7rem; background:rgb(225 29 98 / .1); color:#e11d62!important; }
-.rss-lightbox { position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:2rem;background:rgb(0 0 0 / .92);cursor:zoom-out}.rss-lightbox img{max-width:96vw;max-height:92vh;object-fit:contain}.rss-lightbox span{position:absolute;right:1rem;bottom:1rem;color:#fff;font-size:.7rem}
 [data-color-mode="dark"] .rss-main-header{background:rgb(6 15 31 / .88)}[data-color-mode="dark"] .rss-modal{background:rgb(10 20 39 / .98);color:#e5edf8}[data-color-mode="dark"] .rss-modal input,[data-color-mode="dark"] .rss-modal select,[data-color-mode="dark"] .rss-modal textarea{background:rgb(255 255 255 / .08)}
 .life-panel:has(.year-overview) { width:min(96vw,82rem); }.year-heatmap{overflow:hidden}.life-year-grid{grid-auto-columns:minmax(.45rem,1fr);overflow:hidden;scrollbar-width:none}.life-year-grid::-webkit-scrollbar{display:none}
 @media (min-width:1500px){.rss-card-grid,.rss-card-grid-video{grid-template-columns:repeat(4,minmax(0,1fr))}.rss-card-grid-text{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -1530,7 +1538,6 @@ a.toc-link {
 .rss-standalone .rss-reader-body h2{margin:.28rem 0 .4rem;font-size:clamp(1rem,1.5vw,1.45rem)}
 .rss-standalone .rss-reader-body p{max-height:12rem;margin:.25rem 0;overflow:auto;font-size:.94rem;line-height:1.75}
 .rss-standalone .rss-main.is-reader.is-text{overflow:auto}.rss-standalone .rss-main.is-reader.is-text .rss-reader{height:auto;min-height:100%;overflow:visible}.rss-standalone .rss-main.is-reader.is-text .rss-reader-body p{max-height:none;overflow:visible}
-.rss-standalone .rss-lightbox{position:fixed}
 .header-clock{min-width:4.8rem;color:#334155;font-size:1.2rem;font-weight:900;letter-spacing:.1em;text-shadow:0 1px 12px rgb(255 255 255 / .34)}
 .header-pomodoro{max-width:18rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e11d62;letter-spacing:.03em}
 .rss-standalone-shell{position:relative}

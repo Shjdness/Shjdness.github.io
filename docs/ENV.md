@@ -51,8 +51,5 @@
 | RIN_GITHUB_CLIENT_SECRET | Github OAuth 的客户端密钥                                         | 1234567890abcdef1234567890abcdef12345678                         |
 | JWT_SECRET               | JWT 认证所需密钥，可为常规格式的任意密码                                      | J0sT%Ch@nge#Me1                                                  |
 | GUEST_ACCESS_CODE        | 访客写作者登录安全码，请使用至少 12 位且不可提交到公开仓库                       | a-long-private-code                                              |
-| RSS_SYNC_TOKEN           | GitHub 定时 RSSHub 任务与 Worker 之间的随机共享密钥，不可暴露给浏览器          | another-long-private-code                                        |
-| TWITTER_AUTH_TOKEN       | 可选；仅供 GitHub Actions 内的临时 RSSHub 读取 X 路由使用                     | platform-token                                                    |
-| BILIBILI_COOKIE          | 可选；Bilibili 对托管出口返回 412 时使用，保存登录后的完整 Cookie             | SESSDATA=...                                                       |
 | S3_ACCESS_KEY_ID         | S3 存储桶访问所需的 KEY ID，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌 ID | 1234567890abcdef1234567890abcd                                   |
 | S3_SECRET_ACCESS_KEY     | S3 存储桶访问所需的 Secret，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌    | 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef |

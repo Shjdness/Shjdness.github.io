@@ -12,6 +12,7 @@ export const feeds = sqliteTable("feeds", {
     content: text("content").notNull(),
     listed: integer("listed").default(1).notNull(),
     draft: integer("draft").default(1).notNull(),
+    kind: text("kind").default("article").notNull(),
     top: integer("top").default(0).notNull(),
     uid: integer("uid").references(() => users.id).notNull(),
     createdAt: created_at,
@@ -141,6 +142,9 @@ export const rssSubscriptions = sqliteTable("rss_subscriptions", {
     lastModified: text("last_modified").default("").notNull(),
     lastFetchedAt: integer("last_fetched_at", { mode: 'timestamp' }),
     lastError: text("last_error").default("").notNull(),
+    websubKey: text("websub_key").default("").notNull(),
+    websubCallback: text("websub_callback").default("").notNull(),
+    websubLeaseExpiresAt: integer("websub_lease_expires_at", { mode: 'timestamp' }),
     createdAt: created_at,
     updatedAt: updated_at,
 });

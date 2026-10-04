@@ -6,7 +6,6 @@ import { client } from "../main"
 import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { useTranslation } from "react-i18next";
-import { getNormalPosts } from "../data/blog";
 
 type TimelineFeed = { id: number; title: string | null; createdAt: Date; hashtags?: Array<{ name: string }> }
 
@@ -16,13 +15,14 @@ export function TimelinePage() {
     const ref = useRef(false)
     const [, setLocation] = useLocation()
     const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
+    const [selectedTags, setSelectedTags] = useState<string[]>([])
     const { t } = useTranslation()
     function fetchFeeds() {
         client.feed.timeline.get({
             headers: headersWithAuth()
         }).then(({ data }: any) => {
             if (data && typeof data !== 'string') {
-                const normalFeeds = getNormalPosts(data as TimelineFeed[])
+                const normalFeeds = data as TimelineFeed[]
                 setLength(normalFeeds.length)
                 const groups = normalFeeds.reduce<Partial<Record<number, TimelineFeed[]>>>((result, feed) => {
                     const year = new Date(feed.createdAt).getFullYear()
@@ -41,6 +41,9 @@ export function TimelinePage() {
         ref.current = true
     }, [])
     const allFeeds = useMemo(() => Object.values(feeds || {}).flat().filter((feed): feed is TimelineFeed => Boolean(feed)), [feeds])
+    const tagNames = useMemo(() => [...new Set(allFeeds.flatMap(feed => feed.hashtags?.map(tag => tag.name) || []))].sort(), [allFeeds])
+    const visibleFeeds = useMemo(() => selectedTags.length ? allFeeds.filter(feed => selectedTags.every(name => feed.hashtags?.some(tag => tag.name === name))) : allFeeds, [allFeeds, selectedTags])
+    const visibleGroups = useMemo(() => visibleFeeds.reduce<Partial<Record<number, TimelineFeed[]>>>((result, feed) => { const year = new Date(feed.createdAt).getFullYear(); result[year] = [...(result[year] || []), feed]; return result; }, {}), [visibleFeeds])
     const years = useMemo(() => [...new Set(allFeeds.map(({ createdAt }) => new Date(createdAt).getFullYear()))].sort((a, b) => b - a), [allFeeds])
     const heatmapDays = useMemo(() => {
         const counts = new Map<string, number>()
@@ -105,6 +108,7 @@ export function TimelinePage() {
                             </p>
                         </div>
                     </div>
+                    {tagNames.length > 0 && <div className="inline-tag-filter wauto">{tagNames.map(name => <button key={name} className={selectedTags.includes(name) ? 'active' : ''} onClick={() => setSelectedTags(current => current.includes(name) ? current.filter(value => value !== name) : [...current, name])}>#{name}</button>)}{selectedTags.length > 0 && <button onClick={() => setSelectedTags([])}>清除筛选</button>}</div>}
                     <section className="heatmap-panel wauto" aria-label={t('heatmap.title')}>
                         <div className="heatmap-heading">
                             <div>
@@ -125,18 +129,18 @@ export function TimelinePage() {
                             ) : <span key={`blank-${index}`} className="heatmap-day is-empty" />)}
                         </div>
                     </section>
-                    {feeds && Object.keys(feeds).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
+                    {feeds && Object.keys(visibleGroups).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
                         <div key={year} className="wauto flex flex-col justify-center items-start">
                             <h1 className="flex flex-row items-center space-x-2">
                                 <span className="text-2xl font-bold t-primary ">
                                     {t('year$year', { year: year })}
                                 </span>
                                 <span className="text-sm t-secondary">
-                                    {t('article.total_short$count', { count: feeds[+year]?.length })}
+                                    {t('article.total_short$count', { count: visibleGroups[+year]?.length })}
                                     </span>
                             </h1>
                             <div className="w-full flex flex-col justify-center items-start my-4">
-                                {feeds[+year]?.map(({ id, title, createdAt }) => (
+                                {visibleGroups[+year]?.map(({ id, title, createdAt }) => (
                                     <FeedItem key={id} id={id.toString()} title={title || t('untitled')} createdAt={new Date(createdAt)} />
                                 ))}
                             </div>
