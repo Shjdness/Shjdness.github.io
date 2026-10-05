@@ -37,6 +37,14 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const limit = tryInt(10, query.get("limit"), process.env.PAGE_SIZE)
     const ref = useRef("")
     function fetchFeeds(type: FeedType) {
+        if (type === 'draft') {
+            client.feed.drafts.get({ headers: headersWithAuth() }).then(({ data }) => {
+                const drafts = data && typeof data !== 'string' ? data : []
+                setFeeds(current => ({ ...current, draft: { size: drafts.length, data: drafts, hasNext: false } }))
+                setStatus('idle')
+            }).catch(() => setStatus('idle'))
+            return
+        }
         client.feed.index.get({
             query: {
                 page: page,
@@ -47,13 +55,13 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
             headers: headersWithAuth()
         }).then(({ data }) => {
             if (data && typeof data !== 'string') {
-                setFeeds({
-                    ...feeds,
+                setFeeds(current => ({
+                    ...current,
                     [type]: data
-                })
+                }))
                 setStatus('idle')
             }
-        })
+        }).catch(() => setStatus('idle'))
     }
     useEffect(() => {
         const key = `${query.get("page")} ${query.get("type")}`

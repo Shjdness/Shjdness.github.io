@@ -200,6 +200,28 @@ export function FeedService() {
             hashtags: hashtags.map(({ hashtag }) => hashtag),
           }));
         })
+        .get("/drafts", async ({ uid, writer, admin, set }) => {
+          if (!uid || (!writer && !admin)) {
+            set.status = 403;
+            return "Permission denied";
+          }
+          const ownerFilter = admin ? undefined : eq(feeds.uid, uid);
+          return (
+            await db.query.feeds.findMany({
+              where: and(eq(feeds.draft, 1), ownerFilter),
+              with: {
+                hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
+                user: { columns: { id: true, username: true, avatar: true } },
+              },
+              orderBy: [desc(feeds.updatedAt), desc(feeds.createdAt)],
+            })
+          ).map(({ content, hashtags, summary, ...feed }) => ({
+            ...feed,
+            summary: summary || (content.length > 100 ? `${content.slice(0, 100)}…` : content),
+            avatar: extractImage(content),
+            hashtags: hashtags.map(({ hashtag }) => hashtag),
+          }));
+        })
         .post(
           "/",
           async ({
