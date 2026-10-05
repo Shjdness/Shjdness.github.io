@@ -100,20 +100,24 @@ async function fetchText(
   accept = "application/atom+xml,text/html",
 ) {
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  // YouTube's Atom endpoint intermittently returns 404/5xx for an otherwise
+  // valid channel (including from non-browser data-centre egress). Treat every
+  // non-success response as transient for a few short attempts; a genuinely
+  // missing channel will still fail with the last status.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     const response = await fetch(url, {
       redirect: "follow",
       headers: {
         Accept: accept,
-        "User-Agent": "Mozilla/5.0 Shjdness-YouTube/1.0",
+        "User-Agent": "Mozilla/5.0",
       },
       signal: AbortSignal.timeout(15000),
     });
     if (response.ok)
       return { body: await response.text(), finalUrl: response.url };
     lastStatus = response.status;
-    if (response.status < 500 && response.status !== 429) break;
-    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    if (response.status === 401 || response.status === 403) break;
+    await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
   }
   throw new Error(`YouTube 返回 ${lastStatus || "网络错误"}`);
 }
