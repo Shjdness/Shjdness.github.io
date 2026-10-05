@@ -31,6 +31,23 @@ function channelIdFromFeed(value: string) {
   }
 }
 
+function channelIdFromUrl(value: string) {
+  try {
+    const source = new URL(value);
+    return (
+      source.searchParams.get("channel_id") ||
+      source.pathname.match(/^\/channel\/(UC[\w-]+)/)?.[1] ||
+      ""
+    );
+  } catch {
+    return "";
+  }
+}
+
+function isChannelId(value: string) {
+  return /^UC[\w-]{20,}$/.test(value);
+}
+
 function parseYouTubeFeed(xml: string) {
   const root = parser.parse(xml)?.feed || {};
   const author = clean(root.author?.name, 200);
@@ -82,16 +99,23 @@ async function fetchText(
   url: string,
   accept = "application/atom+xml,text/html",
 ) {
-  const response = await fetch(url, {
-    redirect: "follow",
-    headers: {
-      Accept: accept,
-      "User-Agent": "Mozilla/5.0 Shjdness-YouTube/1.0",
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`YouTube 返回 ${response.status}`);
-  return { body: await response.text(), finalUrl: response.url };
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        Accept: accept,
+        "User-Agent": "Mozilla/5.0 Shjdness-YouTube/1.0",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (response.ok)
+      return { body: await response.text(), finalUrl: response.url };
+    lastStatus = response.status;
+    if (response.status < 500 && response.status !== 429) break;
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw new Error(`YouTube 返回 ${lastStatus || "网络错误"}`);
 }
 
 async function resolveChannelId(input: string) {
@@ -224,15 +248,71 @@ async function ingest(
   return { added, unchanged: added === 0 };
 }
 
+async function canonicalFeed(
+  db: DB,
+  subscription: typeof rssSubscriptions.$inferSelect,
+) {
+  const candidates = [
+    channelIdFromUrl(subscription.siteUrl),
+    channelIdFromUrl(subscription.sourceUrl),
+    channelIdFromUrl(subscription.feedUrl),
+    subscription.externalId,
+  ];
+  let channelId = candidates.find(isChannelId) || "";
+  if (!channelId) {
+    for (const url of [subscription.siteUrl, subscription.sourceUrl]) {
+      try {
+        if (!url || !/(^|\.)youtube\.com$/i.test(new URL(url).hostname))
+          continue;
+        channelId = (await resolveChannelId(url)).channelId;
+        if (channelId) break;
+      } catch {
+        // Try the next stored YouTube URL before reporting an invalid source.
+      }
+    }
+  }
+  if (!isChannelId(channelId))
+    throw new Error("无法恢复该频道的 YouTube Channel ID");
+
+  const feedUrl = `${FEED}${channelId}`;
+  const siteUrl = `https://www.youtube.com/channel/${channelId}`;
+  if (
+    subscription.feedUrl !== feedUrl ||
+    subscription.siteUrl !== siteUrl ||
+    subscription.provider !== "native"
+  )
+    await db
+      .update(rssSubscriptions)
+      .set({
+        feedUrl,
+        siteUrl,
+        provider: "native",
+        platform: "youtube",
+        contentType: "video",
+        updatedAt: new Date(),
+      })
+      .where(eq(rssSubscriptions.id, subscription.id));
+
+  // Keep the in-memory row in sync so WebSub immediately uses the repaired
+  // official topic instead of the obsolete RSSHub-era URL.
+  subscription.feedUrl = feedUrl;
+  subscription.siteUrl = siteUrl;
+  subscription.provider = "native";
+  subscription.platform = "youtube";
+  subscription.contentType = "video";
+  return feedUrl;
+}
+
 async function refreshOne(
   db: DB,
   subscription: typeof rssSubscriptions.$inferSelect,
 ) {
   try {
+    const feedUrl = await canonicalFeed(db, subscription);
     return await ingest(
       db,
       subscription,
-      (await fetchText(subscription.feedUrl)).body,
+      (await fetchText(feedUrl)).body,
     );
   } catch (error) {
     const message =
