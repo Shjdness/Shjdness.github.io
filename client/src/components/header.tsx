@@ -153,7 +153,7 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     const [location] = useLocation();
     const isBlog = location.startsWith('/blog');
     const isLife = location.startsWith('/life');
-    const knownBlogSections = ['/blog/articles', '/blog/timeline', '/blog/diary', '/blog/drafts', '/blog/gallery', '/blog/writing'];
+    const knownBlogSections = ['/blog/articles', '/blog/timeline', '/blog/diary', '/blog/memos', '/blog/drafts', '/blog/gallery', '/blog/writing'];
     const isArticle = location === '/blog/articles' || location.startsWith('/blog/feed/') || location.startsWith('/blog/search/') || (
         location.startsWith('/blog/') && !knownBlogSections.some(path => location === path || location.startsWith(`${path}/`)) && !location.startsWith('/blog/tag/')
     );
@@ -165,6 +165,7 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
                 <NavItem menu={menu} onClick={onClick} title="文章" selected={isArticle} href="/blog/articles" />
                 <NavItem menu={menu} onClick={onClick} title="时间轴" selected={location === '/blog/timeline'} href="/blog/timeline" />
                 <NavItem menu={menu} onClick={onClick} title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
+                <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
                 <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
                 <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
             </>}

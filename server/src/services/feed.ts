@@ -43,7 +43,7 @@ export function FeedService() {
                   ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
                   : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
             const contentFilter =
-              contentType === "normal" ? eq(feeds.kind, "article") : undefined;
+              contentType === "normal" ? or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")) : undefined;
             const ownerFilter =
               privateList && !admin ? eq(feeds.uid, uid!) : undefined;
             const where = and(visibility, ownerFilter, contentFilter);
@@ -130,7 +130,7 @@ export function FeedService() {
           const where = and(
             eq(feeds.draft, 0),
             eq(feeds.listed, 1),
-            eq(feeds.kind, "article"),
+            or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")),
           );
           return (
             await db.query.feeds.findMany({
@@ -179,6 +179,27 @@ export function FeedService() {
             hashtags: hashtags.map(({ hashtag }) => hashtag),
           }));
         })
+        .get("/memo", async ({ uid, writer, admin, set }) => {
+          if (!uid || (!writer && !admin)) {
+            set.status = 403;
+            return "Permission denied";
+          }
+          return (
+            await db.query.feeds.findMany({
+              where: and(eq(feeds.uid, uid), eq(feeds.kind, "memo"), eq(feeds.draft, 0)),
+              with: {
+                hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
+                user: { columns: { id: true, username: true, avatar: true } },
+              },
+              orderBy: [desc(feeds.updatedAt), desc(feeds.createdAt)],
+            })
+          ).map(({ content, hashtags, summary, ...feed }) => ({
+            ...feed,
+            content,
+            summary: summary || (content.length > 160 ? `${content.slice(0, 160)}…` : content),
+            hashtags: hashtags.map(({ hashtag }) => hashtag),
+          }));
+        })
         .post(
           "/",
           async ({
@@ -188,7 +209,6 @@ export function FeedService() {
             body: {
               title,
               alias,
-              listed,
               content,
               summary,
               draft,
@@ -222,7 +242,8 @@ export function FeedService() {
               return "Content already exists";
             }
             const date = createdAt ? new Date(createdAt) : new Date();
-            const diary = kind === "diary";
+            const normalizedKind = kind === "diary" || kind === "essay" || kind === "memo" ? kind : "article";
+            const privateKind = normalizedKind === "diary" || normalizedKind === "memo";
             const result = await db
               .insert(feeds)
               .values({
@@ -231,9 +252,9 @@ export function FeedService() {
                 summary,
                 uid,
                 alias,
-                listed: diary ? 0 : listed ? 1 : 0,
+                listed: privateKind || draft ? 0 : 1,
                 draft: draft ? 1 : 0,
-                kind: diary ? "diary" : "article",
+                kind: normalizedKind,
                 createdAt: date,
                 updatedAt: date,
               })
@@ -254,21 +275,18 @@ export function FeedService() {
               summary: t.String(),
               alias: t.Optional(t.String()),
               draft: t.Boolean(),
-              listed: t.Boolean(),
+              listed: t.Optional(t.Boolean()),
               createdAt: t.Optional(t.Date()),
               tags: t.Array(t.String()),
               kind: t.Optional(
-                t.Union([t.Literal("article"), t.Literal("diary")]),
+                t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
               ),
             }),
           },
         )
         .get("/:id", async ({ uid, admin, set, headers, params: { id } }) => {
           const id_num = parseInt(id);
-          const cache = PublicCache();
-          const cacheKey = `feed_${id}`;
-          const feed = await cache.getOrSet(cacheKey, () =>
-            db.query.feeds.findFirst({
+          const feed = await db.query.feeds.findFirst({
               where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
               with: {
                 hashtags: {
@@ -283,15 +301,14 @@ export function FeedService() {
                   columns: { id: true, username: true, avatar: true },
                 },
               },
-            }),
-          );
+            });
           if (!feed) {
             set.status = 404;
             return "Not found";
           }
           // permission check
           if (
-            (feed.draft || feed.kind === "diary") &&
+            (feed.draft || feed.kind === "diary" || feed.kind === "memo") &&
             feed.uid !== uid &&
             !admin
           ) {
@@ -342,7 +359,6 @@ export function FeedService() {
             params: { id },
             body: {
               title,
-              listed,
               content,
               summary,
               alias,
@@ -371,7 +387,8 @@ export function FeedService() {
               set.status = 403;
               return "Permission denied";
             }
-            const diary = (kind || feed.kind) === "diary";
+            const nextKind = kind === "diary" || kind === "essay" || kind === "memo" || kind === "article" ? kind : feed.kind;
+            const privateKind = nextKind === "diary" || nextKind === "memo";
             await db
               .update(feeds)
               .set({
@@ -380,9 +397,9 @@ export function FeedService() {
                 summary,
                 alias,
                 top: admin ? top : undefined,
-                listed: diary ? 0 : listed ? 1 : 0,
+                listed: privateKind || draft === true ? 0 : 1,
                 draft: draft === undefined ? undefined : draft ? 1 : 0,
-                kind: diary ? "diary" : "article",
+                kind: nextKind,
                 createdAt: createdAt ? new Date(createdAt) : undefined,
                 updatedAt: new Date(),
               })
@@ -399,12 +416,12 @@ export function FeedService() {
               alias: t.Optional(t.String()),
               content: t.Optional(t.String()),
               summary: t.Optional(t.String()),
-              listed: t.Boolean(),
+              listed: t.Optional(t.Boolean()),
               draft: t.Optional(t.Boolean()),
               createdAt: t.Optional(t.Date()),
               tags: t.Optional(t.Array(t.String())),
               kind: t.Optional(
-                t.Union([t.Literal("article"), t.Literal("diary")]),
+                t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
               ),
               top: t.Optional(t.Integer()),
             }),
@@ -488,7 +505,7 @@ export function FeedService() {
                 : and(
                     eq(feeds.draft, 0),
                     eq(feeds.listed, 1),
-                    eq(feeds.kind, "article"),
+                    or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")),
                     matchingText,
                   ),
               columns: admin

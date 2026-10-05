@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lt, lte, or } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
-import { dailyBasics, habitLogs, habits, lifeDailyNotes, pomodoroSessions, rssItems, users } from '../db/schema';
+import { dailyBasics, habitLogs, habits, lifeDailyNotes, lifeTodos, pomodoroSessions, rssItems, users } from '../db/schema';
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
 import { roleForUser } from '../utils/roles';
@@ -41,7 +41,7 @@ export function LifeService() {
                     return 'Invalid date range';
                 }
 
-                const [user, ownerHabits, logs, sessions, items, basics] = await Promise.all([
+                const [user, ownerHabits, logs, sessions, items, basics, todos] = await Promise.all([
                     db.query.users.findFirst({ where: eq(users.id, uid!) }),
                     db.query.habits.findMany({ where: and(eq(habits.ownerId, uid!), eq(habits.active, 1)) }),
                     db.query.habitLogs.findMany({
@@ -58,6 +58,7 @@ export function LifeService() {
                         limit: 120,
                     }),
                     db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, query.day)), orderBy: [dailyBasics.sortOrder] }),
+                    db.query.lifeTodos.findMany({ where: eq(lifeTodos.ownerId, uid!), orderBy: [lifeTodos.completed, desc(lifeTodos.updatedAt)], limit: 8 }),
                 ]);
 
                 return {
@@ -77,6 +78,7 @@ export function LifeService() {
                     })),
                     recentRss: items.slice(0, 4).map(item => ({ id: item.id, title: item.title, url: item.url, publishedAt: item.publishedAt, read: item.read })),
                     basics,
+                    todos,
                 };
             }, {
                 query: t.Object({
@@ -86,6 +88,33 @@ export function LifeService() {
                     weekEnd: t.String({ pattern: dayPattern }),
                     day: t.String({ pattern: dayPattern }),
                 }),
+            })
+            .get('/todos', async ({ uid, lifeAccess, set }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                return db.query.lifeTodos.findMany({ where: eq(lifeTodos.ownerId, uid!), orderBy: [lifeTodos.completed, desc(lifeTodos.updatedAt)] });
+            })
+            .post('/todos', async ({ uid, lifeAccess, set, body }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                if (body.clientKey) {
+                    const existing = await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.ownerId, uid!), eq(lifeTodos.clientKey, body.clientKey)) });
+                    if (existing) return { insertedId: existing.id };
+                }
+                const result = await db.insert(lifeTodos).values({ ownerId: uid!, content: body.content.trim(), type: body.type, clientKey: body.clientKey }).returning({ insertedId: lifeTodos.id });
+                return result[0];
+            }, { body: t.Object({ content: t.String({ minLength: 1, maxLength: 500 }), type: t.Union([t.Literal('task'), t.Literal('learn')]), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
+            .post('/todos/:id', async ({ uid, lifeAccess, set, params, body }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                const id = Number(params.id);
+                const existing = await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.id, id), eq(lifeTodos.ownerId, uid!)) });
+                if (!existing) { set.status = 404; return 'Todo not found'; }
+                await db.update(lifeTodos).set({ content: body.content?.trim(), type: body.type, completed: body.completed === undefined ? undefined : body.completed ? 1 : 0, updatedAt: new Date() }).where(and(eq(lifeTodos.id, id), eq(lifeTodos.ownerId, uid!)));
+                return 'OK';
+            }, { body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 500 })), type: t.Optional(t.Union([t.Literal('task'), t.Literal('learn')])), completed: t.Optional(t.Boolean()) }) })
+            .delete('/todos/:id', async ({ uid, lifeAccess, set, params }) => {
+                if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                const removed = await db.delete(lifeTodos).where(and(eq(lifeTodos.id, Number(params.id)), eq(lifeTodos.ownerId, uid!))).returning({ id: lifeTodos.id });
+                if (!removed.length) { set.status = 404; return 'Todo not found'; }
+                return 'OK';
             })
             .get('/calendar', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';

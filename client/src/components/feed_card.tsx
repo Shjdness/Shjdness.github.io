@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 import { timeago } from "../utils/timeago";
 import { HashTag } from "./hashtag";
 import { useEffect, useRef, useState } from "react";
-export function FeedCard({ id, title, avatar, draft, listed, top, summary, hashtags, createdAt, updatedAt }:
+export function FeedCard({ id, title, avatar, draft, top, kind, summary, hashtags, createdAt, updatedAt }:
     {
         id: string, avatar?: string,
-        draft?: number, listed?: number, top?: number,
+        draft?: number, top?: number, kind?: string,
         title: string, summary: string,
         hashtags: { id: number, name: string }[],
         createdAt: Date, updatedAt: Date
@@ -37,7 +37,7 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
 
     return (
         <div ref={cardRef} className={`feed-scroll-card w-full ${visible ? "is-visible" : ""}`}>
-            <Link href={`/blog/feed/${id}`} target="_blank" className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
+            <Link href={draft === 1 ? `/blog/writing/${id}` : `/blog/feed/${id}`} target={draft === 1 ? undefined : "_blank"} className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
                 {avatar &&
                     <div className="flex flex-row items-center mb-2 rounded-xl overflow-clip">
                         <img src={avatar} alt=""
@@ -58,7 +58,8 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
                 </p>
                 <p className="space-x-2">
                     {draft === 1 && <span className="text-gray-400 text-sm">草稿</span>}
-                    {listed === 0 && <span className="text-gray-400 text-sm">未列出</span>}
+                    {draft !== 1 && kind === 'essay' && <span className="text-gray-400 text-sm">随笔</span>}
+                    {draft !== 1 && kind === 'memo' && <span className="text-gray-400 text-sm">备忘录</span>}
                     {top === 1 && <span className="text-theme text-sm">
                         置顶
                     </span>}

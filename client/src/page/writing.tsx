@@ -10,7 +10,7 @@ import { Helmet } from "react-helmet";
 import { useTranslation } from "react-i18next";
 import Loading from 'react-loading';
 import { ShowAlertType, useAlert } from '../components/dialog';
-import { Checkbox, Input } from "../components/input";
+import { Input } from "../components/input";
 import { Markdown } from "../components/markdown";
 import { client } from "../main";
 import { headersWithAuth } from "../utils/auth";
@@ -20,118 +20,7 @@ import { useColorMode } from "../utils/darkModeUtils";
 import mermaid from 'mermaid';
 import { readingStats } from '../utils/reading';
 
-async function publish({
-  title,
-  alias,
-  listed,
-  content,
-  summary,
-  tags,
-  draft,
-  kind,
-  createdAt,
-  onCompleted,
-  showAlert
-}: {
-  title: string;
-  listed: boolean;
-  content: string;
-  summary: string;
-  tags: string[];
-  draft: boolean;
-  kind: 'article' | 'diary';
-  alias?: string;
-  createdAt?: Date;
-  onCompleted?: () => void;
-  showAlert: ShowAlertType;
-}) {
-  const t = i18n.t
-  const { data, error } = await client.feed.index.post(
-    {
-      title,
-      alias,
-      content,
-      summary,
-      tags,
-      listed,
-      draft,
-      kind,
-      createdAt,
-    },
-    {
-      headers: headersWithAuth(),
-    }
-  );
-  if (onCompleted) {
-    onCompleted();
-  }
-  if (error) {
-    showAlert(error.value as string);
-  }
-  if (data && typeof data !== "string") {
-    showAlert(t("publish.success"), () => {
-      Cache.with().clear();
-      window.location.href = "/blog/feed/" + data.insertedId;
-    });
-  }
-}
-
-async function update({
-  id,
-  title,
-  alias,
-  content,
-  summary,
-  tags,
-  listed,
-  draft,
-  kind,
-  createdAt,
-  onCompleted,
-  showAlert
-}: {
-  id: number;
-  listed: boolean;
-  title?: string;
-  alias?: string;
-  content?: string;
-  summary?: string;
-  tags?: string[];
-  draft?: boolean;
-  kind?: 'article' | 'diary';
-  createdAt?: Date;
-  onCompleted?: () => void;
-  showAlert: ShowAlertType;
-}) {
-  const t = i18n.t
-  const { error } = await client.feed({ id }).post(
-    {
-      title,
-      alias,
-      content,
-      summary,
-      tags,
-      listed,
-      draft,
-      kind,
-      createdAt,
-    },
-    {
-      headers: headersWithAuth(),
-    }
-  );
-  if (onCompleted) {
-    onCompleted();
-  }
-  if (error) {
-    showAlert(error.value as string);
-  } else {
-    showAlert(t("update.success"), () => {
-      Cache.with(id).clear();
-      window.location.href = "/blog/feed/" + id;
-    });
-  }
-}
+type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 
 function uploadImage(file: File, onSuccess: (url: string) => void, showAlert: ShowAlertType) {
   const t = i18n.t
@@ -173,10 +62,9 @@ export function WritingPage({ id }: { id?: number }) {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [alias, setAlias] = cache.useCache("alias", "");
-  const [kind, setKind] = useState<'article' | 'diary'>('article');
+  const [kind, setKind] = useState<ContentKind>('article');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
   const [saveState, setSaveState] = useState('本地已保存');
-  const [listed, setListed] = useState(true);
   const [content, setContent] = cache.useCache("content", "");
   const [createdAt, setCreatedAt] = useState<Date | undefined>(new Date());
   const [preview, setPreview] = useCache<'edit' | 'preview' | 'comparison'>("preview", 'edit');
@@ -186,8 +74,7 @@ export function WritingPage({ id }: { id?: number }) {
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
-  const diaryMode = kind === 'diary';
-  useEffect(() => { if (diaryMode) setListed(false); }, [diaryMode]);
+  const privateMode = kind === 'diary' || kind === 'memo';
   const saveTagNames = (names: string[]) => {
     const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(Boolean))];
     setTags(unique.map(name => `#${name}`).join(' '));
@@ -222,56 +109,35 @@ export function WritingPage({ id }: { id?: number }) {
     }])
     currentEditor.focus()
   }
-  function publishButton() {
+  async function publishButton() {
     if (publishing) return;
     const tagsplit =
       tags
         .split("#")
         .filter((tag) => tag !== "")
         .map((tag) => tag.trim()) || [];
-    if (currentId !== undefined) {
-      setPublishing(true)
-      update({
-        id: currentId,
-        title,
-        content,
-        summary,
-        alias,
-        tags: tagsplit,
-        draft: false,
-        kind,
-        listed: diaryMode ? false : listed,
-        createdAt,
-        onCompleted: () => {
-          setPublishing(false)
-        },
-        showAlert
-      });
-    } else {
-      if (!title) {
-        showAlert(t("title_empty"))
-        return;
+    if (!title.trim()) { showAlert(t("title_empty")); return; }
+    if (!content.trim()) { showAlert(t("content.empty")); return; }
+    setPublishing(true);
+    try {
+      const payload = { title: title.trim(), content, summary, alias, tags: tagsplit, draft: false, kind, listed: !privateMode, createdAt };
+      let publishedId = currentId;
+      if (currentId !== undefined) {
+        const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
+        if (error) throw new Error(typeof error.value === 'string' ? error.value : JSON.stringify(error.value));
+      } else {
+        const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
+        if (error || !data || typeof data === 'string') throw new Error(error ? JSON.stringify(error.value) : '发布失败');
+        publishedId = data.insertedId;
       }
-      if (!content) {
-        showAlert(t("content.empty"))
-        return;
-      }
-      setPublishing(true)
-      publish({
-        title,
-        content,
-        summary,
-        tags: tagsplit,
-        draft: false,
-        kind,
-        alias,
-        listed: diaryMode ? false : listed,
-        createdAt,
-        onCompleted: () => {
-          setPublishing(false)
-        },
-        showAlert
-      });
+      Cache.with().clear();
+      if (publishedId !== undefined) Cache.with(publishedId).clear();
+      const destination = kind === 'memo' ? '/blog/memos' : kind === 'diary' ? '/blog/diary' : `/blog/feed/${publishedId}`;
+      showAlert(currentId === undefined ? t('publish.success') : t('update.success'), () => { window.location.href = destination; });
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : '发布失败，请稍后重试');
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -289,7 +155,11 @@ export function WritingPage({ id }: { id?: number }) {
         setCurrentId(data.insertedId); window.history.replaceState({}, '', `/blog/writing/${data.insertedId}`);
       }
       setSaveState(`云端已备份 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
-    } catch (error) { setSaveState(error instanceof Error ? error.message : '云端备份失败，本地稿仍保留'); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '云端备份失败，本地稿仍保留';
+      setSaveState(message);
+      showAlert(message);
+    }
     finally { setPublishing(false); }
   }
 
@@ -365,15 +235,14 @@ export function WritingPage({ id }: { id?: number }) {
         })
         .then(({ data }) => {
           if (data && typeof data !== "string") {
-            if (title == "" && data.title) setTitle(data.title);
-            if (tags == "" && data.hashtags)
-              setTags(data.hashtags.map(({ name }) => `#${name}`).join(" "));
-            if (alias == "" && data.alias) setAlias(data.alias);
-            if (content == "") setContent(data.content);
-            if (summary == "") setSummary(data.summary);
-            setListed(data.listed === 1);
-            setKind(data.kind === 'diary' ? 'diary' : 'article');
+            setTitle(data.title || '');
+            setTags(data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '');
+            setAlias(data.alias || '');
+            setContent(data.content || '');
+            setSummary(data.summary || '');
+            setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
             setCreatedAt(new Date(data.createdAt));
+            setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
           }
         });
     }
@@ -422,8 +291,11 @@ export function WritingPage({ id }: { id?: number }) {
           />
           <label className="writing-kind mt-4">
             <span>内容类型</span>
-            <select value={kind} onChange={event => setKind(event.target.value as 'article' | 'diary')}>
-              <option value="article">普通文章</option><option value="diary">私人日记</option>
+            <select value={kind} onChange={event => setKind(event.target.value as ContentKind)}>
+              <option value="article">普通文章</option>
+              <option value="essay">随笔</option>
+              <option value="diary">私人日记</option>
+              <option value="memo">备忘录</option>
             </select>
           </label>
           <Input
@@ -461,18 +333,6 @@ export function WritingPage({ id }: { id?: number }) {
             placeholder={t("alias")}
             className="mt-4"
           />
-          <div
-            className={`select-none flex flex-row justify-between items-center mt-6 mb-2 px-4 ${diaryMode ? 'opacity-50' : ''}`}
-            onClick={() => { if (!diaryMode) setListed(!listed); }}
-          >
-            <p>{t('listed')}</p>
-            <Checkbox
-              id="listed"
-              value={diaryMode ? false : listed}
-              setValue={value => { if (!diaryMode) setListed(value); }}
-              placeholder={t('listed')}
-            />
-          </div>
           <div className="select-none flex flex-row justify-between items-center mt-4 mb-2 pl-4">
             <p className="break-keep mr-2">
               {t('created_at')}

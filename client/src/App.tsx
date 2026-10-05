@@ -23,6 +23,7 @@ import { AppearancePage } from './page/appearance.tsx'
 import { HomePage } from './page/home.tsx'
 import { BlogHomePage } from './page/blog_home.tsx'
 import { DiaryPage } from './page/diary.tsx'
+import { MemoPage } from './page/memo.tsx'
 import { PomodoroProvider } from './state/pomodoro.tsx'
 
 const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
@@ -145,6 +146,7 @@ function App() {
             <RouteMe path="/blog/drafts"><FeedsPage fixedType="draft" /></RouteMe>
             <RouteMe path="/blog/timeline"><TimelinePage /></RouteMe>
             <RouteMe path="/blog/diary"><DiaryPage /></RouteMe>
+            <RouteMe path="/blog/memos"><MemoPage /></RouteMe>
             <RouteMe path="/blog/gallery"><GalleryPage /></RouteMe>
             <RouteMe path="/blog/search/:keyword">
               {params => <SearchPage keyword={params.keyword || ""} />}
@@ -181,6 +183,7 @@ function App() {
             </RouteMe>
 
             <RouteMe path="/life/habits" paddingClassName='mx-4'><PrivateLifePage section="habits" /></RouteMe>
+            <RouteMe path="/life/todos" paddingClassName='mx-4'><PrivateLifePage section="todos" /></RouteMe>
             <RouteMe path="/life/calendar" paddingClassName='mx-4'><PrivateLifePage section="calendar" /></RouteMe>
             <RouteMe path="/life/year" paddingClassName='mx-4'><PrivateLifePage section="year" /></RouteMe>
             <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>

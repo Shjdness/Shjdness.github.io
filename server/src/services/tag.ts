@@ -12,7 +12,7 @@ export function TagService() {
       .get(
         "/",
         async ({ admin, writer, uid, query }) => {
-          const kind = query.kind === "diary" ? "diary" : "article";
+          const kind = query.kind || "article";
           const tag_list = await db.query.hashtags.findMany({
             with: {
               feeds: {
@@ -33,7 +33,7 @@ export function TagService() {
             return {
               ...tag,
               feeds: tag.feeds.filter(({ feed }) => {
-                if (feed.kind !== kind) return false;
+                if (kind === "article" ? !["article", "essay"].includes(feed.kind) : feed.kind !== kind) return false;
                 if (uid && (admin || writer)) return feed.uid === uid;
                 return feed.draft === 0 && feed.listed === 1;
               }).length,
@@ -43,7 +43,7 @@ export function TagService() {
         {
           query: t.Object({
             kind: t.Optional(
-              t.Union([t.Literal("article"), t.Literal("diary")]),
+              t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
             ),
           }),
         },

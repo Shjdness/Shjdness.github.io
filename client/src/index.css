@@ -80,16 +80,16 @@ h3,
 
 /* Home / Blog / Life architecture */
 .home-landing { min-height:100svh; display:grid; place-items:center; padding:clamp(1.2rem,5vw,5rem); }
-.home-landing-card { width:min(42rem,100%); padding:clamp(1.6rem,6vw,4rem); border:1px solid rgb(255 255 255 / .44); border-radius:2rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .7)); backdrop-filter:blur(var(--glass-blur)) saturate(145%); box-shadow:0 30px 80px rgb(15 23 42 / .18),inset 0 1px 0 rgb(255 255 255 / .5); }
+.home-landing-card { width:min(52rem,100%); padding:clamp(2rem,6vw,5rem); border:1px solid rgb(255 255 255 / .44); border-radius:2rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .7)); backdrop-filter:blur(var(--glass-blur)) saturate(145%); box-shadow:0 30px 80px rgb(15 23 42 / .18),inset 0 1px 0 rgb(255 255 255 / .5); }
 .home-avatar { width:4.5rem; height:4.5rem; margin-bottom:1.2rem; border:2px solid rgb(255 255 255 / .62); border-radius:1.35rem; object-fit:cover; box-shadow:0 14px 36px rgb(15 23 42 / .18); }
 .home-kicker { color:#be185d; font-size:.72rem; font-weight:800; letter-spacing:.23em; }
-.home-landing h1 { margin-top:.55rem; font-size:clamp(3.2rem,11vw,7rem); font-weight:800; line-height:.92; color:#172033; }
+.home-landing h1 { margin-top:.55rem; font-size:clamp(2.6rem,7vw,5.2rem); font-weight:800; line-height:.95; color:#172033; }
 .home-motto { margin-top:.7rem; color:#5f6878; letter-spacing:.04em; }
 .home-intro { max-width:32rem; margin-top:2rem; color:#334155; line-height:1.9; }
 .home-portals { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin-top:2rem; }
-.home-portals a { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.05rem 1.2rem; border:1px solid rgb(255 255 255 / .5); border-radius:1.25rem; background:rgb(255 255 255 / .25); transition:transform .2s ease,background .2s ease; }
+.home-portals a { display:flex; min-height:7.5rem; align-items:center; justify-content:space-between; gap:1rem; padding:1.35rem 1.5rem; border:1px solid rgb(255 255 255 / .5); border-radius:1.35rem; background:rgb(255 255 255 / .25); transition:transform .2s ease,background .2s ease; }
 .home-portals a:hover { transform:translateY(-3px); background:rgb(255 255 255 / .43); }
-.home-portals small,.home-portals strong { display:block; }.home-portals small{font-size:.62rem;color:#64748b;letter-spacing:.14em}.home-portals strong{margin-top:.15rem;font-size:1.25rem;color:#1e293b}.home-portals i{color:#be185d}
+.home-portals small,.home-portals strong { display:block; }.home-portals small{font-size:.68rem;color:#64748b;letter-spacing:.14em}.home-portals strong{margin-top:.18rem;font-size:1.45rem;color:#1e293b}.home-portals i{color:#be185d;font-size:1.2rem}
 
 .life-nav { display:flex; flex-wrap:wrap; gap:.3rem; margin-bottom:2rem; padding:.35rem; border:1px solid rgb(148 163 184 / .18); border-radius:999px; background:rgb(255 255 255 / .12); }
 .life-nav a { flex:1; min-width:max-content; padding:.55rem .8rem; border-radius:999px; text-align:center; color:#64748b; font-size:.82rem; font-weight:700; }
@@ -1245,16 +1245,41 @@ a.toc-link {
 .rss-message { margin: .65rem 0 1.1rem; color: #ffd0dc; font-size: .92rem; }
 
 /* Unified Life overview and RSS workspace */
-.life-overview-detail { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin-top:.85rem; }
+.life-overview-detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.8rem; margin-top:.85rem; }
 .life-overview-detail section { padding:1rem; border:1px solid rgb(148 163 184 / .16); border-radius:1rem; background:rgb(255 255 255 / .1); }
-.life-overview-detail h2 { margin-bottom:.65rem; font-size:.82rem; color:#e11d62; letter-spacing:.08em; text-transform:uppercase; }
+.life-overview-detail h2 { display:flex; align-items:center; justify-content:space-between; gap:.7rem; margin-bottom:.65rem; font-size:.82rem; color:#e11d62; letter-spacing:.08em; text-transform:uppercase; }
 .life-overview-detail p { display:flex; align-items:center; justify-content:space-between; gap:.8rem; margin-top:.45rem; color:#64748b; font-size:.78rem; }
 .life-overview-detail p strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .life-overview-detail p span { display:flex; gap:.24rem; }
+.life-overview-detail p em { flex:none; color:#94a3b8; font-size:.65rem; font-style:normal; }
 .life-overview-detail p i { width:.55rem; height:.55rem; border-radius:50%; background:rgb(148 163 184 / .2); }
 .life-overview-detail p i.done { background:#22c55e; }
 .life-overview-detail a { display:block; padding:.45rem 0; overflow:hidden; color:inherit; font-size:.8rem; text-overflow:ellipsis; white-space:nowrap; }
 .life-overview-detail a+a { border-top:1px solid rgb(148 163 184 / .12); }
+.life-overview-detail h2 a { padding:0; color:#64748b; font-size:.68rem; font-weight:700; letter-spacing:0; text-transform:none; }
+
+.todo-compose { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:.65rem; margin-top:1.3rem; }
+.todo-compose select,.todo-compose input,.todo-compose button,.todo-filters button { padding:.75rem .9rem; border:1px solid rgb(148 163 184 / .22); border-radius:.85rem; background:rgb(255 255 255 / .12); color:inherit; }
+.todo-compose button { border-color:#e11d62; background:#e11d62; color:#fff; font-weight:800; }
+.todo-compose button:disabled { opacity:.45; }
+.todo-filters { display:flex; gap:.45rem; margin-top:.8rem; }
+.todo-filters button { padding:.45rem .75rem; font-size:.75rem; }
+.todo-filters button.active { border-color:rgb(225 29 98 / .42); background:rgb(225 29 98 / .12); color:#e11d62; }
+.todo-list { display:grid; gap:.6rem; margin-top:1rem; }
+.todo-list article { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.75rem; padding:.8rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / .09); }
+.todo-list article>div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:.7rem; }
+.todo-list input { min-width:0; border:0; outline:0; background:transparent; color:inherit; }
+.todo-list article.done input { color:#94a3b8; text-decoration:line-through; }
+.todo-check { width:1.6rem; height:1.6rem; border:1px solid rgb(148 163 184 / .35); border-radius:50%; }
+.todo-list article.done .todo-check { border-color:#22c55e; background:#22c55e; color:#fff; }
+.todo-type { color:#e11d62; font-size:.68rem; font-weight:700; }
+.todo-remove { color:#94a3b8; }
+
+.memo-page { width:min(58rem,calc(100% - 2rem)); margin:1rem auto 4rem; }
+.memo-page>header p { color:#e11d62; font-size:.7rem; font-weight:800; letter-spacing:.2em; }
+.memo-page>header h1 { margin-top:.35rem; font-size:clamp(2.4rem,7vw,4.5rem); font-weight:800; }
+.memo-page>header span,.memo-empty { color:#64748b; }
+.memo-list { margin-top:1rem; }
 .rss-workspace { display:grid; min-height:34rem; overflow:hidden; }
 .rss-library { min-width:0; }
 .rss-library { padding:.65rem; border-right:1px solid rgb(148 163 184 / .16); }
@@ -1274,7 +1299,8 @@ a.toc-link {
 .rss-load-more { display:block; margin:1rem auto; padding:.6rem 1rem; border:1px solid rgb(148 163 184 / .2); border-radius:999px; color:#e11d62; background:rgb(225 29 98 / .08); font-size:.75rem; }
 [data-color-mode="dark"] .rss-workspace { background:rgb(3 10 25 / .26); }
 [data-color-mode="dark"] .life-overview-detail section { background:rgb(4 12 28 / .25); }
-@media (max-width:640px) { .life-overview-detail{grid-template-columns:1fr}.rss-workspace{display:block}.rss-library{border-right:0;border-bottom:1px solid rgb(148 163 184 / .16)} }
+@media (max-width:980px) { .life-overview-detail{grid-template-columns:1fr 1fr}.life-overview-detail section:first-child{grid-column:1/-1} }
+@media (max-width:640px) { .life-overview-detail{grid-template-columns:1fr}.life-overview-detail section:first-child{grid-column:auto}.todo-compose{grid-template-columns:1fr}.todo-list article>div{grid-template-columns:1fr}.rss-workspace{display:block}.rss-library{border-right:0;border-bottom:1px solid rgb(148 163 184 / .16)} }
 
 .is-active-link::before {
   @apply bg-theme;

@@ -8,11 +8,12 @@ import { TodayAdviceCard } from './guide';
 import { enqueueMutation, flushSyncQueue, getCached, getSyncQueue, onLocalChange, setCached, withTimeout } from '../data/local-first';
 import { usePomodoro } from '../state/pomodoro';
 
-type LifeSection = 'life' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
+type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
 type Habit = { id: number; name: string; description: string; color: string; active: number; clientKey?: string | null };
 type Log = { habitId: number; date: string; completed: number };
 type DailyNote = { id?: number; date: string; content: string; updatedAt: Date | string };
 type DailyBasic = { id: number; date: string; content: string; completed: number; sortOrder: number; clientKey?: string | null };
+type LifeTodo = { id: number; content: string; type: 'task' | 'learn'; completed: number; clientKey?: string | null; updatedAt?: Date | string };
 type PomodoroSession = { id: number; startedAt: Date; endedAt: Date; focusMinutes: number; roundIndex: number; completed: number; taskName?: string; completedEarly?: number };
 type RssSubscription = { id: number; feedUrl: string; sourceUrl: string; title: string; alias: string; description: string; category: string; provider: string; platform: string; siteUrl: string; favicon: string; lastFetchedAt: Date | null; lastError: string };
 type RssGroup = { id: number; name: string; sortOrder: number };
@@ -26,6 +27,7 @@ type LifeOverviewData = {
   habits: Array<{ id: number; name: string; days: string[] }>;
   recentRss: Array<{ id: number; title: string; url: string; publishedAt: Date; read: number }>;
   basics: DailyBasic[];
+  todos: LifeTodo[];
 };
 
 const mayAccessLife = (role?: string) => role === 'owner' || role === 'trusted';
@@ -53,6 +55,7 @@ export function PrivateLifePage({ section }: { section: LifeSection }) {
   const profile = useContext(ProfileContext);
   if (!mayAccessLife(profile?.role)) return <LifeDenied />;
   if (section === 'life') return <LifeOverview />;
+  if (section === 'todos') return <TodoView />;
   if (section === 'habits') return <HabitView />;
   if (section === 'calendar' || section === 'year') return <CalendarView year={section === 'year'} />;
   if (section === 'pomodoro') return <PomodoroView />;
@@ -122,6 +125,19 @@ async function sendQueuedMutation(item: { entity: string; action: string; payloa
     else await lifeApi(`/life/basics/${id}`, { method: 'POST', body: JSON.stringify({ content: payload.content, completed: payload.completed, sortOrder: payload.sortOrder }) });
     return true;
   }
+  if (item.entity === 'todo') {
+    const payload = item.payload as { localId?: number; id?: number; content?: string; type?: 'task' | 'learn'; completed?: boolean; clientKey?: string };
+    if (item.action === 'create') {
+      const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify({ content: payload.content, type: payload.type, clientKey: payload.clientKey }) });
+      if (!result.insertedId || payload.localId === undefined) return false;
+      await rememberLocalId('life:todo-id-map', payload.localId, result.insertedId);
+      return true;
+    }
+    const id = await resolveTodoId(payload.id || 0);
+    if (item.action === 'delete') await lifeApi(`/life/todos/${id}`, { method: 'DELETE' });
+    else await lifeApi(`/life/todos/${id}`, { method: 'POST', body: JSON.stringify({ content: payload.content, type: payload.type, completed: payload.completed }) });
+    return true;
+  }
   if (item.entity === 'pomodoro' && item.action === 'create') {
     const payload = item.payload as { startedAt: string; focusMinutes?: number };
     if ((payload.focusMinutes || 0) < 5) return true;
@@ -154,6 +170,13 @@ async function resolveBasicId(id: number) {
   if (id >= 0) return id;
   const mapping = (await getCached<Record<string, number>>('life:basic-id-map'))?.value || {};
   if (!mapping[String(id)]) throw new Error('Today item is waiting to be created');
+  return mapping[String(id)];
+}
+
+async function resolveTodoId(id: number) {
+  if (id >= 0) return id;
+  const mapping = (await getCached<Record<string, number>>('life:todo-id-map'))?.value || {};
+  if (!mapping[String(id)]) throw new Error('Todo is waiting to be created');
   return mapping[String(id)];
 }
 
@@ -298,9 +321,35 @@ function LifeOverview() {
   return <LifeLayout section="life" title="Life" intro="习惯、专注、阅读与时间，在这里汇成同一条生活轨迹。">
     <TodayBasics initial={overview?.basics} />
     <div className="life-summary-grid"><Link href="/life/pomodoro"><small>TODAY FOCUS</small><strong>{summary.focusMinutes} min</strong><span>{summary.rounds} 轮专注</span></Link><Link href="/life/habits"><small>THIS WEEK</small><strong>{summary.completed}</strong><span>{summary.habits} 项习惯</span></Link><Link href="/life/calendar"><small>CALENDAR</small><strong>{new Date().getDate()}</strong><span>{new Date().toLocaleDateString('zh-CN', { month: 'long', weekday: 'long' })}</span></Link><Link href="/life/rss"><small>RSS</small><strong>{summary.unread}</strong><span>篇未读</span></Link></div>
-    {overview && <div className="life-overview-detail"><section><h2>本周习惯</h2>{overview.habits.map(habit => <p key={habit.id}><strong>{habit.name}</strong><span>{Array.from({ length: 7 }, (_, index) => { const date = isoDay(addDays(mondayOf(), index)); return <i key={date} className={habit.days.includes(date) ? 'done' : ''} title={date} />; })}</span></p>)}</section><section><h2>最近订阅</h2>{overview.recentRss.length ? overview.recentRss.map(item => <Link href="/life/rss" key={item.id}>{item.title}</Link>) : <p>还没有订阅内容</p>}</section></div>}
+    {overview && <div className="life-overview-detail"><section><h2><span>待办与以后学习</span><Link href="/life/todos">打开</Link></h2>{overview.todos?.filter(item => !item.completed).slice(0, 5).map(item => <p key={item.id}><strong>{item.content}</strong><em>{item.type === 'learn' ? '以后学习' : '待办'}</em></p>)}{!overview.todos?.some(item => !item.completed) && <p>暂时没有待处理内容</p>}</section><section><h2>本周习惯</h2>{overview.habits.map(habit => <p key={habit.id}><strong>{habit.name}</strong><span>{Array.from({ length: 7 }, (_, index) => { const date = isoDay(addDays(mondayOf(), index)); return <i key={date} className={habit.days.includes(date) ? 'done' : ''} title={date} />; })}</span></p>)}</section><section><h2>最近订阅</h2>{overview.recentRss.length ? overview.recentRss.map(item => <Link href="/life/rss" key={item.id}>{item.title}</Link>) : <p>还没有订阅内容</p>}</section></div>}
     <TodayAdviceCard />
   </LifeLayout>;
+}
+
+function TodoView() {
+  const cacheKey = 'life:todos';
+  const [items, setItems] = useState<LifeTodo[]>([]); const [draft, setDraft] = useState(''); const [type, setType] = useState<'task' | 'learn'>('task'); const [filter, setFilter] = useState<'all' | 'task' | 'learn'>('all'); const [busy, setBusy] = useState(false);
+  const persist = async (next: LifeTodo[]) => { const sorted = [...next].sort((a, b) => a.completed - b.completed || new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()); setItems(sorted); await setCached(cacheKey, sorted); };
+  const load = async () => {
+    const cached = await getCached<LifeTodo[]>(cacheKey); if (cached) setItems(cached.value);
+    try { const cloud = await lifeApi<LifeTodo[]>('/life/todos'); const pending = (await getSyncQueue()).some(item => item.entity === 'todo'); if (Array.isArray(cloud) && !pending) await persist(cloud); } catch {}
+  };
+  useEffect(() => { void load(); const handler = () => void load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, []);
+  const create = async () => {
+    const content = draft.trim(); if (!content || busy) return; setBusy(true);
+    const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: LifeTodo = { id: localId, content, type, completed: 0, clientKey, updatedAt: new Date().toISOString() }; const next = [local, ...items]; setDraft(''); await persist(next);
+    try { const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify({ content, type, clientKey }) }); await rememberLocalId('life:todo-id-map', localId, result.insertedId); await persist(next.map(item => item.id === localId ? { ...item, id: result.insertedId } : item)); }
+    catch { await enqueueMutation('todo', 'create', { localId, content, type, clientKey }); }
+    finally { setBusy(false); }
+  };
+  const update = async (item: LifeTodo, patch: { content?: string; type?: 'task' | 'learn'; completed?: boolean }) => {
+    const next = items.map(value => value.id === item.id ? { ...value, ...patch, completed: patch.completed === undefined ? value.completed : patch.completed ? 1 : 0, updatedAt: new Date().toISOString() } : value); await persist(next);
+    try { await lifeApi(`/life/todos/${await resolveTodoId(item.id)}`, { method: 'POST', body: JSON.stringify(patch) }); }
+    catch { await enqueueMutation('todo', 'update', { id: item.id, ...patch }); }
+  };
+  const remove = async (item: LifeTodo) => { if (!window.confirm(`删除「${item.content}」？`)) return; await persist(items.filter(value => value.id !== item.id)); try { await lifeApi(`/life/todos/${await resolveTodoId(item.id)}`, { method: 'DELETE' }); } catch { await enqueueMutation('todo', 'delete', { id: item.id }); } };
+  const visible = items.filter(item => filter === 'all' || item.type === filter);
+  return <LifeLayout section="todos" title="待办" intro="把需要处理的事和想在以后认真了解的内容先放在这里，不让好奇心变成当下的负担。"><section className="todo-compose"><select value={type} onChange={event => setType(event.target.value as 'task' | 'learn')}><option value="task">待办</option><option value="learn">以后学习</option></select><input value={draft} maxLength={500} placeholder={type === 'learn' ? '以后想了解什么？' : '随手记下一件事'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void create(); }} /><button disabled={!draft.trim() || busy} onClick={() => void create()}>添加</button></section><nav className="todo-filters">{(['all', 'task', 'learn'] as const).map(value => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{value === 'all' ? '全部' : value === 'task' ? '待办' : '以后学习'}</button>)}</nav><section className="todo-list">{visible.map(item => <article key={item.id} className={item.completed ? 'done' : ''}><button className="todo-check" onClick={() => void update(item, { completed: !item.completed })} aria-label={item.completed ? '恢复' : '完成'}><i className={item.completed ? 'ri-check-line' : ''} /></button><div><input value={item.content} maxLength={500} onChange={event => setItems(current => current.map(value => value.id === item.id ? { ...value, content: event.target.value } : value))} onBlur={event => { const content = event.target.value.trim(); if (content) void update(item, { content }); }} /><button className="todo-type" onClick={() => void update(item, { type: item.type === 'task' ? 'learn' : 'task' })}>{item.type === 'learn' ? '以后学习' : '待办'}</button></div><button className="todo-remove" onClick={() => void remove(item)} aria-label="删除"><i className="ri-delete-bin-line" /></button></article>)}{!visible.length && <p className="life-coming-soon">这里暂时是空的。</p>}</section></LifeLayout>;
 }
 
 function TodayBasics({ initial }: { initial?: DailyBasic[] }) {
@@ -376,7 +425,7 @@ function PomodoroView() {
 }
 
 function CalendarView({ year }: { year: boolean }) {
-  const [month, setMonth] = useState(() => new URLSearchParams(window.location.search).get('month') || monthNow()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [sessions, setSessions] = useState<PomodoroSession[]>([]); const [notes, setNotes] = useState<DailyNote[]>([]); const [basics, setBasics] = useState<DailyBasic[]>([]); const [focused, setFocused] = useState<number | null>(null); const [selected, setSelected] = useState(() => `${new URLSearchParams(window.location.search).get('month') || monthNow()}-01`);
+  const [month, setMonth] = useState(() => new URLSearchParams(window.location.search).get('month') || monthNow()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [sessions, setSessions] = useState<PomodoroSession[]>([]); const [notes, setNotes] = useState<DailyNote[]>([]); const [basics, setBasics] = useState<DailyBasic[]>([]); const [focused, setFocused] = useState<number | null>(null); const [selected, setSelected] = useState(() => { const requested = new URLSearchParams(window.location.search).get('month') || monthNow(); return requested === monthNow() ? isoDay() : `${requested}-01`; });
   useEffect(() => { const key = `life:calendar:${month}`; const apply = (value: CalendarData) => { setHabits(value.habits); setLogs(value.logs); setSessions(value.sessions); setNotes(value.notes || []); setBasics(value.basics || []); }; const load = async () => { const cached = await getCached<CalendarData>(key); if (cached) apply(cached.value); const [yearNumber, monthNumber] = month.split('-').map(Number); const start = new Date(yearNumber, monthNumber - 1, 1); const end = new Date(yearNumber, monthNumber, 1); try { const { data } = await withTimeout<any>(client.life.calendar.get({ query: { month, start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT); if (data && typeof data !== 'string') { const merged = await mergePendingHabitData({ habits: data.habits as Habit[], logs: data.logs as Log[], notes: (data.notes || []) as DailyNote[] }, cached ? { habits: cached.value.habits, logs: cached.value.logs, notes: cached.value.notes || [] } : null); const basics: DailyBasic[] = []; for (const day of Array.from({ length: new Date(yearNumber, monthNumber, 0).getDate() }, (_, index) => `${month}-${String(index + 1).padStart(2, '0')}`)) basics.push(...await mergePendingBasics(day, (data.basics || []) as DailyBasic[], cached?.value.basics || [])); const sessions = [...data.sessions as PomodoroSession[]]; for (const queued of (await getSyncQueue()).filter(item => item.entity === 'pomodoro' && item.action === 'create')) { const payload = queued.payload as { startedAt: string; endedAt: string; focusMinutes: number; roundIndex: number; completed: boolean; taskName?: string; completedEarly?: boolean }; if (payload.startedAt.startsWith(month) && !sessions.some(value => new Date(value.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) sessions.push({ ...payload, id: -(queued.id || Date.now()), startedAt: new Date(payload.startedAt), endedAt: new Date(payload.endedAt), completed: payload.completed ? 1 : 0, completedEarly: payload.completedEarly ? 1 : 0 }); } const next = { habits: merged.habits, logs: merged.logs, sessions, notes: merged.notes, basics }; apply(next); await setCached(key, next); } } catch {} }; void load(); const handler = () => { void load(); }; window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, [month]);
   if (year) return <YearView />;
   const activeHabits = habits.filter(habit => habit.active);

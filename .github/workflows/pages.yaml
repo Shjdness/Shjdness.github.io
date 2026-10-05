@@ -51,7 +51,7 @@ jobs:
         env:
           AVATAR: https://shjdness.github.io/avatar.jpg
           DESCRIPTION: Hasta que Llegue la Muerte
-          NAME: Shjdshy
+          NAME: VA-11-Hall-A
           PAGE_SIZE: "5"
 
       - name: Add single-page-app fallback

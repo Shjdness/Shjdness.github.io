@@ -91,9 +91,6 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                                     <Link href={listState === 'draft' ? '/blog/articles?type=normal' : '/blog/articles?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
                                         {t('draft_bin')}
                                     </Link>
-                                    <Link href={listState === 'unlisted' ? '/blog/articles?type=normal' : '/blog/articles?type=unlisted'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'unlisted' ? "text-theme" : ""}`}>
-                                        {t('unlisted')}
-                                    </Link>
                                 </div>
                             }
                         </div>
