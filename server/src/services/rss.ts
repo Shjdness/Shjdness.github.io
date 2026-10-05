@@ -169,10 +169,9 @@ export async function resolveYouTubeSource(input: string) {
     siteUrl: `https://www.youtube.com/channel/${channelId}`,
     icon: "",
     category: "视频",
-    contentType: "video",
     preview: parsed.videos
       .slice(0, 3)
-      .map((video) => ({ ...video, mediaType: "video" })),
+      .map((video) => ({ ...video })),
   };
 }
 
@@ -182,7 +181,7 @@ async function ingest(
   xml: string,
 ) {
   const parsed = parseYouTubeFeed(xml);
-  // Older RSSHub-era records did not always store YouTube's canonical UC… id.
+  // Older imported records did not always store YouTube's canonical UC… id.
   // The official Atom feed is the source of truth, so repair legacy metadata
   // instead of rejecting every otherwise valid refresh.
   let canonicalExternalId = subscription.externalId;
@@ -215,7 +214,6 @@ async function ingest(
         url: video.url,
         summary: video.summary,
         author: video.author,
-        mediaType: "video",
         embedUrl: video.embedUrl,
         thumbnailUrl: video.thumbnailUrl,
         publishedAt: video.publishedAt,
@@ -242,7 +240,6 @@ async function ingest(
       title: parsed.title || subscription.title,
       platform: "youtube",
       provider: "native",
-      contentType: "video",
       externalId: canonicalExternalId,
       lastFetchedAt: now,
       lastError: "",
@@ -292,18 +289,16 @@ async function canonicalFeed(
         siteUrl,
         provider: "native",
         platform: "youtube",
-        contentType: "video",
         updatedAt: new Date(),
       })
       .where(eq(rssSubscriptions.id, subscription.id));
 
   // Keep the in-memory row in sync so WebSub immediately uses the repaired
-  // official topic instead of the obsolete RSSHub-era URL.
+  // official topic instead of an obsolete imported URL.
   subscription.feedUrl = feedUrl;
   subscription.siteUrl = siteUrl;
   subscription.provider = "native";
   subscription.platform = "youtube";
-  subscription.contentType = "video";
   return feedUrl;
 }
 
@@ -682,10 +677,8 @@ export function RssService() {
         {
           query: t.Object({
             filter: t.Optional(t.String()),
-            contentType: t.Optional(t.String()),
             sourceId: t.Optional(t.String()),
             category: t.Optional(t.String()),
-            search: t.Optional(t.String()),
             limit: t.Optional(t.String()),
             offset: t.Optional(t.String()),
           }),
@@ -745,7 +738,6 @@ export function RssService() {
               description: resolved.description,
               siteUrl: resolved.siteUrl,
               favicon: resolved.icon,
-              contentType: resolved.contentType,
               alias: body.alias?.trim() || "",
               category,
             })
@@ -775,7 +767,6 @@ export function RssService() {
             provider: t.Optional(t.String()),
             platform: t.Optional(t.String()),
             externalId: t.Optional(t.String()),
-            contentType: t.Optional(t.String()),
             icon: t.Optional(t.String()),
           }),
         },

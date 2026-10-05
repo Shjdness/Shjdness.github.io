@@ -94,22 +94,14 @@ export function LifeService() {
                     set.status = 400;
                     return 'Invalid date range';
                 }
-                const [ownerHabits, logs, sessions, rss, notes, basics] = await Promise.all([
+                const [ownerHabits, logs, sessions, notes, basics] = await Promise.all([
                     db.query.habits.findMany({ where: and(eq(habits.ownerId, uid!), eq(habits.active, 1)) }),
                     db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.month}-01`), lte(habitLogs.date, `${query.month}-31`)) }),
                     db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), orderBy: [desc(pomodoroSessions.startedAt)], limit: 500 }),
-                    db.query.rssItems.findMany({
-                        where: and(eq(rssItems.ownerId, uid!), or(
-                            and(isNotNull(rssItems.readAt), gte(rssItems.readAt, range.start), lt(rssItems.readAt, range.end)),
-                            and(isNotNull(rssItems.starredAt), gte(rssItems.starredAt, range.start), lt(rssItems.starredAt, range.end)),
-                        )),
-                        columns: { id: true, title: true, url: true, readAt: true, starredAt: true },
-                        limit: 500,
-                    }),
                     db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, `${query.month}-01`), lte(lifeDailyNotes.date, `${query.month}-31`)) }),
                     db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, `${query.month}-01`), lte(dailyBasics.date, `${query.month}-31`)), orderBy: [dailyBasics.sortOrder] }),
                 ]);
-                return { habits: ownerHabits, logs, sessions, rss, notes, basics };
+                return { habits: ownerHabits, logs, sessions, notes, basics };
             }, { query: t.Object({ month: t.String({ pattern: monthPattern }), start: t.String(), end: t.String() }) })
             .get('/basics', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';

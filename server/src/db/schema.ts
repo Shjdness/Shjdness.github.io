@@ -136,7 +136,6 @@ export const rssSubscriptions = sqliteTable("rss_subscriptions", {
     alias: text("alias").default("").notNull(),
     description: text("description").default("").notNull(),
     category: text("category").default("其他").notNull(),
-    contentType: text("content_type").default("text").notNull(),
     active: integer("active").default(1).notNull(),
     etag: text("etag").default("").notNull(),
     lastModified: text("last_modified").default("").notNull(),
@@ -147,7 +146,7 @@ export const rssSubscriptions = sqliteTable("rss_subscriptions", {
     websubLeaseExpiresAt: integer("websub_lease_expires_at", { mode: 'timestamp' }),
     createdAt: created_at,
     updatedAt: updated_at,
-});
+}, table => ({ ownerExternal: uniqueIndex("rss_subscriptions_owner_external").on(table.ownerId, table.externalId).where(sql`${table.externalId} <> ''`) }));
 
 export const rssSourceGroups = sqliteTable("rss_source_groups", {
     id: integer("id").primaryKey(),
@@ -167,13 +166,8 @@ export const rssItems = sqliteTable("rss_items", {
     url: text("url").notNull(),
     summary: text("summary").default("").notNull(),
     author: text("author").default("").notNull(),
-    mediaType: text("media_type").default("text").notNull(),
-    mediaUrl: text("media_url").default("").notNull(),
     embedUrl: text("embed_url").default("").notNull(),
     thumbnailUrl: text("thumbnail_url").default("").notNull(),
-    mediaJson: text("media_json").default("[]").notNull(),
-    duration: integer("duration").default(0).notNull(),
-    contentHtml: text("content_html").default("").notNull(),
     publishedAt: integer("published_at", { mode: 'timestamp' }).notNull(),
     read: integer("read").default(0).notNull(),
     starred: integer("starred").default(0).notNull(),
@@ -181,7 +175,10 @@ export const rssItems = sqliteTable("rss_items", {
     starredAt: integer("starred_at", { mode: 'timestamp' }),
     createdAt: created_at,
     updatedAt: updated_at,
-});
+}, table => ({
+    subscriptionExternal: uniqueIndex("rss_items_subscription_external").on(table.subscriptionId, table.externalId),
+    ownerExternal: uniqueIndex("rss_items_owner_external").on(table.ownerId, table.externalId),
+}));
 
 export const comments = sqliteTable("comments", {
     id: integer("id").primaryKey(),
