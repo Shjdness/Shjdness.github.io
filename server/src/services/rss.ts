@@ -410,6 +410,11 @@ export async function refreshYouTubeSubscriptions(db: DB) {
 
 export function RssService() {
   const db: DB = getDB();
+  const syncAuthorized = (authorization?: string) =>
+    Boolean(
+      getEnv().RSS_SYNC_TOKEN &&
+        authorization === `Bearer ${getEnv().RSS_SYNC_TOKEN}`,
+    );
   const requireLife = ({
     uid,
     lifeAccess,
@@ -427,6 +432,109 @@ export function RssService() {
   };
   return new Elysia({ aot: false }).use(setup()).group("/rss", (group) =>
     group
+      .get("/sync/sources", async ({ headers, set }) => {
+        if (!syncAuthorized(headers.authorization)) {
+          set.status = 401;
+          return "Unauthorized";
+        }
+        const rows = await db.query.rssSubscriptions.findMany({
+          where: and(
+            eq(rssSubscriptions.active, 1),
+            eq(rssSubscriptions.platform, "youtube"),
+          ),
+        });
+        const sources: Array<{
+          id: number;
+          title: string;
+          feedUrl: string;
+        }> = [];
+        for (const source of rows) {
+          try {
+            sources.push({
+              id: source.id,
+              title: source.alias || source.title,
+              feedUrl: await canonicalFeed(db, source),
+            });
+          } catch {
+            // Invalid legacy rows stay visible in source settings for manual
+            // correction, but must not abort reconciliation of valid rows.
+          }
+        }
+        return { sources };
+      })
+      .post(
+        "/sync/ingest",
+        async ({ headers, set, body, request }) => {
+          if (!syncAuthorized(headers.authorization)) {
+            set.status = 401;
+            return "Unauthorized";
+          }
+          const source = await db.query.rssSubscriptions.findFirst({
+            where: and(
+              eq(rssSubscriptions.id, body.subscriptionId),
+              eq(rssSubscriptions.active, 1),
+              eq(rssSubscriptions.platform, "youtube"),
+            ),
+          });
+          if (!source) {
+            set.status = 404;
+            return "Source not found";
+          }
+          try {
+            await canonicalFeed(db, source);
+            const result = await ingest(db, source, body.feed);
+            try {
+              await subscribeWebSub(db, source, new URL(request.url).origin);
+            } catch {
+              // The two-hour reconciliation remains the fallback.
+            }
+            return result;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message.slice(0, 240) : "解析失败";
+            await db
+              .update(rssSubscriptions)
+              .set({
+                lastFetchedAt: new Date(),
+                lastError: message,
+                updatedAt: new Date(),
+              })
+              .where(eq(rssSubscriptions.id, source.id));
+            set.status = 422;
+            return message;
+          }
+        },
+        {
+          body: t.Object({
+            subscriptionId: t.Number(),
+            feed: t.String({ maxLength: 2_000_000 }),
+          }),
+        },
+      )
+      .post(
+        "/sync/error",
+        async ({ headers, set, body }) => {
+          if (!syncAuthorized(headers.authorization)) {
+            set.status = 401;
+            return "Unauthorized";
+          }
+          await db
+            .update(rssSubscriptions)
+            .set({
+              lastFetchedAt: new Date(),
+              lastError: body.error.slice(0, 240),
+              updatedAt: new Date(),
+            })
+            .where(eq(rssSubscriptions.id, body.subscriptionId));
+          return "OK";
+        },
+        {
+          body: t.Object({
+            subscriptionId: t.Number(),
+            error: t.String({ maxLength: 500 }),
+          }),
+        },
+      )
       .get("/websub/:id/:key", async ({ params, request, set }) => {
         const source = await db.query.rssSubscriptions.findFirst({
           where: eq(rssSubscriptions.id, Number(params.id)),

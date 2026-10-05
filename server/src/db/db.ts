@@ -21,6 +21,8 @@ export interface Env {
     WEBHOOK_URL: string,
     S3_FORCE_PATH_STYLE: string,
     GUEST_ACCESS_CODE: string,
+    /** Shared secret for the lightweight GitHub YouTube feed reconciler. */
+    RSS_SYNC_TOKEN: string,
 }
 
 export function db(env: Env) {

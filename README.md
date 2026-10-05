@@ -24,7 +24,7 @@ Home
 - `.github/workflows/`：前端与后端部署任务。
 - `docs/`：当前架构、环境变量和设计记录。
 
-Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 仅使用 YouTube 官方频道 Feed，通过 WebSub 接收新视频通知，并以每日抓取作为补偿机制。
+Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 仅使用 YouTube 官方频道 Feed，通过 WebSub 接收新视频通知，并以两小时一次的轻量 GitHub 同步作为补偿机制。
 
 ## 部署
 

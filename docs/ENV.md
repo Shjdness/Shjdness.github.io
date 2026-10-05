@@ -51,5 +51,9 @@
 | RIN_GITHUB_CLIENT_SECRET | Github OAuth 的客户端密钥                                         | 1234567890abcdef1234567890abcdef12345678                         |
 | JWT_SECRET               | JWT 认证所需密钥，可为常规格式的任意密码                                      | J0sT%Ch@nge#Me1                                                  |
 | GUEST_ACCESS_CODE        | 访客写作者登录安全码，请使用至少 12 位且不可提交到公开仓库                       | a-long-private-code                                              |
+| RSS_SYNC_TOKEN           | GitHub YouTube 补偿同步与 Worker 间的共享密钥                              | another-long-random-secret                                       |
 | S3_ACCESS_KEY_ID         | S3 存储桶访问所需的 KEY ID，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌 ID | 1234567890abcdef1234567890abcd                                   |
 | S3_SECRET_ACCESS_KEY     | S3 存储桶访问所需的 Secret，使用 Cloudflare R2 时为拥有 R2 编辑权限的 API 令牌    | 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef |
+
+GitHub Actions Variables 还需设置 `RSS_SYNC_ENDPOINT`，值为 Worker 的公开地址；
+同名 `RSS_SYNC_TOKEN` 必须同时作为 GitHub Secret 由部署任务写入 Worker。

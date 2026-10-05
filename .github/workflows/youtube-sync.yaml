@@ -1,0 +1,22 @@
+name: YouTube Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */2 * * *"
+
+concurrency:
+  group: youtube-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch official YouTube feeds
+        env:
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
+        run: node scripts/youtube-sync.mjs

@@ -49,7 +49,8 @@ S3_SECRET_ACCESS_KEY=<你的S3SecretAccessKey>
 [环境变量列表](./ENV.md)
 
 RSS 阅读器只使用 YouTube 官方 Atom Feed，不依赖 RSSHub 或平台 Cookie。
-Worker 通过 WebSub 接收新视频通知，并以每日计划任务做一次补偿同步。
+Worker 通过 WebSub 接收新视频通知；`.github/workflows/youtube-sync.yaml`
+每两小时从 GitHub Actions 补偿同步一次，避免 Cloudflare 出口被 YouTube 临时拒绝。
 
 > [!TIP]
 > 下文代码块中若出现形如 <文字> 的内容表示需要根据文字提示替换为自己的内容（`<`和`>`不要保留），如：

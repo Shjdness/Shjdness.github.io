@@ -36,6 +36,7 @@ const jwtSecret = env("JWT_SECRET")
 const githubClientId = env("RIN_GITHUB_CLIENT_ID")
 const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
 const guestAccessCode = env("GUEST_ACCESS_CODE")
+const rssSyncToken = env("RSS_SYNC_TOKEN")
 
 Bun.write('wrangler.toml', stripIndent(`
 #:schema node_modules/wrangler/config-schema.json
@@ -158,6 +159,7 @@ await putSecret('RIN_GITHUB_CLIENT_ID', githubClientId)
 await putSecret('RIN_GITHUB_CLIENT_SECRET', githubClientSecret)
 await putSecret('JWT_SECRET', jwtSecret)
 await putSecret('GUEST_ACCESS_CODE', guestAccessCode)
+await putSecret('RSS_SYNC_TOKEN', rssSyncToken)
 
 console.log(`Put Done.`)
 console.log(`----------------------------`)
