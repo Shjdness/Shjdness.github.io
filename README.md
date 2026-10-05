@@ -7,7 +7,7 @@
 ```text
 Home
 ├── Blog
-│   ├── 文章 / 时间轴 / 日记 / 标签 / 写作
+│   ├── 文章 / 时间轴 / 日记 / 草稿 / 写作
 │   └── Gallery
 └── Life
     ├── 总览 / 习惯 / 日历 / 年历 / 番茄钟
@@ -20,17 +20,16 @@ Home
 - `client/`：React + Vite 静态前端，发布到 GitHub Pages。
 - `server/`：Cloudflare Worker API 与 D1 数据层。
 - `server/sql/`：按顺序执行的 D1 数据库迁移。
-- `scripts/`：部署、迁移及定时 RSSHub 同步脚本。
-- `.github/workflows/`：前端、后端与 RSSHub 定时任务。
+- `scripts/`：构建与部署迁移脚本。
+- `.github/workflows/`：前端与后端部署任务。
 - `docs/`：当前架构、环境变量和设计记录。
 
-Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 的 Bilibili 与 X 来源由 GitHub Actions 在新加坡时间 07:00、11:00、14:00、17:00 临时启动 RSSHub 抓取；任务结束即释放实例，不依赖公共 RSSHub 或长期服务器。YouTube 使用官方频道 Feed；Pixiv 接入已停用。
+Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立即生效，再通过统一同步队列写入 Worker/D1。RSS 仅使用 YouTube 官方频道 Feed，通过 WebSub 接收新视频通知，并以每日抓取作为补偿机制。
 
 ## 部署
 
 - 前端：`.github/workflows/pages.yaml`
 - Worker 与 D1：`.github/workflows/deploy.yaml`
-- RSSHub 抓取：`.github/workflows/rss-sync.yaml`
 
 部署所需变量见 [docs/ENV.md](docs/ENV.md)，系统设计见 [docs/architecture.md](docs/architecture.md)。密钥只保存在 GitHub Actions Secrets 与 Cloudflare Worker Secrets 中，不应提交到仓库。
 

@@ -154,12 +154,20 @@ async function ingest(
   xml: string,
 ) {
   const parsed = parseYouTubeFeed(xml);
-  if (
-    parsed.channelId &&
-    subscription.externalId &&
-    parsed.channelId !== subscription.externalId
-  )
-    throw new Error("频道校验失败");
+  // Older RSSHub-era records did not always store YouTube's canonical UC… id.
+  // The official Atom feed is the source of truth, so repair legacy metadata
+  // instead of rejecting every otherwise valid refresh.
+  let canonicalExternalId = subscription.externalId;
+  if (parsed.channelId && parsed.channelId !== subscription.externalId) {
+    const duplicate = await db.query.rssSubscriptions.findFirst({
+      where: and(
+        eq(rssSubscriptions.ownerId, subscription.ownerId),
+        eq(rssSubscriptions.externalId, parsed.channelId),
+      ),
+    });
+    if (!duplicate || duplicate.id === subscription.id)
+      canonicalExternalId = parsed.channelId;
+  }
   let added = 0;
   const now = new Date();
   for (const video of parsed.videos) {
@@ -207,6 +215,7 @@ async function ingest(
       platform: "youtube",
       provider: "native",
       contentType: "video",
+      externalId: canonicalExternalId,
       lastFetchedAt: now,
       lastError: "",
       updatedAt: now,
