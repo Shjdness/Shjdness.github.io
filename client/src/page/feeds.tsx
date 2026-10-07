@@ -9,6 +9,8 @@ import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { tryInt } from "../utils/int"
 import { useTranslation } from "react-i18next";
+import { useAlert, useConfirm } from "../components/dialog";
+import { Cache } from "../utils/cache";
 
 type FeedsData = {
     size: number,
@@ -36,6 +38,22 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const page = tryInt(1, query.get("page"))
     const limit = tryInt(10, query.get("limit"), process.env.PAGE_SIZE)
     const ref = useRef("")
+    const { showAlert, AlertUI } = useAlert()
+    const { showConfirm, ConfirmUI } = useConfirm()
+    const deleteDraft = (id: string) => {
+        showConfirm('删除草稿', '这篇草稿将从云端永久删除，其他设备也无法再继续编辑。确定删除吗？', async () => {
+            const { error } = await client.feed({ id: Number(id) }).delete(null, { headers: headersWithAuth() })
+            if (error) {
+                showAlert(typeof error.value === 'string' ? error.value : '删除失败，请稍后重试')
+                return
+            }
+            Cache.with(Number(id)).clear()
+            setFeeds(current => {
+                const data = current.draft.data.filter(item => String(item.id) !== id)
+                return { ...current, draft: { ...current.draft, data, size: data.length } }
+            })
+        })
+    }
     function fetchFeeds(type: FeedType) {
         if (type === 'draft') {
             client.feed.drafts.get({ headers: headersWithAuth() }).then(({ data }) => {
@@ -106,7 +124,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                     <Waiting for={status === 'idle'}>
                         <div className="wauto flex flex-col ani-show">
                             {feeds[listState].data.map(({ id, ...feed }: any) => (
-                                <FeedCard key={id} id={id} {...feed} />
+                                <FeedCard key={id} id={id} {...feed} onDelete={listState === 'draft' ? deleteDraft : undefined} />
                             ))}
                         </div>
                         <div className="wauto flex flex-row items-center mt-4 ani-show">
@@ -127,6 +145,8 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                     </Waiting>
                 </main>
             </Waiting>
+            <AlertUI />
+            <ConfirmUI />
         </>
     )
 }

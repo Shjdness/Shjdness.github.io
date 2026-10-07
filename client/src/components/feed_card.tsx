@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import { timeago } from "../utils/timeago";
 import { HashTag } from "./hashtag";
 import { useEffect, useRef, useState } from "react";
-export function FeedCard({ id, title, avatar, draft, top, kind, summary, hashtags, createdAt, updatedAt }:
+export function FeedCard({ id, title, avatar, draft, top, kind, summary, hashtags, createdAt, updatedAt, onDelete }:
     {
         id: string, avatar?: string,
         draft?: number, top?: number, kind?: string,
         title: string, summary: string,
         hashtags: { id: number, name: string }[],
-        createdAt: Date, updatedAt: Date
+        createdAt: Date, updatedAt: Date,
+        onDelete?: (id: string) => void
     }) {
     const { t } = useTranslation()
     const cardRef = useRef<HTMLDivElement>(null)
@@ -36,7 +37,7 @@ export function FeedCard({ id, title, avatar, draft, top, kind, summary, hashtag
     }, [])
 
     return (
-        <div ref={cardRef} className={`feed-scroll-card w-full ${visible ? "is-visible" : ""}`}>
+        <div ref={cardRef} className={`feed-scroll-card relative w-full ${visible ? "is-visible" : ""}`}>
             <Link href={draft === 1 ? `/blog/writing/${id}` : `/blog/feed/${id}`} target={draft === 1 ? undefined : "_blank"} className="glass-panel block w-full rounded-2xl bg-w my-2 p-6 duration-300 bg-button">
                 {avatar &&
                     <div className="flex flex-row items-center mb-2 rounded-xl overflow-clip">
@@ -76,6 +77,16 @@ export function FeedCard({ id, title, avatar, draft, top, kind, summary, hashtag
                 }
 
             </Link>
+            {draft === 1 && onDelete &&
+                <button
+                    type="button"
+                    className="draft-card-delete"
+                    aria-label="删除草稿"
+                    title="删除草稿"
+                    onClick={() => onDelete(String(id))}
+                >
+                    <i className="ri-delete-bin-line" />
+                </button>}
         </div>
     )
 }

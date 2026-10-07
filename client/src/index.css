@@ -552,6 +552,12 @@ h3,
 .writing-kind select { width:100%; padding:.7rem .8rem; border-radius:.75rem; background:rgb(255 255 255 / .45); }
 .writing-save-draft { border:1px solid rgb(225 29 98 / .45); color:#e11d62; padding:1rem; border-radius:999px; font-weight:700; }
 .writing-save-state { margin:1rem 2rem 0; text-align:center; color:#64748b; font-size:.78rem; }
+.writing-clear,
+.writing-delete-draft { padding:.75rem 1rem; border-radius:999px; font-weight:700; background:rgb(100 116 139 / .12); color:var(--text-primary); }
+.writing-delete-draft { color:#dc2626; background:rgb(220 38 38 / .1); }
+.draft-card-delete { position:absolute; top:1.25rem; right:1.25rem; z-index:2; width:2.5rem; height:2.5rem; border-radius:999px; display:grid; place-items:center; color:#dc2626; background:rgb(255 255 255 / .78); box-shadow:0 8px 24px rgb(15 23 42 / .16); transition:transform .2s ease, background .2s ease; }
+.draft-card-delete:hover { transform:scale(1.06); background:#fff; }
+.dark .draft-card-delete { background:rgb(15 23 42 / .78); }
 .inline-tag-filter { display:flex; flex-wrap:wrap; gap:.55rem; margin:0 auto 1.25rem; }
 .inline-tag-filter button { padding:.5rem .8rem; border:1px solid rgb(148 163 184 / .28); border-radius:999px; font-size:.78rem; background:rgb(255 255 255 / .18); }
 .inline-tag-filter button.active { color:white; border-color:#e11d62; background:#e11d62; }

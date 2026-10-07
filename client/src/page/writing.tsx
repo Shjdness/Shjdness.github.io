@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Helmet } from "react-helmet";
 import { useTranslation } from "react-i18next";
 import Loading from 'react-loading';
-import { ShowAlertType, useAlert } from '../components/dialog';
+import { ShowAlertType, useAlert, useConfirm } from '../components/dialog';
 import { Input } from "../components/input";
 import { Markdown } from "../components/markdown";
 import { client } from "../main";
@@ -70,7 +70,9 @@ export function WritingPage({ id }: { id?: number }) {
   const [preview, setPreview] = useCache<'edit' | 'preview' | 'comparison'>("preview", 'edit');
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [loadedDraft, setLoadedDraft] = useState(false)
   const { showAlert, AlertUI } = useAlert()
+  const { showConfirm, ConfirmUI } = useConfirm()
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
@@ -152,7 +154,7 @@ export function WritingPage({ id }: { id?: number }) {
       } else {
         const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
         if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
-        setCurrentId(data.insertedId); window.history.replaceState({}, '', `/blog/writing/${data.insertedId}`);
+        setCurrentId(data.insertedId); setLoadedDraft(true); window.history.replaceState({}, '', `/blog/writing/${data.insertedId}`);
       }
       setSaveState(`云端已备份 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (error) {
@@ -161,6 +163,33 @@ export function WritingPage({ id }: { id?: number }) {
       showAlert(message);
     }
     finally { setPublishing(false); }
+  }
+
+  function clearWriting() {
+    showConfirm('清空写作内容', '标题、正文、摘要、标签和别名都会从当前编辑器中清空。云端草稿不会被删除，除非你另外点击“删除草稿”。', () => {
+      setTitle('');
+      setContent('');
+      setSummary('');
+      setTags('');
+      setTagQuery('');
+      setAlias('');
+      setKind('article');
+      setCreatedAt(new Date());
+      setSaveState('已清空，尚未保存');
+    });
+  }
+
+  function deleteCurrentDraft() {
+    if (currentId === undefined || !loadedDraft) return;
+    showConfirm('删除云端草稿', '这篇草稿将被永久删除，其他设备也无法恢复。确定继续吗？', async () => {
+      const { error } = await client.feed({ id: currentId }).delete(null, { headers: headersWithAuth() });
+      if (error) {
+        showAlert(typeof error.value === 'string' ? error.value : '删除失败，请稍后重试');
+        return;
+      }
+      Cache.with(currentId).clear();
+      window.location.href = '/blog/drafts';
+    });
   }
 
 
@@ -242,6 +271,7 @@ export function WritingPage({ id }: { id?: number }) {
             setSummary(data.summary || '');
             setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
             setCreatedAt(new Date(data.createdAt));
+            setLoadedDraft(data.draft === 1);
             setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
           }
         });
@@ -446,11 +476,13 @@ export function WritingPage({ id }: { id?: number }) {
               </div>
             </div>
           </div>
-          <div className="visible md:hidden flex flex-row justify-center gap-3 mt-8">
-            <button onClick={() => void saveDraftToCloud()} className="basis-1/2 writing-save-draft">保存草稿</button>
+          <div className="visible md:hidden flex flex-row flex-wrap justify-center gap-3 mt-8">
+            <button onClick={clearWriting} className="writing-clear">清空</button>
+            {loadedDraft && <button onClick={deleteCurrentDraft} className="writing-delete-draft">删除草稿</button>}
+            <button onClick={() => void saveDraftToCloud()} className="flex-1 writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
-              className="basis-1/2 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
+              className="flex-1 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
                 <Loading type="spin" height={16} width={16} />
@@ -464,11 +496,13 @@ export function WritingPage({ id }: { id?: number }) {
         <div className="hidden md:visible max-w-96 md:flex flex-col">
           {MetaInput({ className: "glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="writing-save-state">{saveState}</div>
-          <div className="flex flex-row justify-center gap-3 mt-4">
-            <button onClick={() => void saveDraftToCloud()} className="basis-1/2 writing-save-draft">保存草稿</button>
+          <div className="flex flex-row flex-wrap justify-center gap-3 mt-4 mx-8">
+            <button onClick={clearWriting} className="writing-clear">清空</button>
+            {loadedDraft && <button onClick={deleteCurrentDraft} className="writing-delete-draft">删除草稿</button>}
+            <button onClick={() => void saveDraftToCloud()} className="flex-1 writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
-              className="basis-1/2 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
+              className="flex-1 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
                 <Loading type="spin" height={16} width={16} />
@@ -481,6 +515,7 @@ export function WritingPage({ id }: { id?: number }) {
         </div>
       </div>
       <AlertUI />
+      <ConfirmUI />
     </>
 
   );

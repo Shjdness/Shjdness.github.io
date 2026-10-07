@@ -4,11 +4,11 @@ import { enqueueMutation } from '../data/local-first';
 import { headersWithAuth } from '../utils/auth';
 
 export type TimerState = { mode: 'focus' | 'break'; round: number; remaining: number; targetAt: number | null; startedAt: string | null; taskName: string };
-export type PomodoroPreferences = { focusMinutes: number; breakMinutes: number; rounds: number; autoStartFocus: boolean };
+export type PomodoroPreferences = { focusMinutes: number; breakMinutes: number; rounds: number };
 
 const TIMER_KEY = 'rin-life-pomodoro';
 const PREFERENCES_KEY = 'rin-life-pomodoro-preferences';
-export const defaultPomodoroPreferences: PomodoroPreferences = { focusMinutes: 25, breakMinutes: 5, rounds: 4, autoStartFocus: false };
+export const defaultPomodoroPreferences: PomodoroPreferences = { focusMinutes: 25, breakMinutes: 5, rounds: 4 };
 
 type PomodoroContextValue = {
   timer: TimerState;
@@ -85,8 +85,15 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     }
     if (current.mode === 'break') {
       const nextRound = Math.min(prefs.rounds, current.round + 1);
-      const autoStart = prefs.autoStartFocus;
-      setTimer({ mode: 'focus', round: nextRound, remaining: prefs.focusMinutes * 60, targetAt: autoStart ? Date.now() + prefs.focusMinutes * 60 * 1000 : null, startedAt: autoStart ? new Date().toISOString() : null, taskName: current.taskName });
+      const startedAt = new Date();
+      setTimer({
+        mode: 'focus',
+        round: nextRound,
+        remaining: prefs.focusMinutes * 60,
+        targetAt: startedAt.getTime() + prefs.focusMinutes * 60 * 1000,
+        startedAt: startedAt.toISOString(),
+        taskName: current.taskName,
+      });
     }
     finishing.current = false;
   };
