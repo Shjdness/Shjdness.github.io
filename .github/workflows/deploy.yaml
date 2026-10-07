@@ -21,13 +21,20 @@ jobs:
         with:
           node-version: 22
 
-      - name: Clone Rin repository
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-          path: Rin
+          path: site
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v1
+
+      - name: Install and verify
+        run: |
+          cd site/
+          bun install --frozen-lockfile
+          node node_modules/vitest/vitest.mjs run
+          bunx tsc --noEmit --project server/tsconfig.json
 
       - name: Deploy
         env: # Or as an environment variable
@@ -53,6 +60,5 @@ jobs:
           S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
           WEBHOOK_URL: ${{ vars.WEBHOOK_URL }}
         run: |
-          cd Rin/
-          bun install --frozen-lockfile
+          cd site/
           bun scripts/migrator.ts

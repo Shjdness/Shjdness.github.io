@@ -58,26 +58,49 @@ export async function getSyncQueue() {
 
 export type SyncResult = { total: number; synced: number; failed: number; offline: boolean };
 
-export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
-  const queue = await getSyncQueue();
-  if (!navigator.onLine) return { total: queue.length, synced: 0, failed: queue.length, offline: true };
+type SyncQueueStorage = {
+  markSyncing: (item: SyncItem) => Promise<void>;
+  remove: (id: number) => Promise<void>;
+  markFailed: (item: SyncItem, error: string) => Promise<void>;
+};
+
+export async function processSyncQueue(
+  queue: SyncItem[],
+  online: boolean,
+  send: (item: SyncItem) => Promise<boolean>,
+  storage: SyncQueueStorage,
+): Promise<SyncResult> {
+  if (!online) return { total: queue.length, synced: 0, failed: queue.length, offline: true };
   let synced = 0;
   let failed = 0;
   for (const item of queue) {
     if (!item.id) continue;
     try {
-      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined }));
-      const sent = await send(item);
-      if (sent) { await storeRequest('sync_queue', 'readwrite', store => store.delete(item.id!)); synced += 1; }
-      else { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError: '服务器未确认写入' })); failed += 1; }
+      await storage.markSyncing(item);
+      if (await send(item)) {
+        await storage.remove(item.id);
+        synced += 1;
+      } else {
+        await storage.markFailed(item, '服务器未确认写入');
+        failed += 1;
+      }
     } catch (error) {
-      const lastError = error instanceof Error ? error.message.slice(0, 240) : '同步失败';
-      await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError }));
+      await storage.markFailed(item, error instanceof Error ? error.message.slice(0, 240) : '同步失败');
       failed += 1;
     }
   }
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
   return { total: queue.length, synced, failed, offline: false };
+}
+
+export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
+  const queue = await getSyncQueue();
+  const result = await processSyncQueue(queue, navigator.onLine, send, {
+    markSyncing: async item => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined })); },
+    remove: async id => { await storeRequest('sync_queue', 'readwrite', store => store.delete(id)); },
+    markFailed: async (item, lastError) => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError })); },
+  });
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+  return result;
 }
 
 export async function getSavedAdviceIds() {

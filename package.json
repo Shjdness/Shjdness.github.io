@@ -1,5 +1,5 @@
 {
-  "name": "rin",
+  "name": "shjdshy-site",
   "version": "1.0.0",
   "workspaces": [
     "server",
@@ -19,7 +19,8 @@
     "i18n": "bun --filter './client' i18n",
     "clean": "rm -rf dist node_modules client/node_modules server/node_modules",
     "format:check": "turbo format:check",
-    "format:write": "turbo format:write"
+    "format:write": "turbo format:write",
+    "test": "node node_modules/vitest/vitest.mjs run"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
@@ -34,13 +35,11 @@
     "@types/lodash": "^4.17.7",
     "@types/react-syntax-highlighter": "^15.5.13",
     "fast-xml-parser": "^4.4.0",
-    "html-to-md": "^0.8.5",
     "lodash": "^4.17.21",
     "mermaid": "^10.9.1",
     "react-markdown": "^9.0.1",
     "react-syntax-highlighter": "^15.5.0",
     "rehype-katex": "^7.0.0",
-    "rehype-mathjax": "^6.0.0",
     "rehype-parse": "^9.0.0",
     "rehype-raw": "^7.0.0",
     "rehype-react": "^8.0.0",

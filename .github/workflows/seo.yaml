@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Clone Rin repository
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-          path: Rin
+          path: site
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -42,6 +42,6 @@ jobs:
           S3_CACHE_FOLDER: ${{ vars.S3_CACHE_FOLDER }}
           S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
         run: |
-          cd Rin/
+          cd site/
           bun install --frozen-lockfile
           bun scripts/render.ts

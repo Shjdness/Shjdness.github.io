@@ -37,6 +37,7 @@ Life 数据采用 Local-first：界面优先读取 IndexedDB，本地操作立�
 
 ```bash
 bun install --frozen-lockfile
+node node_modules/vitest/vitest.mjs run
 bun run check
 bun run b
 ```

@@ -2,13 +2,13 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { endpoint } from '../main';
 import { enqueueMutation } from '../data/local-first';
 import { headersWithAuth } from '../utils/auth';
+import { completePomodoroStage, defaultPomodoroPreferences, type PomodoroPreferences, type TimerState } from './pomodoro-machine';
 
-export type TimerState = { mode: 'focus' | 'break'; round: number; remaining: number; targetAt: number | null; startedAt: string | null; taskName: string };
-export type PomodoroPreferences = { focusMinutes: number; breakMinutes: number; rounds: number };
+export type { PomodoroPreferences, TimerState } from './pomodoro-machine';
 
 const TIMER_KEY = 'rin-life-pomodoro';
 const PREFERENCES_KEY = 'rin-life-pomodoro-preferences';
-export const defaultPomodoroPreferences: PomodoroPreferences = { focusMinutes: 25, breakMinutes: 5, rounds: 4 };
+export { defaultPomodoroPreferences } from './pomodoro-machine';
 
 type PomodoroContextValue = {
   timer: TimerState;
@@ -71,30 +71,9 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     const current = timerRef.current;
     const prefs = preferencesRef.current;
     finishing.current = true;
-    const endedAt = new Date();
-    if (current.mode === 'focus' && current.startedAt) {
-      const actualMinutes = Math.max(1, Math.ceil((endedAt.getTime() - new Date(current.startedAt).getTime()) / 60000));
-      const session = { startedAt: current.startedAt, endedAt: endedAt.toISOString(), focusMinutes: completedEarly ? actualMinutes : prefs.focusMinutes, breakMinutes: prefs.breakMinutes, roundIndex: current.round, completed: true, taskName: current.taskName.trim(), completedEarly };
-      const hasNextRound = current.round < prefs.rounds;
-      setTimer(hasNextRound
-        ? { mode: 'break', round: current.round, remaining: prefs.breakMinutes * 60, targetAt: Date.now() + prefs.breakMinutes * 60 * 1000, startedAt: null, taskName: current.taskName }
-        : { mode: 'focus', round: 1, remaining: prefs.focusMinutes * 60, targetAt: null, startedAt: null, taskName: current.taskName });
-      if (session.focusMinutes >= 5) await saveSession(session);
-      finishing.current = false;
-      return;
-    }
-    if (current.mode === 'break') {
-      const nextRound = Math.min(prefs.rounds, current.round + 1);
-      const startedAt = new Date();
-      setTimer({
-        mode: 'focus',
-        round: nextRound,
-        remaining: prefs.focusMinutes * 60,
-        targetAt: startedAt.getTime() + prefs.focusMinutes * 60 * 1000,
-        startedAt: startedAt.toISOString(),
-        taskName: current.taskName,
-      });
-    }
+    const transition = completePomodoroStage(current, prefs, new Date(), completedEarly);
+    setTimer(transition.next);
+    if (transition.session && transition.session.focusMinutes >= 5) await saveSession(transition.session);
     finishing.current = false;
   };
 

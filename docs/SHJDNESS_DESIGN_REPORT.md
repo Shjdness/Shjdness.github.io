@@ -1,4 +1,6 @@
-# Shjdness 个人网站设计与架构报告
+# Shjdness 个人网站设计与架构报告（历史归档）
+
+> 本文记录项目演进过程，仅用于设计追溯，不代表当前文件结构或部署说明。当前事实以 `docs/architecture.md` 与根目录 `README.md` 为准。
 
 更新时间：2026-09-24  
 当前仓库：`Shjdness/Shjdness.github.io`  

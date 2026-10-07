@@ -6,6 +6,7 @@ import { setup } from "../setup";
 import { ClientConfig, PublicCache } from "../utils/cache";
 import { getDB } from "../utils/di";
 import { extractImage } from "../utils/image";
+import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
 import { bindTagToPost } from "./tag";
 
 export function FeedService() {
@@ -329,11 +330,7 @@ export function FeedService() {
             return "Not found";
           }
           // permission check
-          if (
-            (feed.draft || feed.kind === "diary" || feed.kind === "memo") &&
-            feed.uid !== uid &&
-            !admin
-          ) {
+          if (!canReadFeed({ ownerId: feed.uid, viewerId: uid, admin, draft: feed.draft, kind: feed.kind })) {
             set.status = 403;
             return "Permission denied";
           }
@@ -405,7 +402,7 @@ export function FeedService() {
               set.status = 404;
               return "Not found";
             }
-            if (!admin && (!writer || feed.uid !== uid)) {
+            if (!canMutateFeed({ ownerId: feed.uid, viewerId: uid, admin, writer })) {
               set.status = 403;
               return "Permission denied";
             }
@@ -488,7 +485,7 @@ export function FeedService() {
             set.status = 404;
             return "Not found";
           }
-          if (!admin && (!writer || feed.uid !== uid)) {
+          if (!canMutateFeed({ ownerId: feed.uid, viewerId: uid, admin, writer })) {
             set.status = 403;
             return "Permission denied";
           }
