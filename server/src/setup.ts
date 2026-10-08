@@ -13,8 +13,8 @@ const anyUser = async (db: DB) => (await db.query.users.findMany())?.length > 0
 export function setup() {
     const db: DB = getDB();
     const env: Env = getEnv();
-    let gh_client_id = env.GITHUB_CLIENT_ID;
-    let gh_client_secret = env.GITHUB_CLIENT_SECRET;
+    let gh_client_id = env.GITHUB_CLIENT_ID || env.RIN_GITHUB_CLIENT_ID;
+    let gh_client_secret = env.GITHUB_CLIENT_SECRET || env.RIN_GITHUB_CLIENT_SECRET;
     let jwt_secret = env.JWT_SECRET;
 
     if (!gh_client_id || !gh_client_secret) {
