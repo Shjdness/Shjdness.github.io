@@ -19,6 +19,12 @@ function readableRssError(error: unknown, fallback: string) {
 }
 
 const formatBytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(0, value / 1024).toFixed(0)} KB`;
+const videoKey = (item: RssItem) => item.externalId || item.url.match(/[?&]v=([^&]+)/)?.[1] || item.url;
+const dedupeItems = (items: RssItem[]) => {
+  const seen = new Set<string>();
+  return items.filter(item => { const key = videoKey(item); if (seen.has(key)) return false; seen.add(key); return true; });
+};
+const dedupeRss = (value: RssData): RssData => ({ ...value, items: dedupeItems(value.items) });
 
 export function RssView() {
   const { timer: pomodoroTimer, running: pomodoroRunning, clock: pomodoroClock } = usePomodoro();
@@ -42,7 +48,7 @@ export function RssView() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [storage, setStorage] = useState<RssStorage | null>(null);
   const swipeStart = useRef<number | null>(null);
-  const cacheKey = `life:rss:youtube:v1:${filter}:${selectedGroup || 'all'}:${sourceId || 'all'}`;
+  const cacheKey = `life:rss:youtube:v2:${filter}:${selectedGroup || 'all'}:${sourceId || 'all'}`;
 
   const load = async (append = false) => {
     if (!append) { const cached = await getCached<RssData>(cacheKey); if (cached) setData(cached.value); }
@@ -51,8 +57,8 @@ export function RssView() {
       const query = new URLSearchParams({ filter, limit: '200', offset: String(nextOffset) });
       if (sourceId) query.set('sourceId', String(sourceId));
       if (selectedGroup) query.set('category', selectedGroup);
-      const remote = await mergePendingRss(await lifeApi<RssData>(`/rss?${query}`));
-      const next = append && data ? { ...remote, items: [...data.items, ...remote.items] } : remote;
+      const remote = dedupeRss(await mergePendingRss(await lifeApi<RssData>(`/rss?${query}`)));
+      const next = append && data ? { ...remote, items: dedupeItems([...data.items, ...remote.items]) } : remote;
       setData(next); setOffset(nextOffset + remote.items.length); await setCached(cacheKey, next);
     } catch { /* Local cache stays usable while the cloud is unavailable. */ }
   };

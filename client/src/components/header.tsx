@@ -163,7 +163,6 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
             {isBlog && <>
                 <NavItem menu={menu} onClick={onClick} title="Blog 首页" selected={location === '/blog'} href="/blog" />
                 <NavItem menu={menu} onClick={onClick} title="文章" selected={isArticle} href="/blog/articles" />
-                <NavItem menu={menu} onClick={onClick} title="时间轴" selected={location === '/blog/timeline'} href="/blog/timeline" />
                 <NavItem menu={menu} onClick={onClick} title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
                 <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
                 <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
@@ -249,8 +248,9 @@ function LocalClock() {
         schedule(); document.addEventListener('visibilitychange', refresh);
         return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', refresh); };
     }, []);
-    if (running) return <Link href="/life/pomodoro" className="header-clock header-pomodoro" title="打开番茄钟">{timer.taskName.trim() ? `${timer.taskName.trim()} · ${clock}` : clock}</Link>;
-    return <time className="header-clock" dateTime={now.toISOString()}>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time>;
+    const date = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+    if (running) return <Link href="/life/pomodoro" className="header-clock header-pomodoro" title="打开番茄钟"><small>{date}</small><span>{timer.taskName.trim() ? `${timer.taskName.trim()} · ${clock}` : clock}</span></Link>;
+    return <time className="header-clock" dateTime={now.toISOString()}><small>{date}</small><span>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</span></time>;
 }
 
 

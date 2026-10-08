@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Helmet } from 'react-helmet'
-import { Link, useLocation } from "wouter"
+import { Link } from "wouter"
 import { Waiting } from "../components/loading"
 import { client } from "../main"
 import { headersWithAuth } from "../utils/auth"
@@ -13,7 +13,6 @@ export function TimelinePage() {
     const [feeds, setFeeds] = useState<Partial<Record<number, TimelineFeed[]>>>()
     const [length, setLength] = useState(0)
     const ref = useRef(false)
-    const [, setLocation] = useLocation()
     const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
     const [selectedTags, setSelectedTags] = useState<string[]>([])
     const { t } = useTranslation()
@@ -65,13 +64,6 @@ export function TimelinePage() {
         return cells
     }, [allFeeds, heatmapYear])
 
-    function wanderRandomly() {
-        if (allFeeds.length === 0) return
-        const oldestFirst = [...allFeeds].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-        const oldPool = oldestFirst.slice(0, Math.max(1, Math.ceil(oldestFirst.length * 0.8)))
-        const selected = oldPool[Math.floor(Math.random() * oldPool.length)]
-        setLocation(`/blog/feed/${selected.id}`)
-    }
     return (
         <>
             <Helmet>
@@ -85,23 +77,7 @@ export function TimelinePage() {
             <Waiting for={feeds}>
                 <main className="w-full flex flex-col justify-center items-center mb-8 ani-show">
                     <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                            <p>{t('timeline')}</p>
-                            <div className="flex flex-wrap gap-2">
-                                <button type="button" className="gallery-entry group" onClick={wanderRandomly}>
-                                    <span className="text-sm font-semibold">{t('random_wander')}</span>
-                                    <i className="ri-shuffle-line text-base" aria-hidden="true" />
-                                </button>
-                                <Link
-                                    href="/blog/gallery"
-                                    className="gallery-entry group"
-                                    aria-label="浏览全部图片"
-                                >
-                                    <span className="text-sm font-semibold">影集 Gallery</span>
-                                    <i className="ri-arrow-right-line text-base" aria-hidden="true" />
-                                </Link>
-                            </div>
-                        </div>
+                        <p>{t('timeline')}</p>
                         <div className="flex flex-row justify-between">
                             <p className="text-sm mt-4 text-neutral-500 font-normal">
                                 {t('article.total$count', { count: length })}

@@ -61,7 +61,6 @@ export function WritingPage({ id }: { id?: number }) {
   const [tags, setTags] = cache.useCache("tags", "");
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
-  const [alias, setAlias] = cache.useCache("alias", "");
   const [kind, setKind] = useState<ContentKind>('article');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
   const [saveState, setSaveState] = useState('本地已保存');
@@ -91,6 +90,14 @@ export function WritingPage({ id }: { id?: number }) {
     if (!name) return;
     saveTagNames([...selectedTagNames, name]);
     setTagQuery('');
+  };
+  const deleteAvailableTag = (name: string) => {
+    showConfirm('删除标签', `删除「#${name}」后，它会从已有文章中一并移除。确定继续吗？`, async () => {
+      const { error } = await client.tag({ name }).delete(null, { headers: headersWithAuth() });
+      if (error) { showAlert(typeof error.value === 'string' ? error.value : '标签删除失败'); return; }
+      setAvailableTags(current => current.filter(value => value !== name));
+      saveTagNames(selectedTagNames.filter(value => value !== name));
+    });
   };
 
   function applyHeading(level: 1 | 2 | 3) {
@@ -122,7 +129,7 @@ export function WritingPage({ id }: { id?: number }) {
     if (!content.trim()) { showAlert(t("content.empty")); return; }
     setPublishing(true);
     try {
-      const payload = { title: title.trim(), content, summary, alias, tags: tagsplit, draft: false, kind, listed: !privateMode, createdAt };
+      const payload = { title: title.trim(), content, summary, tags: tagsplit, draft: false, kind, listed: !privateMode, createdAt };
       let publishedId = currentId;
       if (currentId !== undefined) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
@@ -146,7 +153,7 @@ export function WritingPage({ id }: { id?: number }) {
   async function saveDraftToCloud() {
     if (publishing) return;
     setPublishing(true); setSaveState('正在上传草稿…');
-    const payload = { title: title.trim() || '未命名草稿', content, summary, alias, tags: selectedTagNames, draft: true, kind, listed: false, createdAt };
+    const payload = { title: title.trim() || '未命名草稿', content, summary, tags: selectedTagNames, draft: true, kind, listed: false, createdAt };
     try {
       if (currentId !== undefined) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
@@ -154,9 +161,11 @@ export function WritingPage({ id }: { id?: number }) {
       } else {
         const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
         if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
-        setCurrentId(data.insertedId); setLoadedDraft(true); window.history.replaceState({}, '', `/blog/writing/${data.insertedId}`);
+        setCurrentId(data.insertedId); setLoadedDraft(true);
       }
-      setSaveState(`云端已备份 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
+      Cache.with().clear();
+      if (currentId !== undefined) Cache.with(currentId).clear();
+      window.location.href = '/blog/writing';
     } catch (error) {
       const message = error instanceof Error ? error.message : '云端备份失败，本地稿仍保留';
       setSaveState(message);
@@ -166,13 +175,12 @@ export function WritingPage({ id }: { id?: number }) {
   }
 
   function clearWriting() {
-    showConfirm('清空写作内容', '标题、正文、摘要、标签和别名都会从当前编辑器中清空。云端草稿不会被删除，除非你另外点击“删除草稿”。', () => {
+    showConfirm('清空写作内容', '标题、正文、摘要和标签都会从当前编辑器中清空。云端草稿不会被删除，除非你另外点击“删除草稿”。', () => {
       setTitle('');
       setContent('');
       setSummary('');
       setTags('');
       setTagQuery('');
-      setAlias('');
       setKind('article');
       setCreatedAt(new Date());
       setSaveState('已清空，尚未保存');
@@ -266,7 +274,6 @@ export function WritingPage({ id }: { id?: number }) {
           if (data && typeof data !== "string") {
             setTitle(data.title || '');
             setTags(data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '');
-            setAlias(data.alias || '');
             setContent(data.content || '');
             setSummary(data.summary || '');
             setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
@@ -341,12 +348,10 @@ export function WritingPage({ id }: { id?: number }) {
               <small>可多选；输入新词条后按回车即可创建</small>
             </div>
             <div className="tag-picker-options">
-              {availableTags.map(name => (
-                <button type="button" key={name} onClick={() => toggleTag(name)}
-                  className={selectedTagNames.includes(name) ? 'is-selected' : ''}>
-                  #{name}
-                </button>
-              ))}
+              {availableTags.map(name => <span className="tag-picker-option" key={name}>
+                <button type="button" onClick={() => toggleTag(name)} className={selectedTagNames.includes(name) ? 'is-selected' : ''}>#{name}</button>
+                <button type="button" className="tag-picker-remove" title={`删除 #${name}`} onClick={() => deleteAvailableTag(name)}><i className="ri-close-line" /></button>
+              </span>)}
               {availableTags.length === 0 && <span className="tag-picker-empty">还没有已有标签</span>}
             </div>
             <div className="tag-picker-create">
@@ -354,15 +359,8 @@ export function WritingPage({ id }: { id?: number }) {
                 onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTypedTag(); } }} />
               <button type="button" onClick={addTypedTag} disabled={!tagQuery.trim()}>添加</button>
             </div>
-            {selectedTagNames.length > 0 && <p className="tag-picker-selected">已选：{selectedTagNames.map(name => `#${name}`).join('  ')}</p>}
+            {selectedTagNames.length > 0 && <div className="tag-picker-selected"><span>已选</span>{selectedTagNames.map(name => <button type="button" key={name} onClick={() => toggleTag(name)}>#{name}<i className="ri-close-line" /></button>)}</div>}
           </div>
-          <Input
-            id={id}
-            value={alias}
-            setValue={setAlias}
-            placeholder={t("alias")}
-            className="mt-4"
-          />
           <div className="select-none flex flex-row justify-between items-center mt-4 mb-2 pl-4">
             <p className="break-keep mr-2">
               {t('created_at')}
@@ -463,7 +461,13 @@ export function WritingPage({ id }: { id?: number }) {
                         fontFamily: "Fira Code",
                         lineNumbers: "off",
                         dragAndDrop: true,
-                        pasteAs: { enabled: false }
+                        pasteAs: { enabled: false },
+                        quickSuggestions: false,
+                        suggestOnTriggerCharacters: false,
+                        wordBasedSuggestions: 'off',
+                        inlineSuggest: { enabled: false },
+                        parameterHints: { enabled: false },
+                        unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false, nonBasicASCII: false }
                       }}
                     />
                   </div>
@@ -476,13 +480,13 @@ export function WritingPage({ id }: { id?: number }) {
               </div>
             </div>
           </div>
-          <div className="visible md:hidden flex flex-row flex-wrap justify-center gap-3 mt-8">
+          <div className="visible md:hidden writing-actions mt-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
-            {loadedDraft && <button onClick={deleteCurrentDraft} className="writing-delete-draft">删除草稿</button>}
-            <button onClick={() => void saveDraftToCloud()} className="flex-1 writing-save-draft">保存草稿</button>
+            <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>
+            <button onClick={() => void saveDraftToCloud()} className="writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
-              className="flex-1 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
+              className="writing-publish bg-theme text-white rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
                 <Loading type="spin" height={16} width={16} />
@@ -496,13 +500,13 @@ export function WritingPage({ id }: { id?: number }) {
         <div className="hidden md:visible max-w-96 md:flex flex-col">
           {MetaInput({ className: "glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="writing-save-state">{saveState}</div>
-          <div className="flex flex-row flex-wrap justify-center gap-3 mt-4 mx-8">
+          <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
-            {loadedDraft && <button onClick={deleteCurrentDraft} className="writing-delete-draft">删除草稿</button>}
-            <button onClick={() => void saveDraftToCloud()} className="flex-1 writing-save-draft">保存草稿</button>
+            <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>
+            <button onClick={() => void saveDraftToCloud()} className="writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
-              className="flex-1 bg-theme text-white py-4 rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
+              className="writing-publish bg-theme text-white rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
                 <Loading type="spin" height={16} width={16} />

@@ -29,13 +29,11 @@ export async function ingest(
   for (const video of parsed.videos) {
     const before = await db.query.rssItems.findFirst({
       where: and(
-        eq(rssItems.subscriptionId, subscription.id),
+        eq(rssItems.ownerId, subscription.ownerId),
         eq(rssItems.externalId, video.externalId),
       ),
     });
-    await db
-      .insert(rssItems)
-      .values({
+    const values = {
         subscriptionId: subscription.id,
         ownerId: subscription.ownerId,
         externalId: video.externalId,
@@ -47,10 +45,10 @@ export async function ingest(
         thumbnailUrl: video.thumbnailUrl,
         publishedAt: video.publishedAt,
         updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [rssItems.subscriptionId, rssItems.externalId],
-        set: {
+      };
+    if (before) {
+      await db.update(rssItems).set({
+          subscriptionId: subscription.id,
           title: video.title,
           summary: video.summary,
           author: video.author,
@@ -59,8 +57,10 @@ export async function ingest(
           thumbnailUrl: video.thumbnailUrl,
           publishedAt: video.publishedAt,
           updatedAt: now,
-        },
-      });
+        }).where(eq(rssItems.id, before.id));
+    } else {
+      await db.insert(rssItems).values(values);
+    }
     if (!before) added += 1;
   }
   await db

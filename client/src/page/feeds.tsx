@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from "react"
 import { Helmet } from 'react-helmet'
-import { Link, useSearch } from "wouter"
+import { Link, useLocation, useSearch } from "wouter"
 import { FeedCard } from "../components/feed_card"
 import { Waiting } from "../components/loading"
 import { client } from "../main"
@@ -28,6 +28,8 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const { t } = useTranslation()
     const query = new URLSearchParams(useSearch());
     const profile = useContext(ProfileContext);
+    const [, setLocation] = useLocation();
+    const [wanderPool, setWanderPool] = useState<Array<{ id: number; createdAt: Date }>>([])
     const [listState, _setListState] = useState<FeedType>(fixedType || query.get("type") as FeedType || 'normal')
     const [status, setStatus] = useState<'loading' | 'idle'>('idle')
     const [feeds, setFeeds] = useState<FeedsMap>({
@@ -92,6 +94,17 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
         fetchFeeds(type)
         ref.current = key
     }, [query.get("page"), query.get("type")])
+    useEffect(() => {
+        client.feed.timeline.get({ headers: headersWithAuth() }).then(({ data }: any) => {
+            if (Array.isArray(data)) setWanderPool(data.map(item => ({ id: item.id, createdAt: item.createdAt })))
+        }).catch(() => undefined)
+    }, [])
+    const wanderRandomly = () => {
+        if (!wanderPool.length) return
+        const ordered = [...wanderPool].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        const pool = ordered.slice(0, Math.max(1, Math.ceil(ordered.length * .8)))
+        setLocation(`/blog/feed/${pool[Math.floor(Math.random() * pool.length)].id}`)
+    }
     return (
         <>
             <Helmet>
@@ -103,7 +116,14 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                 <meta property="og:url" content={document.URL} />
             </Helmet>
             <Waiting for={feeds.draft.size + feeds.normal.size + feeds.unlisted.size > 0 || status === 'idle'}>
-                <main className="w-full flex flex-col justify-center items-center mb-8">
+                <main className="article-library mb-8">
+                    <aside className="article-library-nav glass-panel">
+                        <strong>文章浏览</strong>
+                        <Link href="/blog/timeline"><i className="ri-timeline-view" /><span>时间轴与标签</span></Link>
+                        <button type="button" onClick={wanderRandomly} disabled={!wanderPool.length}><i className="ri-shuffle-line" /><span>随机漫游</span></button>
+                        <Link href="/blog/gallery"><i className="ri-gallery-line" /><span>影集</span></Link>
+                    </aside>
+                    <section className="article-library-content">
                     <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
                         <p>
                             {listState === 'draft' ? t('draft_bin') : listState === 'normal' ? t('article.title') : t('unlisted')}
@@ -143,6 +163,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                             }
                         </div>
                     </Waiting>
+                    </section>
                 </main>
             </Waiting>
             <AlertUI />

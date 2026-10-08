@@ -41,6 +41,10 @@
   font-size: 0.76rem;
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
 }
+.tag-picker-option{display:inline-flex;align-items:center;border:1px solid rgb(148 163 184 / .26);border-radius:999px;overflow:hidden}
+.tag-picker-option>button{border:0;border-radius:0}
+.tag-picker-option .tag-picker-remove{padding-inline:.38rem;color:#94a3b8}
+.tag-picker-option .tag-picker-remove:hover{color:#dc2626;background:rgb(220 38 38 / .1)}
 
 .tag-picker-options button:hover,
 .tag-picker-options button.is-selected {
@@ -73,7 +77,8 @@
 }
 
 .tag-picker-create button:disabled { opacity: 0.48; }
-.tag-picker-selected { margin-top: 0.65rem; }
+.tag-picker-selected { margin-top:.65rem;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem; }
+.tag-picker-selected button{display:inline-flex;align-items:center;gap:.18rem;border-radius:999px;padding:.28rem .5rem;background:rgb(225 29 98 / .12);color:#e11d62;font-size:.74rem;font-weight:700}
 
 [data-color-mode="dark"] .tag-picker {
   border-color: rgb(255 255 255 / 0.1);
@@ -94,6 +99,10 @@
 .writing-clear,
 .writing-delete-draft { padding:.75rem 1rem; border-radius:999px; font-weight:700; background:rgb(100 116 139 / .12); color:var(--text-primary); }
 .writing-delete-draft { color:#dc2626; background:rgb(220 38 38 / .1); }
+.writing-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
+.writing-actions>button{width:100%;min-height:3.25rem;padding:.75rem .65rem;border-radius:999px;font-weight:700}
+.writing-actions>button:disabled{opacity:.38;cursor:not-allowed}
+.writing-publish{padding:.75rem .65rem}
 .draft-card-delete { position:absolute; top:1.25rem; right:1.25rem; z-index:2; width:2.5rem; height:2.5rem; border-radius:999px; display:grid; place-items:center; color:#dc2626; background:rgb(255 255 255 / .78); box-shadow:0 8px 24px rgb(15 23 42 / .16); transition:transform .2s ease, background .2s ease; }
 .draft-card-delete:hover { transform:scale(1.06); background:#fff; }
 .dark .draft-card-delete { background:rgb(15 23 42 / .78); }
