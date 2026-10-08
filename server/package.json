@@ -24,6 +24,7 @@
     "@aws-sdk/client-s3": "^3.583.0",
     "@elysiajs/cors": "1.0.2",
     "@elysiajs/server-timing": "^1.0.2",
+    "arctic": "^1.9.0",
     "drizzle-orm": "^0.30.10",
     "elysia": "^1.0.21",
     "elysia-oauth2": "1.2.0",
