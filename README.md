@@ -11,8 +11,7 @@ Home
 │   └── Gallery
 └── Life
     ├── 总览 / 待办 / 习惯 / 日历 / 年历 / 番茄钟
-    ├── RSS (YouTube)
-    └── Guide / Saved Advice
+    └── RSS (YouTube)
 ```
 
 ## 技术边界

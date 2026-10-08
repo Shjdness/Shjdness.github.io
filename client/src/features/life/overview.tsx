@@ -3,7 +3,6 @@ import { Link } from 'wouter';
 import { client } from '../../main';
 import { enqueueMutation, getCached, getSyncQueue, setCached, withTimeout } from '../../data/local-first';
 import { headersWithAuth } from '../../utils/auth';
-import { TodayAdviceCard } from '../../page/guide';
 import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type DailyBasic, type LifeOverviewData, type LifeTodo } from './model';
 import { mergePendingBasics, normalizeBasics, rememberLocalId, resolveBasicId, resolveTodoId } from './sync';
 import { LifeLayout } from './layout';
@@ -30,7 +29,6 @@ export function LifeOverview() {
     <TodayBasics initial={overview?.basics} />
     <div className="life-summary-grid"><Link href="/life/pomodoro"><small>TODAY FOCUS</small><strong>{summary.focusMinutes} min</strong><span>{summary.rounds} 轮专注</span></Link><Link href="/life/habits"><small>THIS WEEK</small><strong>{summary.completed}</strong><span>{summary.habits} 项习惯</span></Link><Link href="/life/calendar"><small>CALENDAR</small><strong>{new Date().getDate()}</strong><span>{new Date().toLocaleDateString('zh-CN', { month: 'long', weekday: 'long' })}</span></Link><Link href="/life/rss"><small>RSS</small><strong>{summary.unread}</strong><span>篇未读</span></Link></div>
     {overview && <div className="life-overview-detail"><section><h2><span>待办与以后学习</span><Link href="/life/todos">打开</Link></h2>{overview.todos?.filter(item => !item.completed).slice(0, 5).map(item => <p key={item.id}><strong>{item.content}</strong><em>{item.type === 'learn' ? '以后学习' : '待办'}</em></p>)}{!overview.todos?.some(item => !item.completed) && <p>暂时没有待处理内容</p>}</section><section><h2>本周习惯</h2>{overview.habits.map(habit => <p key={habit.id}><strong>{habit.name}</strong><span>{Array.from({ length: 7 }, (_, index) => { const date = isoDay(addDays(mondayOf(), index)); return <i key={date} className={habit.days.includes(date) ? 'done' : ''} title={date} />; })}</span></p>)}</section><section><h2>最近订阅</h2>{overview.recentRss.length ? overview.recentRss.map(item => <Link href="/life/rss" key={item.id}>{item.title}</Link>) : <p>还没有订阅内容</p>}</section></div>}
-    <TodayAdviceCard />
   </LifeLayout>;
 }
 
@@ -94,4 +92,3 @@ function TodayBasics({ initial }: { initial?: DailyBasic[] }) {
   const completed = items.filter(item => item.completed).length;
   return <section className="today-basics"><header><div><small>TODAY</small><h2>今日最基础的三件事</h2></div><span>{completed} / {items.length}</span></header><div>{items.map(item => <article key={item.id} className={item.completed ? 'done' : ''}><button aria-label={item.completed ? '取消完成' : '标记完成'} onClick={() => void update(item, { completed: !item.completed })}><i className={item.completed ? 'ri-check-line' : ''} /></button><input value={item.content} maxLength={240} onChange={event => setItems(current => current.map(value => value.id === item.id ? { ...value, content: event.target.value } : value))} onBlur={event => { const content = event.target.value.trim(); if (content) void update(item, { content }); }} /><button className="remove" aria-label="删除" onClick={() => void remove(item)}><i className="ri-close-line" /></button></article>)}</div><footer><input value={draft} maxLength={240} disabled={items.length >= 3} placeholder={items.length >= 3 ? '今天的三件事已经写好' : '今天至少想完成什么？'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void create(); }} /><button disabled={!draft.trim() || creating || items.length >= 3} onClick={() => void create()}><i className="ri-add-line" /> 添加</button></footer></section>;
 }
-

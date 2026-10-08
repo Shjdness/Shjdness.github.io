@@ -29,7 +29,6 @@ import { PomodoroProvider } from './state/pomodoro.tsx'
 const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
 const WritingPage = lazy(() => import('./page/writing').then(module => ({ default: module.WritingPage })))
 const PrivateLifePage = lazy(() => import('./page/life.tsx').then(module => ({ default: module.PrivateLifePage })))
-const GuidePage = lazy(() => import('./page/guide.tsx').then(module => ({ default: module.GuidePage })))
 
 const LIFE_PROFILE_CACHE = 'shjdshy-life-profile';
 const cachedProfile = () => {
@@ -188,7 +187,6 @@ function App() {
             <RouteMe path="/life/year" paddingClassName='mx-4'><PrivateLifePage section="year" /></RouteMe>
             <RouteMe path="/life/pomodoro" paddingClassName='mx-4'><PrivateLifePage section="pomodoro" /></RouteMe>
             <Route path="/life/rss"><PrivateLifePage section="rss" /></Route>
-            <RouteMe path="/life/guide" paddingClassName='mx-4'><GuidePage /></RouteMe>
 
             <Route path="/habits"><Redirect to="/life/habits" /></Route>
             <Route path="/calendar"><Redirect to="/life/calendar" /></Route>

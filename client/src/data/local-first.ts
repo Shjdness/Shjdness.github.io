@@ -1,10 +1,9 @@
 export type SyncEntity = 'habit' | 'note' | 'basic' | 'todo' | 'pomodoro' | 'rss';
 export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed'; lastError?: string };
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
-type SavedAdvice = { id: string; savedAt: number };
 
 const DB_NAME = 'shjdshy-life';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CHANGE_EVENT = 'shjdshy-local-change';
 
 function openDatabase() {
@@ -14,7 +13,8 @@ function openDatabase() {
       const db = request.result;
       if (!db.objectStoreNames.contains('cache')) db.createObjectStore('cache', { keyPath: 'key' });
       if (!db.objectStoreNames.contains('sync_queue')) db.createObjectStore('sync_queue', { keyPath: 'id', autoIncrement: true });
-      if (!db.objectStoreNames.contains('saved_advice')) db.createObjectStore('saved_advice', { keyPath: 'id' });
+      request.transaction?.objectStore('cache').delete('static:life-guide');
+      if (db.objectStoreNames.contains('saved_advice')) db.deleteObjectStore('saved_advice');
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -101,17 +101,6 @@ export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>)
   });
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
   return result;
-}
-
-export async function getSavedAdviceIds() {
-  const records = await storeRequest<SavedAdvice[]>('saved_advice', 'readonly', store => store.getAll());
-  return records.map(record => record.id);
-}
-
-export async function setAdviceSaved(id: string, saved: boolean) {
-  if (saved) await storeRequest('saved_advice', 'readwrite', store => store.put({ id, savedAt: Date.now() } satisfies SavedAdvice));
-  else await storeRequest('saved_advice', 'readwrite', store => store.delete(id));
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
 export const onLocalChange = (listener: () => void) => {

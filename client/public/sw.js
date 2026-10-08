@@ -1,9 +1,9 @@
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const STATIC_CACHE = `shjdness-static-${CACHE_VERSION}`;
 const PAGE_CACHE = `shjdness-pages-${CACHE_VERSION}`;
 const FIXED_ASSETS = [
   '/', '/index.html', '/manifest.webmanifest', '/favicon.png', '/avatar.jpg', '/guest-avatar.jpg',
-  '/background-home-v2.jpg', '/background-inner.jpg', '/life-guide.json',
+  '/background-home-v2.jpg', '/background-inner.jpg',
   '/cantarell_5.0.12_latin-400-normal.woff2', '/cantarell_5.0.13_latin-400-normal.woff',
 ];
 
@@ -44,15 +44,6 @@ self.addEventListener('fetch', event => {
       if (response.ok) (await caches.open(PAGE_CACHE)).put('/', response.clone());
       return response;
     }).catch(async () => (await caches.match(request)) || (await caches.match('/')) || (await caches.match('/index.html'))));
-    return;
-  }
-
-  if (url.pathname === '/life-guide.json') {
-    event.respondWith(caches.match(request).then(cached => {
-      const refresh = fetch(request).then(async response => { if (response.ok) (await caches.open(STATIC_CACHE)).put(request, response.clone()); return response; });
-      if (cached) { event.waitUntil(refresh.catch(() => undefined)); return cached; }
-      return refresh;
-    }));
     return;
   }
 

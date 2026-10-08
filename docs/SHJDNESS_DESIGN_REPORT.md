@@ -56,8 +56,7 @@ Rin 原本是 Cloudflare 全家桶博客：静态前端、Cloudflare Worker 后�
     ├── /life/calendar            月历与日记录聚合
     ├── /life/year                年度视图/热力图
     ├── /life/pomodoro            番茄钟
-    ├── /life/rss                 独立 RSS 阅读器
-    └── /life/guide               HowToLiveBetter 生活指南
+    └── /life/rss                 独立 RSS 阅读器
 ```
 
 旧地址如 `/timeline`、`/rss`、`/writing`、`/:alias` 保留跳转，以免旧书签失效。
@@ -168,27 +167,9 @@ RSS 阅读器现已收束为 YouTube 视频订阅，支持官方频道 Feed、�
 新增订阅时会先读取官方 Feed，并注册 WebSub 回调；即使 WebSub 暂时注册失败，
 订阅和手动更新仍然可用，两小时补偿任务也会继续抓取，避免单点故障。
 
-## 7. HowToLiveBetter 生活指南
+## 7. Local-first 与同步设计
 
-仓库 `Shjdness/HowToLiveBetter` 在构建阶段被转换为静态 `life-guide.json`：
-
-```text
-GitHub 仓库 Markdown
-        ↓
-pages workflow 构建脚本
-        ↓
-client/public/life-guide.json
-        ↓
-Service Worker / IndexedDB
-        ↓
-本地搜索、分类、收藏
-```
-
-当前定位是 Life 的低打扰知识层：Overview 可以展示每日一条，Guide 页面按关键词和分类搜索，收藏状态保存在本地。它不自动写入日历，也不自动创建习惯；如需转为习惯，应由用户确认后创建。
-
-## 8. Local-first 与同步设计
-
-### 8.1 三层结构
+### 7.1 三层结构
 
 ```text
 静态资源缓存
@@ -199,14 +180,13 @@ Service Worker / IndexedDB
 
 IndexedDB
 ├── cache
-├── sync_queue
-└── saved_advice
+└── sync_queue
 
 Cloudflare Worker + D1
 └── 最终云端数据与跨设备同步
 ```
 
-### 8.2 写入流程
+### 7.2 写入流程
 
 ```text
 用户操作
@@ -226,11 +206,11 @@ Worker 写入 D1
 
 习惯打卡、Today、Pomodoro 和 RSS 收藏/已读均使用这一思路。请求有超时，网络不通时保留本地显示，不因一次 Worker 失败清空页面。
 
-### 8.3 同步可靠性注意
+### 7.3 同步可靠性注意
 
 Local-first 不是“只保存在浏览器”。IndexedDB 是断网时的即时层，D1 才是跨设备长期同步层。换设备前必须让待同步队列成功发送；如果 Worker 网络被阻断，页面会保留 pending 状态，恢复网络后自动重试。
 
-## 9. 后端与数据架构
+## 8. 后端与数据架构
 
 ```text
 server/src/_worker.ts          Worker fetch/scheduled 入口
@@ -263,12 +243,11 @@ info
 
 迁移文件只追加、不修改已部署版本；当前新增的 Today 唯一约束迁移为 `0014-life-entry-integrity.sql`。
 
-## 10. 部署链路
+## 9. 部署链路
 
 ```text
 GitHub main
 ├── Pages workflow
-│   ├── 构建 Life Guide
 │   ├── 构建 client/dist
 │   └── 发布 GitHub Pages
 │
@@ -282,7 +261,7 @@ GitHub main
 
 当前后端工作流已支持 `main` 上 server、迁移脚本或部署配置变动时自动触发；前端工作流随 main 推送触发。必要的 Cloudflare 账号令牌只存 GitHub Secrets，不进入代码或对话。
 
-## 11. 当前已验证状态
+## 10. 当前已验证状态
 
 - 前端 Vite production build 成功。
 - Worker Wrangler dry-run 成功。
@@ -291,7 +270,7 @@ GitHub main
 - 线上静态 CSS 已确认包含 RSS 独立布局。
 - 本地直连 Worker 可能因网络环境超时，这不等同于线上部署失败；应以 GitHub Actions 和浏览器实际访问结果为准。
 
-## 12. 尚需外部条件的部分
+## 11. 尚需外部条件的部分
 
 以下不是前端代码缺陷，而是外部服务条件：
 
@@ -300,7 +279,7 @@ GitHub main
 3. 本地离线数据只有在同步队列成功后才会跨设备出现；应在设置或状态栏提示最后同步时间和 pending 数量。
 4. Rin 名称只保留在许可证、历史说明和尚未迁移的线上 Worker 域名中；产品代码和新配置使用 Shjdshy 命名。
 
-## 13. 可复用的实施方法
+## 12. 可复用的实施方法
 
 给其他个人网站做类似改造时，建议按以下顺序：
 
@@ -315,14 +294,13 @@ GitHub main
 9. 大媒体只保存 URL、缩略图和嵌入信息，避免把视频文件搬进自己的存储。
 10. 每次上线至少验证：构建、迁移、公开页面、登录、私有页面、离线写入、恢复同步和旧链接跳转。
 
-## 14. 后续优先级
+## 13. 后续优先级
 
 ```text
 高：验证 YouTube WebSub 回调与每日补偿同步
 高：RSS 状态栏显示最后同步时间、待同步数和失败来源
 中：彻底移除不再使用的旧友链/多语言兼容代码
 中：把 RSS 分组、收藏和订阅设置纳入更完整的跨设备同步
-低：Guide 转 Habit 的确认式流程、更多 Life 聚合卡片
 低：YouTube Data API 或更长历史抓取
 ```
 

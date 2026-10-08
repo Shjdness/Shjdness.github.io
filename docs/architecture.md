@@ -20,8 +20,7 @@ Home                         /
     ├── Habits               /life/habits
     ├── Calendar / Year      /life/calendar、/life/year
     ├── Pomodoro             /life/pomodoro
-    ├── RSS (YouTube only)   /life/rss
-    └── Guide                /life/guide
+    └── RSS (YouTube only)   /life/rss
 ```
 
 Blog、Life、RSS、Writing 的业务样式分别位于 `client/src/styles/`；`index.css` 只承载站点壳层与通用组件，`base.css` 只承载 Tailwind 基础工具。页面不得再新建全局样式入口。Life 页面入口只负责鉴权和路由，实际功能位于 `client/src/features/life/`。

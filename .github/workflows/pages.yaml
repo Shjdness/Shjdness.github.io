@@ -46,9 +46,6 @@ jobs:
       - name: Run reliability tests
         run: node node_modules/vitest/vitest.mjs run
 
-      - name: Refresh static Life Guide
-        run: node scripts/build-life-guide.mjs
-
       - name: Build frontend
         run: bun run b
         env:
