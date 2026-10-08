@@ -1,16 +1,16 @@
 # Shjdshy Site Architecture
 
-本仓库是一个静态前端与无服务器 API 分离的个人 Blog / Life 系统。当前架构只保留实际运行能力；Rin 仅作为历史来源与 MIT 许可归属，不再作为产品结构。
+本仓库是一个静态前端与无服务器 API 分离的个人 Blog / Life 系统。当前架构只保留实际运行能力；原始上游项目名只用于历史与 MIT 许可归属，不再作为产品命名。
 
 ## 产品边界
 
 ```text
 Home                         /
 ├── Blog                     /blog
-│   ├── Articles             /blog
+│   ├── Articles             /blog/articles
 │   ├── Timeline             /blog/timeline
 │   ├── Diary                /blog/diary
-│   ├── Memo                 /blog/memo
+│   ├── Memo                 /blog/memos
 │   ├── Drafts               /blog/drafts
 │   ├── Gallery              /blog/gallery
 │   ├── Writing              /blog/writing/:id?
@@ -24,7 +24,7 @@ Home                         /
     └── Guide                /life/guide
 ```
 
-Blog、Life、RSS、Writing 的样式分别位于 `client/src/styles/`。Life 页面入口只负责鉴权和路由，实际功能位于 `client/src/features/life/`。
+Blog、Life、RSS、Writing 的业务样式分别位于 `client/src/styles/`；`index.css` 只承载站点壳层与通用组件，`base.css` 只承载 Tailwind 基础工具。页面不得再新建全局样式入口。Life 页面入口只负责鉴权和路由，实际功能位于 `client/src/features/life/`。
 
 ## 前端分层
 
@@ -80,6 +80,19 @@ RSS 仅支持 YouTube 官方 Atom Feed。WebSub 负责低延迟通知，定时�
 - `.github/workflows/deploy.yaml`：Worker 与 D1
 - `.github/workflows/pages.yaml`：测试、类型检查、前端构建与 Pages
 - `.github/workflows/youtube-sync.yaml`：YouTube 补偿同步
+
+## 数据与兼容边界
+
+- `listed=0` 不等于可删除的旧数据：日记和备忘录依然使用该可见性字段，业务读取必须同时按 `kind` 分类。
+- 旧 `unlisted` 列表路由已移除，这一代码变更不删除任何 D1 记录；日记、备忘录和草稿仍使用各自的显式路由。后端部署前会对生产 D1 做只读分类统计；发现非 `diary`/`memo` 的私有历史记录时立即中止部署。
+- 线上 Worker 的现有 `workers.dev` 子域名是部署资源标识，为避免中断前端、WebSub 和同步任务，在完成 Cloudflare 资源迁移前保留。
+
+## 依赖与文件治理
+
+- 依赖必须由源码、构建配置或测试直接引用；仅因历史存在不构成保留理由。
+- 跨 workspace 使用的包必须声明在真正的消费者中，不依赖 Bun 偶然的 hoist 结果。
+- `server/sql/` 、许可证与历史设计报告属于可追溯资产，不按“当前无 import”删除。
+- 删除文件前先用 `rg` 确认无 import、无路由、无构建入口，再通过类型检查、测试和生产构建验证。
 
 ## 可靠性基线
 

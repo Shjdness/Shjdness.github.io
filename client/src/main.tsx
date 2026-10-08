@@ -6,10 +6,9 @@ import { Helmet } from 'react-helmet'
 import Backend from 'i18next-http-backend';
 import { initReactI18next } from "react-i18next"
 import Modal from 'react-modal'
-import { App as Server } from 'shjdshy-server/src/server'
+import type { App as Server } from 'shjdshy-server/src/server'
 import App from './App'
 import './index.css'
-import './components.css'
 import './styles/blog.css'
 import './styles/life.css'
 import './styles/rss.css'

@@ -18,11 +18,13 @@ type FeedsData = {
     hasNext: boolean
 }
 
-type FeedType = 'draft' | 'unlisted' | 'normal'
+type FeedType = 'draft' | 'normal'
 
 type FeedsMap = {
     [key in FeedType]: FeedsData
 }
+
+const feedTypeFromQuery = (value: string | null): FeedType => value === 'draft' ? 'draft' : 'normal'
 
 export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const { t } = useTranslation()
@@ -30,11 +32,10 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const profile = useContext(ProfileContext);
     const [, setLocation] = useLocation();
     const [wanderPool, setWanderPool] = useState<Array<{ id: number; createdAt: Date }>>([])
-    const [listState, _setListState] = useState<FeedType>(fixedType || query.get("type") as FeedType || 'normal')
+    const [listState, _setListState] = useState<FeedType>(fixedType || feedTypeFromQuery(query.get("type")))
     const [status, setStatus] = useState<'loading' | 'idle'>('idle')
     const [feeds, setFeeds] = useState<FeedsMap>({
         draft: { size: 0, data: [], hasNext: false },
-        unlisted: { size: 0, data: [], hasNext: false },
         normal: { size: 0, data: [], hasNext: false }
     })
     const page = tryInt(1, query.get("page"))
@@ -86,7 +87,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     useEffect(() => {
         const key = `${query.get("page")} ${query.get("type")}`
         if (ref.current == key) return
-        const type = fixedType || query.get("type") as FeedType || 'normal'
+        const type = fixedType || feedTypeFromQuery(query.get("type"))
         if (type !== listState) {
             _setListState(type)
         }
@@ -115,7 +116,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                 <meta property="og:type" content="article" />
                 <meta property="og:url" content={document.URL} />
             </Helmet>
-            <Waiting for={feeds.draft.size + feeds.normal.size + feeds.unlisted.size > 0 || status === 'idle'}>
+            <Waiting for={feeds.draft.size + feeds.normal.size > 0 || status === 'idle'}>
                 <main className="article-library mb-8">
                     <aside className="article-library-nav glass-panel">
                         <strong>文章浏览</strong>
@@ -126,7 +127,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                     <section className="article-library-content">
                     <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
                         <p>
-                            {listState === 'draft' ? t('draft_bin') : listState === 'normal' ? t('article.title') : t('unlisted')}
+                            {listState === 'draft' ? t('draft_bin') : t('article.title')}
                         </p>
                         <div className="flex flex-row justify-between">
                             <p className="text-sm mt-4 text-neutral-500 font-normal">

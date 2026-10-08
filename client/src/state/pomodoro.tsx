@@ -6,8 +6,10 @@ import { completePomodoroStage, defaultPomodoroPreferences, type PomodoroPrefere
 
 export type { PomodoroPreferences, TimerState } from './pomodoro-machine';
 
-const TIMER_KEY = 'rin-life-pomodoro';
-const PREFERENCES_KEY = 'rin-life-pomodoro-preferences';
+const TIMER_KEY = 'shjdshy-life-pomodoro';
+const PREFERENCES_KEY = 'shjdshy-life-pomodoro-preferences';
+const LEGACY_TIMER_KEY = 'rin-life-pomodoro';
+const LEGACY_PREFERENCES_KEY = 'rin-life-pomodoro-preferences';
 export { defaultPomodoroPreferences } from './pomodoro-machine';
 
 type PomodoroContextValue = {
@@ -26,13 +28,17 @@ type PomodoroContextValue = {
 const PomodoroContext = createContext<PomodoroContextValue | null>(null);
 
 const initialPreferences = () => {
-  try { return { ...defaultPomodoroPreferences, ...JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}') }; }
+  try {
+    const stored = localStorage.getItem(PREFERENCES_KEY) ?? localStorage.getItem(LEGACY_PREFERENCES_KEY);
+    return { ...defaultPomodoroPreferences, ...JSON.parse(stored || '{}') };
+  }
   catch { return defaultPomodoroPreferences; }
 };
 
 const initialTimer = (preferences: PomodoroPreferences): TimerState => {
   try {
-    const saved = JSON.parse(localStorage.getItem(TIMER_KEY) || 'null') as TimerState | null;
+    const stored = localStorage.getItem(TIMER_KEY) ?? localStorage.getItem(LEGACY_TIMER_KEY);
+    const saved = JSON.parse(stored || 'null') as TimerState | null;
     if (saved) return { ...saved, taskName: saved.taskName || '', remaining: saved.targetAt ? Math.max(0, Math.ceil((saved.targetAt - Date.now()) / 1000)) : saved.remaining };
   } catch { /* Start from a clean timer when old local state is invalid. */ }
   return { mode: 'focus', round: 1, remaining: preferences.focusMinutes * 60, targetAt: null, startedAt: null, taskName: '' };
@@ -54,8 +60,16 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
   const timerRef = useRef(timer);
   const preferencesRef = useRef(preferences);
 
-  useEffect(() => { timerRef.current = timer; localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); }, [timer]);
-  useEffect(() => { preferencesRef.current = preferences; localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); }, [preferences]);
+  useEffect(() => {
+    timerRef.current = timer;
+    localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    localStorage.removeItem(LEGACY_TIMER_KEY);
+  }, [timer]);
+  useEffect(() => {
+    preferencesRef.current = preferences;
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    localStorage.removeItem(LEGACY_PREFERENCES_KEY);
+  }, [preferences]);
   useEffect(() => {
     if (!timer.targetAt) return;
     const tick = () => setTimer(current => current.targetAt ? { ...current, remaining: Math.max(0, Math.ceil((current.targetAt - Date.now()) / 1000)) } : current);

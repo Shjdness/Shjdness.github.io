@@ -24,7 +24,7 @@ export function FeedService() {
             set,
             query: { page, limit, type, contentType },
           }) => {
-            const privateList = type === "draft" || type === "unlisted";
+            const privateList = type === "draft";
             if (privateList && !writer) {
               set.status = 403;
               return "Permission denied";
@@ -40,9 +40,7 @@ export function FeedService() {
             const visibility =
               type === "draft"
                 ? eq(feeds.draft, 1)
-                : type === "unlisted"
-                  ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
-                  : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
             const contentFilter =
               contentType === "normal" ? or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")) : undefined;
             const ownerFilter =

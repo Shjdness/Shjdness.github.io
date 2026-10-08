@@ -120,8 +120,8 @@ export function UserService() {
                         state: t.String(),
                         code: t.String(),
                         // GitHub includes its authorization-server issuer in
-                        // OAuth callbacks. Older Rin versions rejected this
-                        // standards-based parameter before exchanging the code.
+                        // GitHub may include its authorization-server issuer in
+                        // the callback; accept the standards-based parameter.
                         iss: t.Optional(t.String()),
                     })
                 })

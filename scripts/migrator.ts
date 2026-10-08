@@ -15,8 +15,8 @@ function env(name: string, defaultValue?: string, required = false) {
 // must be defined
 const renv = (name: string, defaultValue?: string) => env(name, defaultValue, true)!
 
-const DB_NAME = renv("DB_NAME", 'rin')
-const WORKER_NAME = renv("WORKER_NAME", 'rin-server')
+const DB_NAME = renv("DB_NAME")
+const WORKER_NAME = renv("WORKER_NAME")
 const FRONTEND_URL = env("FRONTEND_URL", "")
 const OWNER_GITHUB_ID = env("OWNER_GITHUB_ID", "")
 
@@ -33,8 +33,8 @@ const WEBHOOK_URL = env("WEBHOOK_URL", "")
 const accessKeyId = env("S3_ACCESS_KEY_ID")
 const secretAccessKey = env("S3_SECRET_ACCESS_KEY")
 const jwtSecret = env("JWT_SECRET")
-const githubClientId = env("RIN_GITHUB_CLIENT_ID")
-const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
+const githubClientId = env("GITHUB_CLIENT_ID")
+const githubClientSecret = env("GITHUB_CLIENT_SECRET")
 const guestAccessCode = env("GUEST_ACCESS_CODE")
 const rssSyncToken = env("RSS_SYNC_TOKEN")
 
@@ -139,6 +139,27 @@ try {
 
 console.log(`Migrated D1 "${DB_NAME}"`)
 console.log(`----------------------------`)
+
+const visibilityAuditSql = `
+SELECT COALESCE(kind, 'article') AS kind, COUNT(*) AS count
+FROM feeds
+WHERE draft = 0 AND listed = 0
+GROUP BY COALESCE(kind, 'article')
+ORDER BY kind
+`
+const visibilityAuditText = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${visibilityAuditSql} --json`.quiet().text()
+const visibilityAudit = JSON.parse(visibilityAuditText) as Array<{ results?: Array<{ kind: string, count: number }> }>
+const privateKinds = visibilityAudit[0]?.results ?? []
+const legacyUnlistedCount = privateKinds
+    .filter(({ kind }) => kind !== 'diary' && kind !== 'memo')
+    .reduce((total, { count }) => total + Number(count), 0)
+console.log(`Private feed audit: ${JSON.stringify(privateKinds)}`)
+if (legacyUnlistedCount > 0) {
+    throw new Error(`Found ${legacyUnlistedCount} legacy unlisted feed(s). Classify them as diary or memo before deploying.`)
+}
+console.log(`Legacy unlisted audit passed.`)
+console.log(`----------------------------`)
+
 console.log(`Patch D1`)
 await fixTopField(typ, DB_NAME, isInfoExistResult);
 console.log(`----------------------------`)
@@ -155,8 +176,8 @@ async function putSecret(name: string, value?: string) {
 
 await putSecret('S3_ACCESS_KEY_ID', accessKeyId)
 await putSecret('S3_SECRET_ACCESS_KEY', secretAccessKey)
-await putSecret('RIN_GITHUB_CLIENT_ID', githubClientId)
-await putSecret('RIN_GITHUB_CLIENT_SECRET', githubClientSecret)
+await putSecret('GITHUB_CLIENT_ID', githubClientId)
+await putSecret('GITHUB_CLIENT_SECRET', githubClientSecret)
 await putSecret('JWT_SECRET', jwtSecret)
 await putSecret('GUEST_ACCESS_CODE', guestAccessCode)
 await putSecret('RSS_SYNC_TOKEN', rssSyncToken)

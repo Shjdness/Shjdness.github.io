@@ -47,8 +47,8 @@
 
 | 名称                       | 描述                                                          | 示例值                                                              |
 |--------------------------|-------------------------------------------------------------|------------------------------------------------------------------|
-| RIN_GITHUB_CLIENT_ID     | Github OAuth 的客户端 ID                                        | Ux66poMrKi1k11M1Q1b2                                             |
-| RIN_GITHUB_CLIENT_SECRET | Github OAuth 的客户端密钥                                         | 1234567890abcdef1234567890abcdef12345678                         |
+| GITHUB_CLIENT_ID         | GitHub OAuth 的客户端 ID                                        | 仅存于 GitHub Secret / Worker Secret                              |
+| GITHUB_CLIENT_SECRET     | GitHub OAuth 的客户端密钥                                     | 仅存于 GitHub Secret / Worker Secret                              |
 | JWT_SECRET               | JWT 认证所需密钥，可为常规格式的任意密码                                      | J0sT%Ch@nge#Me1                                                  |
 | GUEST_ACCESS_CODE        | 访客写作者登录安全码，请使用至少 12 位且不可提交到公开仓库                       | a-long-private-code                                              |
 | RSS_SYNC_TOKEN           | GitHub YouTube 补偿同步与 Worker 间的共享密钥                              | another-long-random-secret                                       |
@@ -57,3 +57,5 @@
 
 GitHub Actions Variables 还需设置 `RSS_SYNC_ENDPOINT`，值为 Worker 的公开地址；
 同名 `RSS_SYNC_TOKEN` 必须同时作为 GitHub Secret 由部署任务写入 Worker。
+
+> GitHub 仓库中现有的 `RIN_GITHUB_CLIENT_ID` / `RIN_GITHUB_CLIENT_SECRET` Secret 是无法在线重命名的兼容资产。部署工作流会将它们映射为运行时 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`；新环境只应使用后者。
