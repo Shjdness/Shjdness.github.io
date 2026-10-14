@@ -41,6 +41,16 @@ export function isChannelId(value: string) {
   return /^UC[\w-]{20,}$/.test(value);
 }
 
+export function isSafeYouTubeUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.port && !url.username && !url.password &&
+      /(^|\.)youtube\.com$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function parseYouTubeFeed(xml: string) {
   const root = parser.parse(xml)?.feed || {};
   const author = clean(root.author?.name, 200);
@@ -98,14 +108,22 @@ export async function fetchText(
   // non-success response as transient for a few short attempts; a genuinely
   // missing channel will still fail with the last status.
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch(url, {
-      redirect: "follow",
-      headers: {
-        Accept: accept,
-        "User-Agent": "Mozilla/5.0",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+    let target = url;
+    let response: Response | undefined;
+    for (let hop = 0; hop < 4; hop += 1) {
+      if (!isSafeYouTubeUrl(target)) throw new Error("YouTube 跳转到了不受信任的地址");
+      response = await fetch(target, {
+        redirect: "manual",
+        headers: { Accept: accept, "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get("location");
+      if (!location) throw new Error("YouTube 跳转缺少地址");
+      target = new URL(location, target).toString();
+      response = undefined;
+    }
+    if (!response) throw new Error("YouTube 跳转次数过多");
     if (response.ok)
       return { body: await response.text(), finalUrl: response.url };
     lastStatus = response.status;
@@ -123,8 +141,8 @@ export async function resolveChannelId(input: string) {
     throw new Error("请粘贴 YouTube 频道或官方 Feed 地址");
   }
   if (
-    source.protocol !== "https:" ||
-    !/(^|\.)youtube\.com$/.test(source.hostname)
+    !isSafeYouTubeUrl(source.toString()) ||
+    !(/^\/feeds\/videos\.xml$|^\/(?:channel|user|c)\/|^\/@/).test(source.pathname)
   )
     throw new Error("目前仅支持 YouTube 频道");
   const fromFeed =

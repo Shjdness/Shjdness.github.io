@@ -13,18 +13,20 @@ import { LifeService } from './services/life';
 import { HabitService } from './services/habit';
 import { RssService } from './services/rss';
 import { PomodoroService } from './services/pomodoro';
+import { getEnv } from './utils/di';
+import { frontendOrigin } from './utils/frontend-origin';
 
 export const app = () => new Elysia({ aot: false })
     .use(cors({
         aot: false,
-        origin: '*',
-        methods: '*',
+        origin: (request) => request.headers.get('Origin') === frontendOrigin(getEnv().FRONTEND_URL),
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
         allowedHeaders: [
             'authorization',
             'content-type'
         ],
         maxAge: 600,
-        credentials: true,
+        credentials: false,
         preflight: true
     }))
     .use(serverTiming({

@@ -17,8 +17,8 @@ const renv = (name: string, defaultValue?: string) => env(name, defaultValue, tr
 
 const DB_NAME = renv("DB_NAME")
 const WORKER_NAME = renv("WORKER_NAME")
-const FRONTEND_URL = env("FRONTEND_URL", "")
-const OWNER_GITHUB_ID = env("OWNER_GITHUB_ID", "")
+const FRONTEND_URL = renv("FRONTEND_URL")
+const OWNER_GITHUB_ID = renv("OWNER_GITHUB_ID")
 
 const S3_ENDPOINT = env("S3_ENDPOINT", "")
 const S3_ACCESS_HOST = env("S3_ACCESS_HOST", S3_ENDPOINT)

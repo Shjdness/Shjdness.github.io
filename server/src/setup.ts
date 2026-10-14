@@ -9,7 +9,6 @@ import jwt from "./utils/jwt";
 import { canAccessLife, roleForUser } from "./utils/roles";
 
 
-const anyUser = async (db: DB) => (await db.query.users.findMany())?.length > 0
 export function setup() {
     const db: DB = getDB();
     const env: Env = getEnv();
@@ -30,13 +29,13 @@ export function setup() {
         ],
     })
     return new Elysia({ aot: false, name: 'setup' })
-        .state('anyUser', anyUser)
         .use(oauth)
         .use(
             jwt({
                 aot: false,
                 name: 'jwt',
                 secret: jwt_secret,
+                exp: '7d',
                 schema: t.Object({
                     id: t.Integer(),
                 })
@@ -47,17 +46,10 @@ export function setup() {
             if (!authorization) {
                 return {};
             }
-            const token = authorization.split(' ')[1]
-            if (process.env.NODE_ENV?.toLowerCase() === 'test') {
-                console.warn('Now in test mode, skip jwt verification.')
-                try {
-                    return JSON.parse(token);
-                } catch (e) {
-                    return {};
-                }
-            }
+            if (!authorization.startsWith('Bearer ')) return {};
+            const token = authorization.slice(7);
             const profile = await jwt.verify(token)
-            if (!profile) {
+            if (!profile || typeof profile.exp !== 'number') {
                 return {};
             }
 

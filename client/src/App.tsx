@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
-import { getCookie } from 'typescript-cookie'
+import { getCookie, removeCookie } from 'typescript-cookie'
 import { DefaultParams, PathPattern, Redirect, Route, Switch, useLocation } from 'wouter'
 import Footer from './components/footer'
 import { Header } from './components/header'
@@ -50,7 +50,7 @@ function App() {
     if (getCookie('token')?.length ?? 0 > 0) {
       client.user.profile.get({
         headers: headersWithAuth()
-      }).then(({ data }) => {
+      }).then(({ data, error }) => {
         if (data && typeof data !== 'string') {
           const nextProfile: Profile = {
             id: data.id,
@@ -62,6 +62,10 @@ function App() {
           };
           setProfile(nextProfile)
           localStorage.setItem(LIFE_PROFILE_CACHE, JSON.stringify(nextProfile))
+        } else if (error?.status === 401 || error?.status === 403) {
+          removeCookie('token')
+          localStorage.removeItem(LIFE_PROFILE_CACHE)
+          setProfile(undefined)
         }
       })
     }
