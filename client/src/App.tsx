@@ -8,7 +8,7 @@ import { Padding } from './components/padding'
 import useTableOfContents from './hooks/useTableOfContents.tsx'
 import { client } from './main'
 import { CallbackPage } from './page/callback'
-import { FeedPage, TOCHeader } from './page/feed'
+import { TOCHeader } from './components/toc-header'
 import { FeedsPage } from './page/feeds'
 import { TimelinePage } from './page/timeline'
 import { ClientConfigContext, ConfigWrapper, defaultClientConfig } from './state/config.tsx'
@@ -27,6 +27,7 @@ import { MemoPage } from './page/memo.tsx'
 import { PomodoroProvider } from './state/pomodoro.tsx'
 
 const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
+const FeedPage = lazy(() => import('./page/feed').then(module => ({ default: module.FeedPage })))
 const WritingPage = lazy(() => import('./page/writing').then(module => ({ default: module.WritingPage })))
 const PrivateLifePage = lazy(() => import('./page/life.tsx').then(module => ({ default: module.PrivateLifePage })))
 

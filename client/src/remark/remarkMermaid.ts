@@ -10,11 +10,14 @@ function processNode(child: Content, index: number, siblings: Content[]) {
   }
   const { lang, value } = child;
   if (lang !== 'mermaid') return;
+  const escaped = value.replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]!);
   siblings[index] = {
     type: 'html',
     value: `
-    <pre class="mermaid_default dark:hidden">${value}</pre>
-    <pre class="mermaid_dark dark:block hidden">${value}</pre>
+    <pre class="mermaid_default dark:hidden">${escaped}</pre>
+    <pre class="mermaid_dark dark:block hidden">${escaped}</pre>
     `
   }
 }

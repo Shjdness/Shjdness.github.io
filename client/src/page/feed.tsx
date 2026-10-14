@@ -1,7 +1,6 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { Helmet } from "react-helmet";
 import { useTranslation } from "react-i18next";
-import ReactModal from "react-modal";
 import Popup from "reactjs-popup";
 import { Link, useLocation } from "wouter";
 import { useAlert, useConfirm } from "../components/dialog";
@@ -17,7 +16,6 @@ import { timeago } from "../utils/timeago";
 import { Button } from "../components/button";
 import { Tips } from "../components/tips";
 import { useLoginModal } from "../hooks/useLoginModal";
-import mermaid from "mermaid";
 import { readingStats } from "../utils/reading";
 
 type Feed = {
@@ -132,23 +130,24 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
     ref.current = id;
   }, [id]);
   useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-    });
-    mermaid.run({
-      suppressErrors: true,
-      nodes: document.querySelectorAll("pre.mermaid_default")
-    }).then(()=>{
+    const defaults = document.querySelectorAll<HTMLElement>("pre.mermaid_default");
+    if (!defaults.length) return;
+    let cancelled = false;
+    void import('mermaid').then(async ({ default: mermaid }) => {
+      if (cancelled) return;
+      mermaid.initialize({ startOnLoad: false, theme: "default" });
+      await mermaid.run({ suppressErrors: true, nodes: defaults });
+      if (cancelled) return;
       mermaid.initialize({
         startOnLoad: false,
         theme: "dark",
       });
-      mermaid.run({
+      await mermaid.run({
         suppressErrors: true,
-        nodes: document.querySelectorAll("pre.mermaid_dark")
+        nodes: document.querySelectorAll<HTMLElement>("pre.mermaid_dark")
       });
-    })
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
   }, [feed]);
 
   useEffect(() => {
@@ -338,51 +337,6 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
       <AlertUI />
       <ConfirmUI />
     </Waiting>
-  );
-}
-
-export function TOCHeader({ TOC }: { TOC: () => JSX.Element }) {
-  const [isOpened, setIsOpened] = useState(false);
-
-  return (
-    <div className="lg:hidden">
-      <button
-        onClick={() => setIsOpened(true)}
-        className="w-10 h-10 rounded-full flex flex-row items-center justify-center"
-      >
-        <i className="ri-menu-2-fill t-primary ri-lg"></i>
-      </button>
-      <ReactModal
-        isOpen={isOpened}
-        style={{
-          content: {
-            top: "50%",
-            left: "50%",
-            right: "auto",
-            bottom: "auto",
-            marginRight: "-50%",
-            transform: "translate(-50%, -50%)",
-            padding: "0",
-            border: "none",
-            borderRadius: "16px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            background: "none",
-          },
-          overlay: {
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            zIndex: 1000,
-          },
-        }}
-        onRequestClose={() => setIsOpened(false)}
-      >
-        <div className="w-[80vw] sm:w-[60vw] lg:w-[40vw] overflow-clip relative t-primary">
-          <TOC />
-        </div>
-      </ReactModal>
-    </div>
   );
 }
 

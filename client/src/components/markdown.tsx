@@ -8,6 +8,7 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import gfm from "remark-gfm";
 import remarkMermaid from "../remark/remarkMermaid";
 import { remarkAlert } from "remark-github-blockquote-alert";
@@ -18,6 +19,7 @@ import Download from "yet-another-react-lightbox/plugins/download";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 import { useColorMode } from "../utils/darkModeUtils";
+import { markdownSchema } from "./markdown-schema";
 
 const LEGACY_ASSET_ORIGIN = "https://shjdbucket.shjdshy.cc";
 const CURRENT_ASSET_ORIGIN =
@@ -69,7 +71,7 @@ export function Markdown({ content }: { content: string }) {
       className="toc-content dark:text-neutral-300"
       remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert]}
       children={content}
-      rehypePlugins={[rehypeKatex, rehypeRaw]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeKatex]}
       components={{
         img({ node, src, ...props }) {
           const normalizedSrc = normalizeAssetUrl(src);

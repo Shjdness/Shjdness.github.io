@@ -27,15 +27,17 @@ GitHub Actions → 构建 Pages、迁移 D1、部署 Worker、定时 RSS 补偿�
 | 中 | 图片上传信任用户提供的文件扩展名和 MIME | 按字节识别 PNG/JPEG/GIF/WebP/AVIF，服务端生成 SHA-256 文件名和类型，拒绝 SVG/HTML | 格式测试、类型检查 |
 | 中 | YouTube URL 抓取自动跟随重定向，可离开可信域 | 限制输入路径、HTTPS 域名、端口和凭证；逐跳验证目标 | URL 边界测试、类型检查 |
 | 中 | Actions 部署/同步工作流未声明最小权限 | 将 `GITHUB_TOKEN` 设为仅仓库读取 | 工作流语法及部署结果 |
+| 高 | 文章 Markdown 允许原始 HTML，Mermaid 代码曾直接插入 HTML 容器 | 增加 HTML 允许清单，转义 Mermaid 代码内容 | 恶意 iframe/事件属性/闭合标签回归测试 |
+| 中 | 文章渲染与 Mermaid 被打入首页主包 | 文章路由按需加载，Mermaid 仅在文章实际含图表时导入 | 主包从约 1.93 MB 降至约 0.38 MB，生产构建及线上文章检查 |
 
 ## 遗留问题与下一步方案
 
-1. **Markdown HTML**：目前文章渲染启用了 `rehypeRaw`，但没有配套 `rehype-sanitize`。应先盘点现有文章中的 HTML/嵌入，再引入允许清单与回归样本，避免破坏合法内容。参见 [react-markdown 安全说明](https://github.com/remarkjs/react-markdown#security)。
+1. **依赖告警**：已启用 GitHub Dependency graph 与 Dependabot alerts，初次扫描出现 12 条开放告警，涵盖 Drizzle、Elysia CORS、i18next 后端、XML 解析器，以及 Vite/Vitest/Turbo 等开发工具。当前代码使用固定数据库字段、不用动态 SQL 标识符；CORS 改为应用自己逐字比较 Origin；XMLBuilder 未使用，i18next 语言固定为 `zh`。这些限制降低对应利用条件，但不能视为已升级依赖。下一轮按运行时库、构建工具分组升级，并在每组后跑类型检查、构建和线上回归。详见仓库 [Dependabot 告警](https://github.com/Shjdness/Shjdness.github.io/security/dependabot)。Actions 第三方动作也应固定完整提交 SHA。
 2. **数据库恢复**：迁移前已有 D1 Time Travel 恢复书签；这不是独立的长期离线备份。制定加密导出、保留周期与恢复演练，且不得把私人数据放入公开 Actions artifact。
 3. **Worker 依赖注入**：`typedi` 的全局 Container 在请求期间写入环境和数据库句柄，应改为请求局部上下文，防止并发请求相互覆盖；需要路由级并发回归测试。
-4. **依赖与供应链**：锁文件中的框架版本较旧，需在能访问包公告与注册表时审计可利用漏洞，再逐组升级并做端到端回归。Actions 第三方动作应固定完整提交 SHA。
-5. **前端体积**：本轮生产构建主包约 2 MB，部分 Mermaid 图表分包约 1.4 MB。拆分文章渲染与大型图表入口、按需加载，然后比较首屏加载量与路由切换体验。
-6. **运行监控**：增加无密钥的公开接口冒烟检查、私密接口未登录返回码检查、部署后人工验证 Owner/访客登录和 Life 同步。勿在日志记录 OAuth 状态值、令牌或访客码。
+4. **本地私人数据**：Life 的 IndexedDB 缓存和可由 JavaScript 读取的登录令牌仍依赖浏览器同源保护。后续应评估专用站点域名与 HttpOnly 会话方案，以及多账户或共享设备上的缓存隔离和退出清理，改动前需确保未同步的离线记录不丢失。
+5. **图表体积与兼容性**：文章包和 Mermaid 高级图表分包仍较大；按实际使用情况继续拆分。HTML 允许清单可能过滤旧文章中的自定义嵌入，需盘点旧内容并为合法嵌入设计受限组件。
+6. **运行监控**：已增加公开接口、私密接口未登录和 CORS 的部署后冒烟检查；仍需账户持有人验证 Owner/访客登录、图片上传和 Life 同步。勿在日志记录 OAuth 状态值、令牌或访客码。
 
 ## 验证边界
 
