@@ -46,21 +46,20 @@ export async function ingest(
         publishedAt: video.publishedAt,
         updatedAt: now,
       };
-    if (before) {
-      await db.update(rssItems).set({
-          subscriptionId: subscription.id,
-          title: video.title,
-          summary: video.summary,
-          author: video.author,
-          url: video.url,
-          embedUrl: video.embedUrl,
-          thumbnailUrl: video.thumbnailUrl,
-          publishedAt: video.publishedAt,
-          updatedAt: now,
-        }).where(eq(rssItems.id, before.id));
-    } else {
-      await db.insert(rssItems).values(values);
-    }
+    await db.insert(rssItems).values(values).onConflictDoUpdate({
+      target: [rssItems.ownerId, rssItems.externalId],
+      set: {
+        subscriptionId: subscription.id,
+        title: video.title,
+        summary: video.summary,
+        author: video.author,
+        url: video.url,
+        embedUrl: video.embedUrl,
+        thumbnailUrl: video.thumbnailUrl,
+        publishedAt: video.publishedAt,
+        updatedAt: now,
+      },
+    });
     if (!before) added += 1;
   }
   await db

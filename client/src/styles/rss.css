@@ -5,6 +5,7 @@
 .rss-workspace { display:grid; min-height:34rem; overflow:hidden; }
 .rss-library { min-width:0; }
 .rss-library { padding:.65rem; border-right:1px solid rgb(148 163 184 / .16); }
+.rss-space-switch{display:flex;justify-content:center;margin:.25rem 0 .6rem}
 .rss-side-heading { display:flex; justify-content:space-between; padding:.75rem .55rem .4rem; color:#94a3b8; font-size:.62rem; font-weight:800; letter-spacing:.13em; }
 .rss-source-group { margin-top:.3rem; }
 .rss-empty { padding:2rem 1rem; color:#64748b; text-align:center; }

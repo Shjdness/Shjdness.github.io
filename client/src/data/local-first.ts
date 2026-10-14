@@ -47,6 +47,15 @@ export async function setCached<T>(key: string, value: T) {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
+export async function clearLegacyRssCaches() {
+  const keys = await storeRequest<IDBValidKey[]>('cache', 'readonly', store => store.getAllKeys());
+  for (const key of keys) {
+    if (typeof key === 'string' && key.startsWith('life:rss:') && !key.startsWith('life:rss:youtube:v3:')) {
+      await storeRequest('cache', 'readwrite', store => store.delete(key));
+    }
+  }
+}
+
 export async function enqueueMutation(entity: SyncEntity, action: string, payload: unknown) {
   await storeRequest('sync_queue', 'readwrite', store => store.add({ entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));

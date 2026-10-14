@@ -261,10 +261,16 @@
 
 .life-panel:has(.year-overview) { width:min(96vw,82rem); }.year-heatmap{overflow:hidden}.life-year-grid{grid-auto-columns:minmax(.45rem,1fr);overflow:hidden;scrollbar-width:none}.life-year-grid::-webkit-scrollbar{display:none}
 
-.header-clock{min-width:6.6rem;color:#334155;font-size:1.2rem;font-weight:900;letter-spacing:.1em;text-shadow:0 1px 12px rgb(255 255 255 / .34);display:flex;align-items:baseline;justify-content:center;gap:.45rem}
-.header-clock small{font-size:.7rem;font-weight:800;letter-spacing:.04em;opacity:.72}
-.header-clock span{font-variant-numeric:tabular-nums}
-.header-pomodoro{max-width:18rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e11d62;letter-spacing:.03em}
+.header-clock{min-width:6.6rem;color:#334155;font-size:1.15rem;font-weight:900;letter-spacing:.04em;text-shadow:0 1px 12px rgb(255 255 255 / .34);display:flex;align-items:center;justify-content:center;gap:.4rem;white-space:nowrap}
+.header-date,.header-time,.header-countdown{font-size:inherit;font-variant-numeric:tabular-nums}
+.header-pomodoro{max-width:23rem;color:#e11d62}
+.header-task{max-width:7rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem}
+.header-task::before,.header-countdown::before{content:'·';margin-right:.4rem;color:currentColor;opacity:.65}
+.space-switch{display:flex;align-items:center;gap:.15rem;padding:.2rem;border:1px solid rgb(148 163 184 / .3);border-radius:999px;background:rgb(255 255 255 / .12);white-space:nowrap}
+.space-switch a{padding:.36rem .58rem;border-radius:999px;font-size:.78rem;font-weight:800;color:inherit}
+.space-switch a[aria-current="page"]{background:rgb(225 29 98 / .18);color:#e11d62}
+.space-switch a:focus-visible{outline:2px solid #e11d62;outline-offset:2px}
+@media (max-width:640px){.header-clock{font-size:.9rem;gap:.25rem}.header-task{max-width:5rem;font-size:.8rem}}
 
 @media (max-width:980px){.life-overview-detail{grid-template-columns:1fr 1fr}.life-overview-detail section:first-child{grid-column:1/-1}}
 @media (max-width:640px){.home-portals,.life-summary-grid,.calendar-detail>div{grid-template-columns:1fr}.life-nav{overflow-x:auto;flex-wrap:nowrap;justify-content:flex-start}.pomodoro-settings{grid-template-columns:1fr}.habit-week-tools strong{display:none}.calendar-day{min-height:3.2rem}.calendar-day span{display:none}.life-overview-detail{grid-template-columns:1fr}.life-overview-detail section:first-child{grid-column:auto}.todo-compose{grid-template-columns:1fr}.todo-list article>div{grid-template-columns:1fr}}

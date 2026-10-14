@@ -25,8 +25,9 @@ export function Header({ children }: { children?: React.ReactNode }) {
                 <div className="w-screen">
                     <Padding className="mx-4 mt-4">
                         <div className="w-full flex justify-between items-center">
+                            <div className="hidden xl:flex items-center gap-4 mr-auto">
                             <Link aria-label={t('home')} href="/"
-                                className="hidden opacity-0 xl:opacity-100 duration-300 mr-auto xl:flex flex-row items-center">
+                                className="flex flex-row items-center">
                                 <img src={process.env.AVATAR} alt="Avatar" className="w-12 h-12 rounded-2xl border-2" />
                                 <div className="flex flex-col justify-center items-start mx-4">
                                     <p className="text-xl font-bold dark:text-white">
@@ -37,6 +38,8 @@ export function Header({ children }: { children?: React.ReactNode }) {
                                     </p>
                                 </div>
                             </Link>
+                            <SpaceSwitch />
+                            </div>
                             <div
                                 className="w-full md:w-max transition-all duration-500 md:absolute md:left-1/2 md:translate-x-[-50%] flex-row justify-center items-center">
                                 <div
@@ -54,6 +57,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
                                             </p>
                                         </div>
                                     </Link>
+                                    <div className="hidden md:flex xl:hidden"><SpaceSwitch /></div>
                                     <NavBar menu={false} />
                                     {children}
                                     <Menu />
@@ -131,6 +135,7 @@ function Menu() {
                             <AppearanceButton profile={profile} onClose={onClose} />
                             <UserAvatar profile={profile} />
                     </div>
+                    <SpaceSwitch onClick={onClose} />
                     <NavBar menu={true} onClick={onClose} />
                 </div>
             </Popup>
@@ -146,6 +151,14 @@ function AppearanceButton({ profile, onClose }: { profile?: Profile, onClose?: (
             <i className="ri-palette-line" />
         </Link>
     )
+}
+
+export function SpaceSwitch({ onClick }: { onClick?: () => void }) {
+    const [location] = useLocation();
+    return <nav className="space-switch" aria-label="网站空间">
+        <Link href="/blog" aria-current={location.startsWith('/blog') ? 'page' : undefined} onClick={onClick}>Blog</Link>
+        <Link href="/life" aria-current={location.startsWith('/life') ? 'page' : undefined} onClick={onClick}>Life</Link>
+    </nav>;
 }
 
 function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
@@ -249,8 +262,9 @@ function LocalClock() {
         return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', refresh); };
     }, []);
     const date = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-    if (running) return <Link href="/life/pomodoro" className="header-clock header-pomodoro" title="打开番茄钟"><small>{date}</small><span>{timer.taskName.trim() ? `${timer.taskName.trim()} · ${clock}` : clock}</span></Link>;
-    return <time className="header-clock" dateTime={now.toISOString()}><small>{date}</small><span>{now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</span></time>;
+    const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (running) return <Link href="/life/pomodoro" className="header-clock header-pomodoro" title={`打开番茄钟：${timer.taskName.trim() || '未命名任务'}，剩余 ${clock}`}><span className="header-date">{date}</span><span className="header-time">{time}</span><span className="header-task">{timer.taskName.trim() || '专注'}</span><span className="header-countdown">{clock}</span></Link>;
+    return <time className="header-clock" dateTime={now.toISOString()}><span className="header-date">{date}</span><span className="header-time">{time}</span></time>;
 }
 
 

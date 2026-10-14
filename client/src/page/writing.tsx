@@ -480,25 +480,9 @@ export function WritingPage({ id }: { id?: number }) {
               </div>
             </div>
           </div>
-          <div className="visible md:hidden writing-actions mt-8">
-            <button onClick={clearWriting} className="writing-clear">清空</button>
-            <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>
-            <button onClick={() => void saveDraftToCloud()} className="writing-save-draft">保存草稿</button>
-            <button
-              onClick={publishButton}
-              className="writing-publish bg-theme text-white rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
-            >
-              {publishing &&
-                <Loading type="spin" height={16} width={16} />
-              }
-              <span>
-                {t('publish.title')}
-              </span>
-            </button>
-          </div>
         </div>
-        <div className="hidden md:visible max-w-96 md:flex flex-col">
-          {MetaInput({ className: "glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
+        <div className="w-full md:max-w-96 flex flex-col">
+          {MetaInput({ className: "hidden md:block glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="writing-save-state">{saveState}</div>
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>

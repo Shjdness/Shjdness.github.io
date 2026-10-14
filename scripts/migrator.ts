@@ -117,6 +117,13 @@ try {
         })
         .sort();
     console.log("migration_version:", migrationVersion, "Migration SQL List: ", sqlFiles)
+    if (sqlFiles.some(name => name.startsWith('0020-'))) {
+        // A restore point is mandatory before deleting historical duplicate rows.
+        // The bookmark is printed in the private deployment log for rollback.
+        const backup = await $`bunx wrangler d1 time-travel info ${DB_NAME}`.quiet().text()
+        if (!backup.includes('bookmark')) throw new Error('D1 restore bookmark was not created; migration stopped.')
+        console.log(`D1 pre-migration restore point:\n${backup}`)
+    }
     for (const file of sqlFiles) {
         await $`bunx wrangler d1 execute ${DB_NAME} --remote --file ./server/sql/${file} -y`
         console.log(`Migrated ${file}`)

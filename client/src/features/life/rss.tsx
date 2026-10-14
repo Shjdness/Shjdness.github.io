@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
-import { enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
+import { SpaceSwitch } from '../../components/header';
+import { clearLegacyRssCaches, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { usePomodoro } from '../../state/pomodoro';
 import { lifeApi, type RssData, type RssGroup, type RssItem, type RssStorage, type RssSubscription } from './model';
+import { dedupeRssItems } from './rss-identity';
 
 type RssPreviewItem = Pick<RssItem, 'title' | 'url' | 'summary' | 'publishedAt' | 'thumbnailUrl'> & { externalId: string };
 type ResolvedFeed = { sourceUrl: string; feedUrl: string; provider: string; platform: string; externalId: string; title: string; description: string; siteUrl: string; icon: string; category: string; preview: RssPreviewItem[] };
@@ -19,12 +21,7 @@ function readableRssError(error: unknown, fallback: string) {
 }
 
 const formatBytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(0, value / 1024).toFixed(0)} KB`;
-const videoKey = (item: RssItem) => item.externalId || item.url.match(/[?&]v=([^&]+)/)?.[1] || item.url;
-const dedupeItems = (items: RssItem[]) => {
-  const seen = new Set<string>();
-  return items.filter(item => { const key = videoKey(item); if (seen.has(key)) return false; seen.add(key); return true; });
-};
-const dedupeRss = (value: RssData): RssData => ({ ...value, items: dedupeItems(value.items) });
+const dedupeRss = (value: RssData): RssData => ({ ...value, items: dedupeRssItems(value.items) });
 
 export function RssView() {
   const { timer: pomodoroTimer, running: pomodoroRunning, clock: pomodoroClock } = usePomodoro();
@@ -48,18 +45,20 @@ export function RssView() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [storage, setStorage] = useState<RssStorage | null>(null);
   const swipeStart = useRef<number | null>(null);
-  const cacheKey = `life:rss:youtube:v2:${filter}:${selectedGroup || 'all'}:${sourceId || 'all'}`;
+  const cacheKey = `life:rss:youtube:v3:${filter}:${selectedGroup || 'all'}:${sourceId || 'all'}`;
+  useEffect(() => { void clearLegacyRssCaches().catch(() => undefined); }, []);
 
   const load = async (append = false) => {
-    if (!append) { const cached = await getCached<RssData>(cacheKey); if (cached) setData(cached.value); }
+    if (!append) { const cached = await getCached<RssData>(cacheKey); if (cached) setData(dedupeRss(cached.value)); }
     const nextOffset = append ? offset : 0;
     try {
       const query = new URLSearchParams({ filter, limit: '200', offset: String(nextOffset) });
       if (sourceId) query.set('sourceId', String(sourceId));
       if (selectedGroup) query.set('category', selectedGroup);
-      const remote = dedupeRss(await mergePendingRss(await lifeApi<RssData>(`/rss?${query}`)));
-      const next = append && data ? { ...remote, items: dedupeItems([...data.items, ...remote.items]) } : remote;
-      setData(next); setOffset(nextOffset + remote.items.length); await setCached(cacheKey, next);
+      const response = await mergePendingRss(await lifeApi<RssData>(`/rss?${query}`));
+      const remote = dedupeRss(response);
+      const next = append && data ? { ...remote, items: dedupeRssItems([...data.items, ...remote.items]) } : remote;
+      setData(next); setOffset(nextOffset + response.items.length); await setCached(cacheKey, next);
     } catch { /* Local cache stays usable while the cloud is unavailable. */ }
   };
   useEffect(() => { setOffset(0); setSelectedItem(null); void load(); }, [filter, sourceId, selectedGroup]);
@@ -110,6 +109,7 @@ export function RssView() {
     {message && <p className="rss-message">{message}</p>}
     <div className={`rss-workspace rss-workspace-wide ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
       <aside className="rss-library">
+        <div className="rss-space-switch"><SpaceSwitch /></div>
         <nav className="rss-sidebar-tools" aria-label="RSS 工具">
           <Link href="/life" title="返回 Life"><i className="ri-arrow-left-line" /></Link>
           <button onClick={() => setShowAdd(true)} title="新增订阅"><i className="ri-add-line" /></button>
