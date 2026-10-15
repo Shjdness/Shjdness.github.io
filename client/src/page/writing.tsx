@@ -90,6 +90,7 @@ export function WritingPage({ id }: { id?: number }) {
     tagsByScope.current[scope] = tags;
     setKind(next);
     setTags(tagsByScope.current[tagScope(next)]);
+    if (tagScope(next) !== scope) setAvailableTags([]);
     setTagQuery('');
   };
   const toggleTag = (name: string) => {
