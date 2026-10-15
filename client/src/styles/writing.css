@@ -43,8 +43,6 @@
 }
 .tag-picker-option{display:inline-flex;align-items:center;border:1px solid rgb(148 163 184 / .26);border-radius:999px;overflow:hidden}
 .tag-picker-option>button{border:0;border-radius:0}
-.tag-picker-option .tag-picker-remove{padding-inline:.38rem;color:#94a3b8}
-.tag-picker-option .tag-picker-remove:hover{color:#dc2626;background:rgb(220 38 38 / .1)}
 
 .tag-picker-options button:hover,
 .tag-picker-options button.is-selected {

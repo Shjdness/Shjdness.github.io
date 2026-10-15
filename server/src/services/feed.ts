@@ -7,7 +7,7 @@ import { ClientConfig, PublicCache } from "../utils/cache";
 import { getDB } from "../utils/di";
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
-import { bindTagToPost } from "./tag";
+import { bindTagToPost, normalizeTagNames } from "./tag";
 
 export function FeedService() {
   const db: DB = getDB();
@@ -242,6 +242,8 @@ export function FeedService() {
               set.status = 403;
               return "Permission denied";
             }
+            const normalizedTags = normalizeTagNames(tags);
+            if (!normalizedTags) { set.status = 400; return "Invalid tags"; }
             // input check
             if (!draft && !title) {
               set.status = 400;
@@ -280,14 +282,10 @@ export function FeedService() {
                 updatedAt: date,
               })
               .returning({ insertedId: feeds.id });
-            await bindTagToPost(db, result[0].insertedId, tags);
+            if (result.length === 0) { set.status = 500; return "Failed to insert"; }
+            await bindTagToPost(db, result[0].insertedId, uid, normalizedKind, normalizedTags);
             await PublicCache().deletePrefix("feeds_");
-            if (result.length === 0) {
-              set.status = 500;
-              return "Failed to insert";
-            } else {
-              return result[0];
-            }
+            return result[0];
           },
           {
             body: t.Object({
@@ -404,6 +402,8 @@ export function FeedService() {
               set.status = 403;
               return "Permission denied";
             }
+            const normalizedTags = tags === undefined ? undefined : normalizeTagNames(tags);
+            if (normalizedTags === null) { set.status = 400; return "Invalid tags"; }
             const nextKind = kind === "diary" || kind === "essay" || kind === "memo" || kind === "article" ? kind : feed.kind;
             const privateKind = nextKind === "diary" || nextKind === "memo";
             await db
@@ -421,8 +421,8 @@ export function FeedService() {
                 updatedAt: new Date(),
               })
               .where(eq(feeds.id, id_num));
-            if (tags) {
-              await bindTagToPost(db, id_num, tags);
+            if (normalizedTags) {
+              await bindTagToPost(db, id_num, feed.uid, nextKind, normalizedTags);
             }
             await clearFeedCache(id_num, feed.alias, alias || null);
             return "Updated";

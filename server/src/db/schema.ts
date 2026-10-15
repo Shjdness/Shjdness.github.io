@@ -209,6 +209,14 @@ export const hashtags = sqliteTable("hashtags", {
     updatedAt: updated_at,
 });
 
+export const writingTagOptions = sqliteTable("writing_tag_options", {
+    id: integer("id").primaryKey(),
+    ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    scope: text("scope").notNull(),
+    name: text("name").notNull(),
+    createdAt: created_at,
+}, table => ({ ownerScopeName: uniqueIndex("writing_tag_options_owner_scope_name").on(table.ownerId, table.scope, table.name) }));
+
 export const feedHashtags = sqliteTable("feed_hashtags", {
     feedId: integer("feed_id").references(() => feeds.id, { onDelete: 'cascade' }).notNull(),
     hashtagId: integer("hashtag_id").references(() => hashtags.id, { onDelete: 'cascade' }).notNull(),

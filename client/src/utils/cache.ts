@@ -4,6 +4,7 @@ export type Keys =
     | "title"
     | "content"
     | "tags"
+    | "kind"
     | "summary"
     | "draft"
     | "listed"
@@ -13,6 +14,7 @@ const keys: Keys[] = [
     "title",
     "content",
     "tags",
+    "kind",
     "summary",
     "draft",
     "listed",

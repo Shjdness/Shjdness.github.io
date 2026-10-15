@@ -21,6 +21,8 @@ import mermaid from 'mermaid';
 import { readingStats } from '../utils/reading';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
+type TagScope = 'blog' | 'diary' | 'memo';
+const tagScope = (kind: ContentKind): TagScope => kind === 'diary' || kind === 'memo' ? kind : 'blog';
 
 function uploadImage(file: File, onSuccess: (url: string) => void, showAlert: ShowAlertType) {
   const t = i18n.t
@@ -59,9 +61,10 @@ export function WritingPage({ id }: { id?: number }) {
   const [title, setTitle] = cache.useCache("title", "");
   const [summary, setSummary] = cache.useCache("summary", "");
   const [tags, setTags] = cache.useCache("tags", "");
+  const [kind, setKind] = cache.useCache<ContentKind>('kind', 'article');
+  const tagsByScope = useRef<Record<TagScope, string>>({ blog: tagScope(kind) === 'blog' ? tags : '', diary: kind === 'diary' ? tags : '', memo: kind === 'memo' ? tags : '' });
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
-  const [kind, setKind] = useState<ContentKind>('article');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
   const [saveState, setSaveState] = useState('本地已保存');
   const [content, setContent] = cache.useCache("content", "");
@@ -75,29 +78,36 @@ export function WritingPage({ id }: { id?: number }) {
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
+  const scope = tagScope(kind);
   const privateMode = kind === 'diary' || kind === 'memo';
   const saveTagNames = (names: string[]) => {
-    const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(Boolean))];
-    setTags(unique.map(name => `#${name}`).join(' '));
+    const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(name => name && name.length <= 64 && !name.includes('#')))];
+    const next = unique.map(name => `#${name}`).join(' ');
+    tagsByScope.current[scope] = next;
+    setTags(next);
+  };
+  const changeKind = (next: ContentKind) => {
+    tagsByScope.current[scope] = tags;
+    setKind(next);
+    setTags(tagsByScope.current[tagScope(next)]);
+    setTagQuery('');
   };
   const toggleTag = (name: string) => {
     saveTagNames(selectedTagNames.includes(name)
       ? selectedTagNames.filter(tag => tag !== name)
       : [...selectedTagNames, name]);
   };
-  const addTypedTag = () => {
+  const addTypedTag = async () => {
     const name = tagQuery.trim().replace(/^#/, '');
     if (!name) return;
+    if (name.length > 64 || name.includes('#') || /[\u0000-\u001f\u007f]/.test(name)) { showAlert('标签需在 64 字以内，且不能包含 # 或控制字符'); return; }
     saveTagNames([...selectedTagNames, name]);
+    setAvailableTags(current => [...new Set([...current, name])].sort());
     setTagQuery('');
-  };
-  const deleteAvailableTag = (name: string) => {
-    showConfirm('删除标签', `删除「#${name}」后，它会从已有文章中一并移除。确定继续吗？`, async () => {
-      const { error } = await client.tag({ name }).delete(null, { headers: headersWithAuth() });
-      if (error) { showAlert(typeof error.value === 'string' ? error.value : '标签删除失败'); return; }
-      setAvailableTags(current => current.filter(value => value !== name));
-      saveTagNames(selectedTagNames.filter(value => value !== name));
-    });
+    try {
+      const { error } = await client.tag.options.post({ scope, name }, { headers: headersWithAuth() });
+      if (error) throw new Error(String(error.value));
+    } catch { showAlert('标签已加入当前内容；目录同步失败，保存内容时会再次同步。'); }
   };
 
   function applyHeading(level: 1 | 2 | 3) {
@@ -180,6 +190,7 @@ export function WritingPage({ id }: { id?: number }) {
       setContent('');
       setSummary('');
       setTags('');
+      tagsByScope.current = { blog: '', diary: '', memo: '' };
       setTagQuery('');
       setKind('article');
       setCreatedAt(new Date());
@@ -273,7 +284,9 @@ export function WritingPage({ id }: { id?: number }) {
         .then(({ data }) => {
           if (data && typeof data !== "string") {
             setTitle(data.title || '');
-            setTags(data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '');
+            const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
+            tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
+            setTags(loadedTags);
             setContent(data.content || '');
             setSummary(data.summary || '');
             setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
@@ -285,12 +298,13 @@ export function WritingPage({ id }: { id?: number }) {
     }
   }, []);
   useEffect(() => {
-    client.tag.index.get({ query: { kind } }).then(({ data }) => {
-      if (data && typeof data !== 'string') {
-        setAvailableTags(data.filter(tag => tag.feeds > 0).map(tag => tag.name));
-      }
-    });
-  }, [kind]);
+    let live = true;
+    setAvailableTags([]);
+    client.tag.options.get({ query: { scope }, headers: headersWithAuth() }).then(({ data }) => {
+      if (live && Array.isArray(data)) setAvailableTags(data.map(tag => tag.name));
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [scope]);
   const debouncedUpdate = useCallback(
     _.debounce(() => {
       mermaid.initialize({
@@ -328,7 +342,7 @@ export function WritingPage({ id }: { id?: number }) {
           />
           <label className="writing-kind mt-4">
             <span>内容类型</span>
-            <select value={kind} onChange={event => setKind(event.target.value as ContentKind)}>
+            <select value={kind} onChange={event => changeKind(event.target.value as ContentKind)}>
               <option value="article">普通文章</option>
               <option value="essay">随笔</option>
               <option value="diary">私人日记</option>
@@ -349,15 +363,14 @@ export function WritingPage({ id }: { id?: number }) {
             </div>
             <div className="tag-picker-options">
               {availableTags.map(name => <span className="tag-picker-option" key={name}>
-                <button type="button" onClick={() => toggleTag(name)} className={selectedTagNames.includes(name) ? 'is-selected' : ''}>#{name}</button>
-                <button type="button" className="tag-picker-remove" title={`删除 #${name}`} onClick={() => deleteAvailableTag(name)}><i className="ri-close-line" /></button>
+                <button type="button" onClick={() => toggleTag(name)} aria-pressed={selectedTagNames.includes(name)} className={selectedTagNames.includes(name) ? 'is-selected' : ''}>#{name}</button>
               </span>)}
               {availableTags.length === 0 && <span className="tag-picker-empty">还没有已有标签</span>}
             </div>
             <div className="tag-picker-create">
-              <input value={tagQuery} placeholder="输入新标签" onChange={event => setTagQuery(event.target.value)}
-                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTypedTag(); } }} />
-              <button type="button" onClick={addTypedTag} disabled={!tagQuery.trim()}>添加</button>
+              <input value={tagQuery} maxLength={65} placeholder="输入新标签" onChange={event => setTagQuery(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void addTypedTag(); } }} />
+              <button type="button" onClick={() => void addTypedTag()} disabled={!tagQuery.trim()}>添加</button>
             </div>
             {selectedTagNames.length > 0 && <div className="tag-picker-selected"><span>已选</span>{selectedTagNames.map(name => <button type="button" key={name} onClick={() => toggleTag(name)}>#{name}<i className="ri-close-line" /></button>)}</div>}
           </div>
