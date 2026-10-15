@@ -72,7 +72,7 @@ export function LifeSyncStatus() {
     const handleOnline = () => { void sync(); };
     const handleOffline = () => { setStatus('offline'); void refresh(); };
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
-    const unsubscribe = onLocalChange(() => { void refresh(); });
+    const unsubscribe = onLocalChange(() => { void refresh(); if (!inFlight.current) void sync(); });
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); unsubscribe(); };
   }, []);
   const labels = { synced: `已同步${lastSync ? ` · ${new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}`, pending: `${pending} 项待同步`, syncing: '正在同步…', failed: '同步失败 · 点击重试', offline: `${pending} 项离线保存` };

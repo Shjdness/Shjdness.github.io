@@ -30,4 +30,25 @@ describe('pomodoro state machine', () => {
     const result = completePomodoroStage(current, preferences, now, true);
     expect(result.session).toMatchObject({ focusMinutes: 5, completedEarly: true, taskName: '整理' });
   });
+
+  it('keeps the todo link through focus, break and the next round', () => {
+    const current: TimerState = { mode: 'focus', round: 1, remaining: 0, targetAt: now.getTime(), startedAt: '2026-10-07T12:00:00.000Z', taskName: '阅读', todoId: 8, todoClientKey: 'todo-8' };
+    const focus = completePomodoroStage(current, preferences, now);
+    expect(focus.session).toMatchObject({ todoId: 8, todoClientKey: 'todo-8', taskName: '阅读' });
+    expect(focus.next).toMatchObject({ todoId: 8, todoClientKey: 'todo-8' });
+    const afterBreak = completePomodoroStage(focus.next, preferences, now);
+    expect(afterBreak.next).toMatchObject({ todoId: 8, todoClientKey: 'todo-8' });
+  });
+
+  it('sends only the client key for an offline todo', () => {
+    const current: TimerState = { mode: 'focus', round: 1, remaining: 0, targetAt: now.getTime(), startedAt: '2026-10-07T12:00:00.000Z', taskName: '阅读', todoId: -5, todoClientKey: 'offline-5' };
+    const session = completePomodoroStage(current, preferences, now).session;
+    expect(session).toMatchObject({ todoClientKey: 'offline-5' });
+    expect(session).not.toHaveProperty('todoId');
+  });
+
+  it('keeps a delayed early completion within the server accepted duration', () => {
+    const current: TimerState = { mode: 'focus', round: 1, remaining: 1, targetAt: null, startedAt: '2026-10-07T08:00:00.000Z', taskName: '整理' };
+    expect(completePomodoroStage(current, preferences, now, true).session?.focusMinutes).toBe(180);
+  });
 });

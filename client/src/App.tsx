@@ -120,11 +120,12 @@ function App() {
     '--glass-opacity': String(appearance.glassOpacity),
     '--glass-blur': `${appearance.glassBlur}px`,
   } as React.CSSProperties), [appearance])
+  const pomodoroOwnerId = accountIdFromToken(getCookie('token')) === profile?.id ? profile.id : null
   return (
     <div className={`site-shell ${location === '/' ? 'site-shell--home' : location.startsWith('/life') ? 'site-shell--life' : 'site-shell--blog'}`} style={appearanceStyle}>
       <ClientConfigContext.Provider value={config}>
         <ProfileContext.Provider value={profile}>
-          <PomodoroProvider>
+          <PomodoroProvider key={pomodoroOwnerId ?? 'anonymous'} ownerId={pomodoroOwnerId}>
           <AppearanceContext.Provider value={{
             settings: appearance,
             defaults: appearanceDefaults,

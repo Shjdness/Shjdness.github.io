@@ -5,6 +5,8 @@ export type TimerState = {
   targetAt: number | null;
   startedAt: string | null;
   taskName: string;
+  todoId?: number;
+  todoClientKey?: string;
 };
 
 export type PomodoroPreferences = {
@@ -22,6 +24,9 @@ export type CompletedFocus = {
     roundIndex: number;
     completed: true;
     taskName: string;
+    clientKey: string;
+    todoId?: number;
+    todoClientKey?: string;
     completedEarly: boolean;
   } | null;
   next: TimerState;
@@ -32,6 +37,11 @@ export const defaultPomodoroPreferences: PomodoroPreferences = {
   breakMinutes: 5,
   rounds: 4,
 };
+
+const todoLink = (current: TimerState) => ({
+  ...(current.todoId ? { todoId: current.todoId } : {}),
+  ...(current.todoClientKey ? { todoClientKey: current.todoClientKey } : {}),
+});
 
 export function completePomodoroStage(
   current: TimerState,
@@ -51,12 +61,13 @@ export function completePomodoroStage(
         targetAt: nowMs + preferences.focusMinutes * 60 * 1000,
         startedAt: now.toISOString(),
         taskName: current.taskName,
+        ...todoLink(current),
       },
     };
   }
 
   const actualMinutes = current.startedAt
-    ? Math.max(1, Math.ceil((nowMs - new Date(current.startedAt).getTime()) / 60000))
+    ? Math.min(180, Math.max(1, Math.ceil((nowMs - new Date(current.startedAt).getTime()) / 60000)))
     : preferences.focusMinutes;
   const session = current.startedAt
     ? {
@@ -67,6 +78,9 @@ export function completePomodoroStage(
         roundIndex: current.round,
         completed: true as const,
         taskName: current.taskName.trim(),
+        clientKey: current.startedAt,
+        ...(current.todoId && current.todoId > 0 ? { todoId: current.todoId } : {}),
+        ...(current.todoClientKey ? { todoClientKey: current.todoClientKey } : {}),
         completedEarly,
       }
     : null;
@@ -81,6 +95,7 @@ export function completePomodoroStage(
         targetAt: nowMs + preferences.breakMinutes * 60 * 1000,
         startedAt: null,
         taskName: current.taskName,
+        ...todoLink(current),
       },
     };
   }
@@ -94,6 +109,7 @@ export function completePomodoroStage(
       targetAt: null,
       startedAt: null,
       taskName: current.taskName,
+      ...todoLink(current),
     },
   };
 }
