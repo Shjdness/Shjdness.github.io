@@ -38,6 +38,7 @@ jobs:
           bun install --frozen-lockfile
           node node_modules/vitest/vitest.mjs run
           bunx tsc --noEmit --project server/tsconfig.json
+          python3 server/sql/tests/test_owner_repair.py
 
       - name: Deploy
         env: # Or as an environment variable
