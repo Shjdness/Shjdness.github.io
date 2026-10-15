@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - 'server/**'
+      - 'bun.lock'
       - 'scripts/migrator.ts'
       - 'wrangler.example.toml'
       - '.github/workflows/deploy.yaml'
@@ -30,7 +31,9 @@ jobs:
           path: site
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
 
       - name: Install and verify
         run: |

@@ -32,7 +32,7 @@ export class CacheImpl {
         console.log('Cache load', this.cacheUrl);
         try {
             const response = await fetch(new Request(this.cacheUrl))
-            const data = await response.json<any>()
+            const data = await response.json() as Record<string, unknown>
             for (let key in data) {
                 this.cache.set(key, data[key]);
             }

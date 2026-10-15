@@ -5,6 +5,7 @@
       "ESNext",
       "DOM"
     ],
+    "types": ["@cloudflare/workers-types"],
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",

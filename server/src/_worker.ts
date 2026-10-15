@@ -1,4 +1,5 @@
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
+import type { ScheduledController } from "@cloudflare/workers-types";
 import { Elysia } from "elysia";
 import "reflect-metadata";
 import Container from "typedi";
