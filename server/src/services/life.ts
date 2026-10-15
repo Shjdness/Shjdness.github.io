@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, lt, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
 import { dailyBasics, habitLogs, habits, lifeDailyNotes, lifeTodos, pomodoroSessions, rssItems, users } from '../db/schema';
 import { setup } from '../setup';
@@ -91,7 +91,15 @@ export function LifeService() {
             })
             .get('/todos', async ({ uid, lifeAccess, set }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-                return db.query.lifeTodos.findMany({ where: eq(lifeTodos.ownerId, uid!), orderBy: [lifeTodos.completed, desc(lifeTodos.updatedAt)] });
+                const [todos, focus] = await Promise.all([
+                    db.query.lifeTodos.findMany({ where: eq(lifeTodos.ownerId, uid!), orderBy: [lifeTodos.completed, desc(lifeTodos.updatedAt)] }),
+                    db.select({ todoId: pomodoroSessions.todoId, minutes: sql<number>`sum(${pomodoroSessions.focusMinutes})`, rounds: sql<number>`count(*)` })
+                        .from(pomodoroSessions)
+                        .where(and(eq(pomodoroSessions.ownerId, uid!), eq(pomodoroSessions.completed, 1), isNotNull(pomodoroSessions.todoId)))
+                        .groupBy(pomodoroSessions.todoId),
+                ]);
+                const byTodo = new Map(focus.map(row => [row.todoId, row]));
+                return todos.map(todo => ({ ...todo, focusMinutes: byTodo.get(todo.id)?.minutes ?? 0, focusRounds: byTodo.get(todo.id)?.rounds ?? 0 }));
             })
             .post('/todos', async ({ uid, lifeAccess, set, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';

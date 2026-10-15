@@ -118,7 +118,7 @@ try {
         })
         .sort();
     console.log("migration_version:", migrationVersion, "Migration SQL List: ", sqlFiles)
-    if (sqlFiles.some(name => name.startsWith('0020-') || name.startsWith('0021-'))) {
+    if (sqlFiles.some(name => name.startsWith('0020-') || name.startsWith('0021-') || name.startsWith('0022-'))) {
         // Keep a restore point before RSS cleanup or account ownership repair.
         // The bookmark is printed in the private deployment log for rollback.
         const backup = await $`bunx wrangler d1 time-travel info ${DB_NAME}`.quiet().text()

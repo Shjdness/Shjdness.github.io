@@ -201,7 +201,7 @@
 .todo-filters button { padding:.45rem .75rem; font-size:.75rem; }
 .todo-filters button.active { border-color:rgb(225 29 98 / .42); background:rgb(225 29 98 / .12); color:#e11d62; }
 .todo-list { display:grid; gap:.6rem; margin-top:1rem; }
-.todo-list article { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.75rem; padding:.8rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / .09); }
+.todo-list article { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:.75rem; padding:.8rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / .09); }
 .todo-list article>div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:.7rem; }
 .todo-list input { min-width:0; border:0; outline:0; background:transparent; color:inherit; }
 .todo-list article.done input { color:#94a3b8; text-decoration:line-through; }
@@ -209,6 +209,19 @@
 .todo-list article.done .todo-check { border-color:#22c55e; background:#22c55e; color:#fff; }
 .todo-type { color:#e11d62; font-size:.68rem; font-weight:700; }
 .todo-remove { color:#94a3b8; }
+.todo-focus { padding:.35rem .65rem; border:1px solid rgb(225 29 98 / .35); border-radius:.7rem; color:#e11d62; font-size:.75rem; font-weight:700; }
+.todo-focus:disabled { opacity:.45; cursor:not-allowed; }
+.life-backup-row { margin-top:1rem; color:#64748b; font-size:.78rem; }
+.life-backup-row summary { width:max-content; cursor:pointer; }
+.life-backup-controls { display:flex; flex-wrap:wrap; align-items:end; gap:.55rem .8rem; margin-top:.8rem; }
+.life-backup-controls label { display:grid; gap:.25rem; }
+.life-backup-controls input[type="password"] { width:13rem; max-width:100%; padding:.45rem .6rem; border:1px solid rgb(148 163 184 / .3); border-radius:.7rem; background:transparent; color:inherit; }
+.life-backup-verify input { max-width:14rem; font-size:.72rem; }
+.life-backup-row button { padding:.45rem .75rem; border:1px solid rgb(148 163 184 / .3); border-radius:.7rem; font-size:.78rem; }
+.life-backup-row button:disabled { opacity:.55; }
+.life-backup-row small { font-size:.7rem; }
+.life-backup-row span { width:100%; font-size:.72rem; }
+.pomodoro-task select { display:block; width:100%; max-width:32rem; margin-top:.4rem; padding:.55rem .65rem; border:1px solid rgb(148 163 184 / .3); border-radius:.7rem; background:transparent; color:inherit; }
 
 
 /* Local-first status */

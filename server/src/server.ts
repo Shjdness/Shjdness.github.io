@@ -13,6 +13,7 @@ import { LifeService } from './services/life';
 import { HabitService } from './services/habit';
 import { RssService } from './services/rss';
 import { PomodoroService } from './services/pomodoro';
+import { LifeBackupService } from './services/life-backup';
 import { getEnv } from './utils/di';
 import { frontendOrigin } from './utils/frontend-origin';
 
@@ -44,6 +45,7 @@ export const app = () => new Elysia({ aot: false })
     .use(HabitService())
     .use(RssService())
     .use(PomodoroService())
+    .use(LifeBackupService())
     .get('/', () => `Hi`)
     .onError(({ path, params, code }) => {
         if (code === 'NOT_FOUND')

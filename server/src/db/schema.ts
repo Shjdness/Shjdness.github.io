@@ -127,10 +127,12 @@ export const pomodoroSessions = sqliteTable("pomodoro_sessions", {
     roundIndex: integer("round_index").default(1).notNull(),
     completed: integer("completed").default(1).notNull(),
     taskName: text("task_name").default("").notNull(),
+    todoId: integer("todo_id").references(() => lifeTodos.id, { onDelete: 'set null' }),
+    clientKey: text("client_key"),
     completedEarly: integer("completed_early").default(0).notNull(),
     createdAt: created_at,
     updatedAt: updated_at,
-});
+}, table => ({ ownerClientKey: uniqueIndex("pomodoro_sessions_owner_client_key").on(table.ownerId, table.clientKey) }));
 
 /** Private RSS reader: subscriptions and entries are always owned by one Life user. */
 export const rssSubscriptions = sqliteTable("rss_subscriptions", {

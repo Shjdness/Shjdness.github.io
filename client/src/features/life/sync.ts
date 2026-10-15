@@ -1,5 +1,5 @@
 import { getCached, getSyncQueue, setCached } from '../../data/local-first';
-import type { DailyBasic, DailyNote, Habit, Log, PomodoroSession } from './model';
+import type { DailyBasic, DailyNote, Habit, Log } from './model';
 import { lifeApi } from './model';
 
 export async function sendQueuedMutation(item: { entity: string; action: string; payload: unknown }) {
@@ -69,11 +69,11 @@ export async function sendQueuedMutation(item: { entity: string; action: string;
     return true;
   }
   if (item.entity === 'pomodoro' && item.action === 'create') {
-    const payload = item.payload as { startedAt: string; focusMinutes?: number };
+    const payload = item.payload as { startedAt: string; focusMinutes?: number; todoClientKey?: string };
     if ((payload.focusMinutes || 0) < 5) return true;
-    const month = payload.startedAt.slice(0, 7);
-    const existing = await lifeApi<PomodoroSession[]>(`/pomodoro/sessions?month=${encodeURIComponent(month)}`);
-    if (Array.isArray(existing) && existing.some(session => new Date(session.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) return true;
+    if (payload.todoClientKey && (await getSyncQueue()).some(queued => queued.entity === 'todo' && queued.action === 'create' && (queued.payload as { clientKey?: string }).clientKey === payload.todoClientKey)) {
+      throw new Error('关联待办尚未同步，番茄钟记录等待重试');
+    }
     await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(item.payload) });
     return true;
   }
