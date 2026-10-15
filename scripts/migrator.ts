@@ -108,6 +108,7 @@ const migrationVersion = await getMigrationVersion(typ, DB_NAME);
 const isInfoExistResult = await isInfoExist(typ, DB_NAME);
 
 try {
+    let ownerRepairExpected = false;
     const files = await readdir("./server/sql", { recursive: false })
     const sqlFiles = files
         .filter(name => name.endsWith('.sql'))
@@ -117,16 +118,52 @@ try {
         })
         .sort();
     console.log("migration_version:", migrationVersion, "Migration SQL List: ", sqlFiles)
-    if (sqlFiles.some(name => name.startsWith('0020-'))) {
-        // A restore point is mandatory before deleting historical duplicate rows.
+    if (sqlFiles.some(name => name.startsWith('0020-') || name.startsWith('0021-'))) {
+        // Keep a restore point before RSS cleanup or account ownership repair.
         // The bookmark is printed in the private deployment log for rollback.
         const backup = await $`bunx wrangler d1 time-travel info ${DB_NAME}`.quiet().text()
         if (!backup.includes('bookmark')) throw new Error('D1 restore bookmark was not created; migration stopped.')
         console.log(`D1 pre-migration restore point:\n${backup}`)
     }
+    if (sqlFiles.some(name => name.startsWith('0021-'))) {
+        const auditSql = `SELECT
+          (SELECT COUNT(*) FROM users WHERE id = 1 AND openid = '121328491.0') AS legacy,
+          (SELECT COUNT(*) FROM users WHERE id = 7 AND openid = '121328491') AS duplicate,
+          (SELECT COUNT(*) FROM life_todos WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM habits WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM habit_logs WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM life_daily_notes WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM daily_basics WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM pomodoro_sessions WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM rss_subscriptions WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM rss_source_groups WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM rss_items WHERE owner_id = 7)
+          + (SELECT COUNT(*) FROM appearance_preferences WHERE user_id = 7)
+          + (SELECT COUNT(*) FROM comments WHERE user_id = 7) AS other_records`
+        const auditText = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${auditSql} --json`.quiet().text()
+        const audit = (JSON.parse(auditText) as Array<{ results?: Array<{ legacy: number; duplicate: number; other_records: number }> }>)[0]?.results?.[0]
+        if (!audit) throw new Error('Owner identity audit returned no row; migration stopped.')
+        if (audit.legacy === 1 && audit.duplicate === 1 && audit.other_records !== 0) {
+            throw new Error(`Duplicate owner has ${audit.other_records} additional records; migration stopped for manual merge.`)
+        }
+        ownerRepairExpected = audit.legacy === 1 && audit.duplicate === 1;
+        console.log(`Owner identity audit: legacy=${audit.legacy}, duplicate=${audit.duplicate}, other_records=${audit.other_records}`)
+    }
     for (const file of sqlFiles) {
         await $`bunx wrangler d1 execute ${DB_NAME} --remote --file ./server/sql/${file} -y`
         console.log(`Migrated ${file}`)
+    }
+    if (ownerRepairExpected) {
+        const verifySql = `SELECT
+          (SELECT COUNT(*) FROM users WHERE id = 1 AND openid = '121328491' AND permission = 1) AS original_owner,
+          (SELECT COUNT(*) FROM users WHERE id = 7 AND openid = 'merged:github:121328491:7' AND permission = 0) AS retired_duplicate,
+          (SELECT COUNT(*) FROM feeds WHERE uid = 7) AS orphan_feeds`
+        const verifyText = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${verifySql} --json`.quiet().text()
+        const verified = (JSON.parse(verifyText) as Array<{ results?: Array<{ original_owner: number; retired_duplicate: number; orphan_feeds: number }> }>)[0]?.results?.[0]
+        if (!verified || verified.original_owner !== 1 || verified.retired_duplicate !== 1 || verified.orphan_feeds !== 0) {
+            throw new Error('Owner identity repair verification failed; Worker deployment stopped.')
+        }
+        console.log('Owner identity repair verified.')
     }
     if (sqlFiles.length === 0) {
         console.log("No migration needed.")

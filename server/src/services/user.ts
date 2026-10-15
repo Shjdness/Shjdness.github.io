@@ -69,24 +69,29 @@ export function UserService() {
                     // was previously created with reader permissions.
                     const isOwner = Boolean(ownerGithubId) && profile.openid === ownerGithubId;
                     let issuedToken = "";
-                    await db.query.users.findFirst({ where: eq(users.openid, profile.openid) })
-                        .then(async (user) => {
-                            if (user) {
-                                profile.permission = isOwner ? 1 : user.permission
-                                await db.update(users).set(profile).where(eq(users.id, user.id));
-                                issuedToken = await jwt.sign({ id: user.id });
-                            } else {
-                                if (isOwner) {
-                                    profile.permission = 1
-                                }
-                                const result = await db.insert(users).values(profile).returning({ insertedId: users.id });
-                                if (!result || result.length === 0) {
-                                    throw new Error('Failed to register');
-                                } else {
-                                    issuedToken = await jwt.sign({ id: result[0].insertedId });
-                                }
-                            }
-                        });
+                    // Earlier deployments passed GitHub's numeric ID into a TEXT
+                    // column. D1 stored those values as e.g. "121328491.0".
+                    // Prefer that original account when both spellings exist so
+                    // its feeds and Life records remain attached to the login.
+                    const legacyOpenid = `${profile.openid}.0`;
+                    const [legacyUser, canonicalUser] = await Promise.all([
+                        db.query.users.findFirst({ where: eq(users.openid, legacyOpenid) }),
+                        db.query.users.findFirst({ where: eq(users.openid, profile.openid) }),
+                    ]);
+                    const existingUser = legacyUser || canonicalUser;
+                    if (existingUser) {
+                        profile.permission = isOwner ? 1 : existingUser.permission;
+                        // Do not create a second canonical openid while an
+                        // already split account is being repaired.
+                        const keepLegacyOpenid = legacyUser && canonicalUser && legacyUser.id !== canonicalUser.id;
+                        await db.update(users).set({ ...profile, openid: keepLegacyOpenid ? legacyOpenid : profile.openid }).where(eq(users.id, existingUser.id));
+                        issuedToken = await jwt.sign({ id: existingUser.id });
+                    } else {
+                        if (isOwner) profile.permission = 1;
+                        const result = await db.insert(users).values(profile).returning({ insertedId: users.id });
+                        if (!result?.length) throw new Error('Failed to register');
+                        issuedToken = await jwt.sign({ id: result[0].insertedId });
+                    }
                     const redirect_url = `${redirectOrigin}/callback#token=${encodeURIComponent(issuedToken)}`;
                     set.headers = {
                         'Cache-Control': 'no-store',
