@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { processSyncQueue, type SyncItem } from './local-first';
+import { accountIdFromToken, accountStorageKey, processSyncQueue, queueForAccount, type SyncItem } from './local-first';
 
 const item = (id: number): SyncItem => ({ id, entity: 'todo', action: 'create', payload: {}, createdAt: 1, retryCount: 0, status: 'pending' });
 
 describe('sync queue processor', () => {
+  it('isolates offline writes by the account in the current token', () => {
+    const token = `x.${btoa(JSON.stringify({ id: 1 })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}.x`;
+    expect(accountIdFromToken(token)).toBe(1);
+    expect(accountIdFromToken('invalid')).toBeNull();
+    expect(accountStorageKey('life:todos', 1)).not.toBe(accountStorageKey('life:todos', 7));
+    const queue = [{ ...item(1), ownerId: 1 }, { ...item(2), ownerId: 7 }, item(3)];
+    expect(queueForAccount(queue, 1).map(value => value.id)).toEqual([1]);
+    expect(queueForAccount(queue, 7).map(value => value.id)).toEqual([2]);
+  });
   it('does not send while offline', async () => {
     const send = vi.fn(async () => true);
     const storage = { markSyncing: vi.fn(), remove: vi.fn(), markFailed: vi.fn(async (_item: SyncItem, _error: string) => undefined) };

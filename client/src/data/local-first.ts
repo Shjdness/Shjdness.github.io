@@ -1,10 +1,30 @@
+import { getCookie } from 'typescript-cookie';
+
 export type SyncEntity = 'habit' | 'note' | 'basic' | 'todo' | 'pomodoro' | 'rss';
-export type SyncItem = { id?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed'; lastError?: string };
+export type SyncItem = { id?: number; ownerId?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed'; lastError?: string };
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 
 const DB_NAME = 'shjdshy-life';
 const DB_VERSION = 2;
 const CHANGE_EVENT = 'shjdshy-local-change';
+
+export function accountIdFromToken(token?: string) {
+  if (!token) return null;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return Number.isSafeInteger(decoded.id) && decoded.id > 0 ? decoded.id as number : null;
+  } catch { return null; }
+}
+
+const currentAccountId = () => accountIdFromToken(getCookie('token'));
+export const accountStorageKey = (key: string, ownerId: number) => `account:${ownerId}:${key}`;
+const scopedCacheKey = (key: string) => {
+  if (!key.startsWith('life:')) return key;
+  const ownerId = currentAccountId();
+  return ownerId ? accountStorageKey(key, ownerId) : null;
+};
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -38,31 +58,49 @@ export const withTimeout = <T>(promise: Promise<T>, ms = 3000) => Promise.race<T
 ]);
 
 export async function getCached<T>(key: string) {
-  const record = await storeRequest<CacheValue<T> | undefined>('cache', 'readonly', store => store.get(key));
+  const scopedKey = scopedCacheKey(key);
+  if (!scopedKey) return null;
+  const record = await storeRequest<CacheValue<T> | undefined>('cache', 'readonly', store => store.get(scopedKey));
   return record || null;
 }
 
 export async function setCached<T>(key: string, value: T) {
-  await storeRequest('cache', 'readwrite', store => store.put({ key, value, updatedAt: Date.now() }));
+  const scopedKey = scopedCacheKey(key);
+  if (!scopedKey) throw new Error('Authenticated account required for private cache');
+  await storeRequest('cache', 'readwrite', store => store.put({ key: scopedKey, value, updatedAt: Date.now() }));
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
 export async function clearLegacyRssCaches() {
+  const ownerId = currentAccountId();
+  const scopedPrefix = ownerId ? accountStorageKey('life:rss:', ownerId) : '';
   const keys = await storeRequest<IDBValidKey[]>('cache', 'readonly', store => store.getAllKeys());
   for (const key of keys) {
-    if (typeof key === 'string' && key.startsWith('life:rss:') && !key.startsWith('life:rss:youtube:v3:')) {
+    if (typeof key === 'string' && ((key.startsWith('life:rss:') && !key.startsWith('life:rss:youtube:v3:')) || (scopedPrefix && key.startsWith(scopedPrefix) && !key.startsWith(`${scopedPrefix}youtube:v3:`)))) {
       await storeRequest('cache', 'readwrite', store => store.delete(key));
     }
   }
 }
 
 export async function enqueueMutation(entity: SyncEntity, action: string, payload: unknown) {
-  await storeRequest('sync_queue', 'readwrite', store => store.add({ entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
+  const ownerId = currentAccountId();
+  if (!ownerId) throw new Error('Authenticated account required for offline write');
+  await storeRequest('sync_queue', 'readwrite', store => store.add({ ownerId, entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
 export async function getSyncQueue() {
-  return storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
+  const ownerId = currentAccountId();
+  if (!ownerId) return [];
+  const queue = await storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
+  return queueForAccount(queue, ownerId);
+}
+
+export const queueForAccount = (queue: SyncItem[], ownerId: number) => queue.filter(item => item.ownerId === ownerId);
+
+export async function getLegacySyncQueueCount() {
+  const queue = await storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
+  return queue.filter(item => item.ownerId === undefined).length;
 }
 
 export type SyncResult = { total: number; synced: number; failed: number; offline: boolean };

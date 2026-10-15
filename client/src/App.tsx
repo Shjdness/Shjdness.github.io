@@ -25,6 +25,7 @@ import { BlogHomePage } from './page/blog_home.tsx'
 import { DiaryPage } from './page/diary.tsx'
 import { MemoPage } from './page/memo.tsx'
 import { PomodoroProvider } from './state/pomodoro.tsx'
+import { accountIdFromToken } from './data/local-first'
 
 const GalleryPage = lazy(() => import('./page/gallery').then(module => ({ default: module.GalleryPage })))
 const FeedPage = lazy(() => import('./page/feed').then(module => ({ default: module.FeedPage })))
@@ -33,8 +34,12 @@ const PrivateLifePage = lazy(() => import('./page/life.tsx').then(module => ({ d
 
 const LIFE_PROFILE_CACHE = 'shjdshy-life-profile';
 const cachedProfile = () => {
-  if (!(getCookie('token')?.length ?? 0)) return undefined;
-  try { return JSON.parse(localStorage.getItem(LIFE_PROFILE_CACHE) || 'null') as Profile | undefined; } catch { return undefined; }
+  const accountId = accountIdFromToken(getCookie('token'));
+  if (!accountId) return undefined;
+  try {
+    const cached = JSON.parse(localStorage.getItem(LIFE_PROFILE_CACHE) || 'null') as Profile | undefined;
+    return cached?.id === accountId ? cached : undefined;
+  } catch { return undefined; }
 };
 
 function App() {
