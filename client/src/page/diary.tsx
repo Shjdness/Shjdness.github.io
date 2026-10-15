@@ -8,19 +8,26 @@ import { headersWithAuth } from "../utils/auth";
 
 export function DiaryPage() {
   const [feeds, setFeeds] = useState<any[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   useEffect(() => {
+    let cancelled = false;
+    setFeeds(null);
+    setLoadError(false);
     client.feed.diary
       .get({ headers: headersWithAuth() })
-      .then(({ data }: any) => {
-        const entries = data && typeof data !== "string" ? data : [];
-        setFeeds(
-          entries.sort(
+      .then(({ data, error }: any) => {
+        if (error || !Array.isArray(data)) throw new Error("Diary request failed");
+        if (!cancelled) setFeeds(
+          [...data].sort(
             (a: any, b: any) => diaryTimestamp(b) - diaryTimestamp(a),
           ),
         );
-      });
-  }, []);
+      })
+      .catch(() => { if (!cancelled) setLoadError(true); });
+    return () => { cancelled = true; };
+  }, [retry]);
   const tagNames = useMemo(
     () =>
       [
@@ -65,7 +72,13 @@ export function DiaryPage() {
       <Helmet>
         <title>日记 - {process.env.NAME}</title>
       </Helmet>
-      <Waiting for={feeds !== null}>
+      {loadError ? (
+        <main className="diary-page ani-show">
+          <header><p>PRIVATE JOURNAL</p><h1>日记</h1></header>
+          <p role="alert">暂时无法读取云端日记，请检查网络后重试。页面空白不代表记录已丢失。</p>
+          <button type="button" onClick={() => setRetry(value => value + 1)}>重新加载</button>
+        </main>
+      ) : <Waiting for={feeds !== null}>
         <main className="diary-page ani-show">
           <header>
             <p>PRIVATE JOURNAL</p>
@@ -134,7 +147,7 @@ export function DiaryPage() {
             </section>
           </div>
         </main>
-      </Waiting>
+      </Waiting>}
     </>
   );
 }

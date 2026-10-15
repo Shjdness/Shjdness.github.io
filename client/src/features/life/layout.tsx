@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { accountIdFromToken, accountStorageKey, flushSyncQueue, getLegacySyncQueueCount, getSyncQueue, onLocalChange } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
-import { CLOUD_REFRESH_EVENT, type LifeSection } from './model';
+import { CLOUD_REFRESH_EVENT, lifeApi, type LifeSection } from './model';
 import { sendQueuedMutation } from './sync';
 
 export function LifeDenied() {
@@ -21,19 +21,51 @@ export function LifeSyncStatus() {
   const syncStampKey = accountId ? accountStorageKey('shjdshy-last-sync', accountId) : 'shjdshy-last-sync:unauthed';
   const [pending, setPending] = useState(0);
   const [legacyPending, setLegacyPending] = useState(0);
-  const [status, setStatus] = useState<'synced' | 'pending' | 'syncing' | 'failed' | 'offline'>(navigator.onLine ? 'synced' : 'offline');
+  const [status, setStatus] = useState<'synced' | 'pending' | 'syncing' | 'failed' | 'offline'>(navigator.onLine ? 'syncing' : 'offline');
   const [lastSync, setLastSync] = useState(() => localStorage.getItem(syncStampKey) || '');
   const [syncError, setSyncError] = useState('');
-  const refresh = async () => { const [queue, oldCount] = await Promise.all([getSyncQueue(), getLegacySyncQueueCount()]); setLegacyPending(oldCount); const failed = queue.find(item => item.lastError); setPending(queue.length); setSyncError(failed ? `${failed.entity}/${failed.action}: ${failed.lastError}` : ''); if (!navigator.onLine) setStatus('offline'); else if (queue.some(item => item.status === 'failed')) setStatus('failed'); else setStatus(queue.length ? 'pending' : 'synced'); };
+  const inFlight = useRef(false);
+  const cloudError = useRef('');
+  const verified = useRef(false);
+  const refresh = async () => {
+    const [queue, oldCount] = await Promise.all([getSyncQueue(), getLegacySyncQueueCount()]);
+    setLegacyPending(oldCount);
+    setPending(queue.length);
+    const failed = queue.find(item => item.lastError);
+    const message = failed ? `${failed.entity}/${failed.action}: ${failed.lastError}` : cloudError.current;
+    setSyncError(message);
+    if (!navigator.onLine) setStatus('offline');
+    else if (queue.some(item => item.status === 'failed') || cloudError.current) setStatus('failed');
+    else if (inFlight.current) setStatus('syncing');
+    else setStatus(queue.length || !verified.current ? 'pending' : 'synced');
+  };
   const sync = async () => {
+    if (inFlight.current) return;
     if (!navigator.onLine) { setStatus('offline'); await refresh(); return; }
+    inFlight.current = true;
     setStatus('syncing');
-    const result = await flushSyncQueue(sendQueuedMutation);
-    await refresh();
-    window.dispatchEvent(new CustomEvent(CLOUD_REFRESH_EVENT));
-    if (result.failed) { setStatus('failed'); return; }
-    const stamp = new Date().toISOString();
-    localStorage.setItem(syncStampKey, stamp); setLastSync(stamp); setStatus('synced');
+    cloudError.current = '';
+    verified.current = false;
+    try {
+      const result = await flushSyncQueue(sendQueuedMutation);
+      if (result.failed) { await refresh(); setStatus('failed'); return; }
+      const todos = await lifeApi<unknown>('/life/todos');
+      if (!Array.isArray(todos)) throw new Error('云端未返回待办列表');
+      verified.current = true;
+      window.dispatchEvent(new CustomEvent(CLOUD_REFRESH_EVENT));
+      const stamp = new Date().toISOString();
+      localStorage.setItem(syncStampKey, stamp);
+      setLastSync(stamp);
+      setSyncError('');
+      setStatus('synced');
+    } catch (error) {
+      cloudError.current = error instanceof Error ? error.message : '无法连接云端';
+      setSyncError(cloudError.current);
+      setStatus('failed');
+    } finally {
+      inFlight.current = false;
+      void refresh();
+    }
   };
   useEffect(() => {
     void sync();
