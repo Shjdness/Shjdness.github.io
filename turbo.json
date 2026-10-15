@@ -3,6 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["API_URL", "AVATAR", "NAME", "DESCRIPTION", "PAGE_SIZE"],
       "outputs": ["dist/**"]
     },
     "dev": {

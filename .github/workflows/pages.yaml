@@ -56,6 +56,11 @@ jobs:
           NAME: VA-11-Hall-A
           PAGE_SIZE: "5"
 
+      - name: Verify frontend API target
+        run: |
+          test -n "$API_URL"
+          grep -R --fixed-strings --quiet "$API_URL" client/dist/assets
+
       - name: Add single-page-app fallback
         run: cp client/dist/index.html client/dist/404.html
 
