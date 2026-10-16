@@ -180,8 +180,8 @@
 .life-add,.calendar-tools{display:flex;gap:.6rem;margin-top:1.4rem}.life-add input,.calendar-tools input,.calendar-tools select{min-width:0;flex:1;border-radius:.8rem;padding:.65rem;background:rgb(255 255 255 / .28)}.life-add button{border-radius:.8rem;padding:.65rem 1rem;background:#e11d62;color:#fff}.habit-list{display:grid;gap:.65rem;margin-top:1rem}.habit-row{display:flex;align-items:center;gap:.8rem;padding:.9rem;border:1px solid rgb(255 255 255 / .25);border-radius:1rem;text-align:left}.habit-row span{flex:1}.habit-row strong,.habit-row small{display:block}.habit-row small{color:#64748b;font-size:.75rem}.habit-row em{color:#e11d62;font-size:.75rem;font-style:normal}.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.4rem;margin-top:1rem}.calendar-day{min-height:4rem;padding:.45rem;border-radius:.7rem;background:rgb(148 163 184 / .14);font-size:.75rem}.calendar-day b,.calendar-day span{display:block}.calendar-day span{margin-top:.35rem;color:#64748b}.calendar-day.done{background:rgb(34 197 94 / .25)}.calendar-day.missed{background:rgb(244 63 94 / .18)}
 
 /* Unified Life overview and RSS workspace */
-.life-panel:has(.life-home-layout) { width:min(96vw,82rem); }
-.life-home-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(19rem,1fr); align-items:start; gap:1.2rem; margin-top:1.2rem; }
+.life-panel:has(.life-home-layout) { width:min(96vw,112rem); overflow-x:visible; }
+.life-home-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); align-items:start; gap:1.2rem; margin-top:1.2rem; }
 .life-home-todos,.life-home-side { min-width:0; }
 .life-home-todos { padding:1.1rem; border:1px solid rgb(148 163 184 / .18); border-radius:1.2rem; background:rgb(255 255 255 / .09); }
 .life-home-todos>header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
@@ -189,7 +189,9 @@
 .life-home-todos>header a { color:#e11d62; font-size:.75rem; }
 .life-home-todos .todo-compose { margin-top:1rem; }
 .life-home-side .life-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.life-home-side .life-summary-grid>a,.life-home-side .life-overview-detail section { min-width:0; }
 .life-home-side .life-overview-detail { grid-template-columns:1fr; }
+.life-home-side .life-overview-detail a,.life-home-side .life-overview-detail p strong { white-space:normal; overflow-wrap:anywhere; }
 .life-overview-detail { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.8rem; margin-top:.85rem; }
 .life-overview-detail section { padding:1rem; border:1px solid rgb(148 163 184 / .16); border-radius:1rem; background:rgb(255 255 255 / .1); }
 .life-overview-detail h2 { display:flex; align-items:center; justify-content:space-between; gap:.7rem; margin-bottom:.65rem; font-size:.82rem; color:#e11d62; letter-spacing:.08em; text-transform:uppercase; }
@@ -297,6 +299,6 @@
 @media (max-width:640px){.header-clock{font-size:.9rem;gap:.25rem}.header-task{max-width:5rem;font-size:.8rem}}
 
 @media (max-width:980px){.life-overview-detail{grid-template-columns:1fr 1fr}.life-overview-detail section:first-child{grid-column:1/-1}}
-@media (max-width:980px){.life-home-layout{grid-template-columns:1fr}.life-home-side .life-overview-detail{grid-template-columns:repeat(2,minmax(0,1fr))}.life-home-side .life-overview-detail section:first-child{grid-column:auto}}
+@media (max-width:1200px){.life-home-layout{grid-template-columns:1fr}.life-home-side .life-overview-detail{grid-template-columns:repeat(2,minmax(0,1fr))}.life-home-side .life-overview-detail section:first-child{grid-column:auto}}
 @media (max-width:640px){.home-portals,.life-summary-grid,.calendar-detail>div{grid-template-columns:1fr}.life-nav{overflow-x:auto;flex-wrap:nowrap;justify-content:flex-start}.pomodoro-settings{grid-template-columns:1fr}.habit-week-tools strong{display:none}.calendar-day{min-height:3.2rem}.calendar-day span{display:none}.life-overview-detail{grid-template-columns:1fr}.life-overview-detail section:first-child{grid-column:auto}.todo-compose{grid-template-columns:1fr}.todo-list article>div{grid-template-columns:1fr}}
 @media (max-width:640px){.life-home-side .life-overview-detail{grid-template-columns:1fr}.life-home-todos{padding:.8rem}.life-home-todos .todo-list article{grid-template-columns:auto minmax(0,1fr) auto}.life-home-todos .todo-focus{grid-column:2}.life-home-todos .todo-remove{grid-column:3;grid-row:1}}
