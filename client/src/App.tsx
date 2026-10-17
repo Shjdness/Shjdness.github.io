@@ -15,7 +15,6 @@ import { ClientConfigContext, ConfigWrapper, defaultClientConfig } from './state
 import { Profile, ProfileContext } from './state/profile'
 import { headersWithAuth } from './utils/auth'
 import { tryInt } from './utils/int'
-import { SearchPage } from './page/search.tsx'
 import { Tips, TipsPage } from './components/tips.tsx'
 import { useTranslation } from 'react-i18next'
 import { AppearanceContext, AppearanceSettings, DEFAULT_APPEARANCE, mergeAppearance } from './state/appearance.tsx'
@@ -158,9 +157,6 @@ function App() {
             <RouteMe path="/blog/diary"><DiaryPage /></RouteMe>
             <RouteMe path="/blog/memos"><MemoPage /></RouteMe>
             <RouteMe path="/blog/gallery"><GalleryPage /></RouteMe>
-            <RouteMe path="/blog/search/:keyword">
-              {params => <SearchPage keyword={params.keyword || ""} />}
-            </RouteMe>
             <RouteMe path="/blog/writing" paddingClassName='mx-4'>
               <WritingPage />
             </RouteMe>
@@ -180,7 +176,6 @@ function App() {
             <Route path="/gallery"><Redirect to="/blog/gallery" /></Route>
 
             <Route path="/hashtag/:name"><Redirect to="/blog/timeline" /></Route>
-            <Route path="/search/:keyword">{params => <Redirect to={`/blog/search/${params.keyword || ''}`} />}</Route>
             <Route path="/writing"><Redirect to="/blog/writing" /></Route>
             <Route path="/writing/:id">{params => <Redirect to={`/blog/writing/${params.id || ''}`} />}</Route>
 

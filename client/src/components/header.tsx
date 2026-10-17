@@ -1,14 +1,11 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import ReactModal from "react-modal";
 import Popup from "reactjs-popup";
 import { removeCookie } from "typescript-cookie";
 import { Link, useLocation } from "wouter";
 import { useLoginModal } from "../hooks/useLoginModal";
 import { Profile, ProfileContext } from "../state/profile";
-import { Button } from "./button";
 import { IconSmall } from "./icon";
-import { Input } from "./input";
 import { Padding } from "./padding";
 import { usePomodoro } from "../state/pomodoro";
 
@@ -16,8 +13,6 @@ import { usePomodoro } from "../state/pomodoro";
 export function Header({ children }: { children?: React.ReactNode }) {
     const profile = useContext(ProfileContext);
     const { t } = useTranslation()
-    const [location] = useLocation()
-    const isBlog = location.startsWith('/blog')
 
     return useMemo(() => (
         <>
@@ -64,7 +59,6 @@ export function Header({ children }: { children?: React.ReactNode }) {
                                 </div>
                             </div>
                             <div className="ml-auto hidden opacity-0 md:opacity-100 duration-300 md:flex flex-row items-center space-x-2">
-                                {isBlog && <SearchButton />}
                                 <AppearanceButton profile={profile} />
                                 <UserAvatar profile={profile} />
                             </div>
@@ -74,7 +68,7 @@ export function Header({ children }: { children?: React.ReactNode }) {
             </div>
             <div className="h-20"></div>
         </>
-    ), [profile, children, isBlog, t])
+    ), [profile, children, t])
 }
 
 function NavItem({ menu, title, selected, href, when = true, onClick }: {
@@ -102,7 +96,6 @@ function NavItem({ menu, title, selected, href, when = true, onClick }: {
 function Menu() {
     const profile = useContext(ProfileContext);
     const [isOpen, setOpen] = useState(false)
-    const [location] = useLocation()
 
     function onClose() {
         document.body.style.overflow = "auto"
@@ -131,7 +124,6 @@ function Menu() {
             >
                 <div className="flex flex-col bg-w rounded-xl p-2 mt-4 w-[50vw]">
                         <div className="flex flex-row justify-end space-x-2">
-                            {location.startsWith('/blog') && <SearchButton onClose={onClose} />}
                             <AppearanceButton profile={profile} onClose={onClose} />
                             <UserAvatar profile={profile} />
                     </div>
@@ -167,7 +159,7 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     const isBlog = location.startsWith('/blog');
     const isLife = location.startsWith('/life');
     const knownBlogSections = ['/blog/articles', '/blog/timeline', '/blog/diary', '/blog/memos', '/blog/drafts', '/blog/gallery', '/blog/writing'];
-    const isArticle = location === '/blog/articles' || location.startsWith('/blog/feed/') || location.startsWith('/blog/search/') || (
+    const isArticle = location === '/blog/articles' || location.startsWith('/blog/feed/') || (
         location.startsWith('/blog/') && !knownBlogSections.some(path => location === path || location.startsWith(`${path}/`)) && !location.startsWith('/blog/tag/')
     );
     return (
@@ -190,64 +182,6 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
                 <NavItem menu={menu} onClick={onClick} title="RSS" selected={location === '/life/rss'} href="/life/rss" />
             </>}
         </>
-    )
-}
-
-function SearchButton({ className, onClose }: { className?: string, onClose?: () => void }) {
-    const { t } = useTranslation()
-    const [isOpened, setIsOpened] = useState(false);
-    const [_, setLocation] = useLocation()
-    const [value, setValue] = useState('')
-    const label = t('article.search.title')
-    const onSearch = () => {
-        const key = `${encodeURIComponent(value)}`
-        setTimeout(() => {
-            setIsOpened(false)
-            if (value.length !== 0)
-                onClose?.()
-        }, 100)
-        if (value.length !== 0)
-            setLocation(`/blog/search/${key}`)
-    }
-    return (<div className={className + " flex flex-row items-center gap-2"}>
-        <button onClick={() => setIsOpened(true)} title={label} aria-label={label}
-            className="flex rounded-full border dark:border-neutral-600 px-2 bg-w aspect-[1] items-center justify-center t-primary bg-button">
-            <i className="ri-search-line"></i>
-        </button>
-        <ReactModal
-            isOpen={isOpened}
-            style={{
-                content: {
-                    top: "20%",
-                    left: "50%",
-                    right: "auto",
-                    bottom: "auto",
-                    marginRight: "-50%",
-                    transform: "translate(-50%, -50%)",
-                    padding: "0",
-                    border: "none",
-                    borderRadius: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    background: "none",
-                },
-                overlay: {
-                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                    zIndex: 1000,
-                },
-            }}
-            onRequestClose={() => setIsOpened(false)}
-        >
-            <div className="bg-w w-full flex flex-row items-center justify-between p-4 space-x-4">
-                <Input value={value} setValue={setValue} placeholder={t('article.search.placeholder')}
-                    autofocus
-                    onSubmit={onSearch} />
-                <Button title={value.length === 0 ? t("close") : label} onClick={onSearch} />
-            </div>
-        </ReactModal>
-    </div>
     )
 }
 

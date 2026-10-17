@@ -1,4 +1,4 @@
-import { and, count, desc, eq, like, or } from "drizzle-orm";
+import { and, count, desc, eq, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
 import { feeds, visits } from "../db/schema";
@@ -491,103 +491,6 @@ export function FeedService() {
           await clearFeedCache(id_num, feed.alias, null);
           return "Deleted";
         }),
-    )
-    .get(
-      "/search/:keyword",
-      async ({ admin, params: { keyword }, query: { page, limit } }) => {
-        keyword = decodeURI(keyword);
-        const cache = PublicCache();
-        const page_num = (page ? (page > 0 ? page : 1) : 1) - 1;
-        const limit_num = limit ? (+limit > 50 ? 50 : +limit) : 20;
-        if (keyword === undefined || keyword.trim().length === 0) {
-          return {
-            size: 0,
-            data: [],
-            hasNext: false,
-          };
-        }
-        const cacheKey = `search_${admin ? "admin" : "public"}_${keyword}`;
-        const searchKeyword = `%${keyword}%`;
-        const matchingText = or(
-          like(feeds.title, searchKeyword),
-          like(feeds.content, searchKeyword),
-          like(feeds.summary, searchKeyword),
-          like(feeds.alias, searchKeyword),
-        );
-        const feed_list = (
-          await cache.getOrSet(cacheKey, () =>
-            db.query.feeds.findMany({
-              where: admin
-                ? matchingText
-                : and(
-                    eq(feeds.draft, 0),
-                    eq(feeds.listed, 1),
-                    or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")),
-                    matchingText,
-                  ),
-              columns: admin
-                ? undefined
-                : {
-                    draft: false,
-                    listed: false,
-                  },
-              with: {
-                hashtags: {
-                  columns: {},
-                  with: {
-                    hashtag: {
-                      columns: { id: true, name: true },
-                    },
-                  },
-                },
-                user: {
-                  columns: { id: true, username: true, avatar: true },
-                },
-              },
-              orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
-            }),
-          )
-        ).map(({ content, hashtags, summary, ...other }) => {
-          return {
-            summary:
-              summary.length > 0
-                ? summary
-                : content.length > 100
-                  ? content.slice(0, 100)
-                  : content,
-            hashtags: hashtags.map(({ hashtag }) => hashtag),
-            ...other,
-          };
-        });
-        if (feed_list.length <= page_num * limit_num) {
-          return {
-            size: feed_list.length,
-            data: [],
-            hasNext: false,
-          };
-        } else if (feed_list.length <= page_num * limit_num + limit_num) {
-          return {
-            size: feed_list.length,
-            data: feed_list.slice(page_num * limit_num),
-            hasNext: false,
-          };
-        } else {
-          return {
-            size: feed_list.length,
-            data: feed_list.slice(
-              page_num * limit_num,
-              page_num * limit_num + limit_num,
-            ),
-            hasNext: true,
-          };
-        }
-      },
-      {
-        query: t.Object({
-          page: t.Optional(t.Numeric()),
-          limit: t.Optional(t.Numeric()),
-        }),
-      },
     );
 }
 
@@ -598,7 +501,6 @@ async function clearFeedCache(
 ) {
   const cache = PublicCache();
   await cache.deletePrefix("feeds_");
-  await cache.deletePrefix("search_");
   await cache.delete(`feed_${id}`, false);
   if (alias === newAlias) return;
   if (alias) await cache.delete(`feed_${alias}`, false);
