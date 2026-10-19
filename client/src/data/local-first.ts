@@ -68,7 +68,6 @@ export async function setCached<T>(key: string, value: T) {
   const scopedKey = scopedCacheKey(key);
   if (!scopedKey) throw new Error('Authenticated account required for private cache');
   await storeRequest('cache', 'readwrite', store => store.put({ key: scopedKey, value, updatedAt: Date.now() }));
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
 export async function clearLegacyRssCaches() {
@@ -141,6 +140,7 @@ export async function processSyncQueue(
 
 export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
   const queue = await getSyncQueue();
+  if (!queue.length) return { total: 0, synced: 0, failed: 0, offline: !navigator.onLine };
   const result = await processSyncQueue(queue, navigator.onLine, send, {
     markSyncing: async item => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined })); },
     remove: async id => { await storeRequest('sync_queue', 'readwrite', store => store.delete(id)); },

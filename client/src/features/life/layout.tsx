@@ -21,7 +21,7 @@ export function LifeSyncStatus() {
   const syncStampKey = accountId ? accountStorageKey('shjdshy-last-sync', accountId) : 'shjdshy-last-sync:unauthed';
   const [pending, setPending] = useState(0);
   const [legacyPending, setLegacyPending] = useState(0);
-  const [status, setStatus] = useState<'synced' | 'pending' | 'syncing' | 'failed' | 'offline'>(navigator.onLine ? 'syncing' : 'offline');
+  const [status, setStatus] = useState<'synced' | 'pending' | 'syncing' | 'failed' | 'offline'>(navigator.onLine ? (localStorage.getItem(syncStampKey) ? 'synced' : 'pending') : 'offline');
   const [lastSync, setLastSync] = useState(() => localStorage.getItem(syncStampKey) || '');
   const [syncError, setSyncError] = useState('');
   const inFlight = useRef(false);
@@ -43,10 +43,10 @@ export function LifeSyncStatus() {
     if (inFlight.current) return;
     if (!navigator.onLine) { setStatus('offline'); await refresh(); return; }
     inFlight.current = true;
-    setStatus('syncing');
     cloudError.current = '';
     verified.current = false;
     try {
+      if ((await getSyncQueue()).length) setStatus('syncing');
       const result = await flushSyncQueue(sendQueuedMutation);
       if (result.failed) { await refresh(); setStatus('failed'); return; }
       const todos = await lifeApi<unknown>('/life/todos');
@@ -75,7 +75,7 @@ export function LifeSyncStatus() {
     const unsubscribe = onLocalChange(() => { void refresh(); if (!inFlight.current) void sync(); });
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); unsubscribe(); };
   }, []);
-  const labels = { synced: `已同步${lastSync ? ` · ${new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}`, pending: `${pending} 项待同步`, syncing: '正在同步…', failed: '同步失败 · 点击重试', offline: `${pending} 项离线保存` };
+  const labels = { synced: `已同步${lastSync ? ` · ${new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}`, pending: pending ? `${pending} 项待同步` : '正在核验云端…', syncing: '正在同步…', failed: '同步失败 · 点击重试', offline: `${pending} 项离线保存` };
   const icons = { synced: 'ri-cloud-line', pending: 'ri-time-line', syncing: 'ri-loader-4-line', failed: 'ri-error-warning-line', offline: 'ri-cloud-off-line' };
   return <button className={`life-sync-status ${status}`} onClick={() => void sync()} disabled={status === 'syncing'} title={legacyPending ? `旧版未标记账号的离线操作有 ${legacyPending} 条，已保留且不会自动提交。请核对所属账号后处理。` : syncError || '推送本地更改并拉取云端最新数据'}><i className={`${icons[status]} ${status === 'syncing' ? 'spin' : ''}`} /><span>{labels[status]}{legacyPending ? ` · ${legacyPending} 条旧离线记录待核对` : ''}</span></button>;
 }
