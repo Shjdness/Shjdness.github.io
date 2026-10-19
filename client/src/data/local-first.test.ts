@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { accountIdFromToken, accountStorageKey, processSyncQueue, queueForAccount, type SyncItem } from './local-first';
+import { accountIdFromToken, accountStorageKey, hasPendingSync, processSyncQueue, queueForAccount, type SyncItem } from './local-first';
 
 const item = (id: number): SyncItem => ({ id, entity: 'todo', action: 'create', payload: {}, createdAt: 1, retryCount: 0, status: 'pending' });
 
 describe('sync queue processor', () => {
+  it('ignores empty and failed-only queues for automatic uploads', () => {
+    expect(hasPendingSync([])).toBe(false);
+    expect(hasPendingSync([{ ...item(1), status: 'failed' }])).toBe(false);
+    expect(hasPendingSync([item(1)])).toBe(true);
+  });
   it('isolates offline writes by the account in the current token', () => {
     const token = `x.${btoa(JSON.stringify({ id: 1 })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}.x`;
     expect(accountIdFromToken(token)).toBe(1);
@@ -15,13 +20,13 @@ describe('sync queue processor', () => {
   });
   it('does not send while offline', async () => {
     const send = vi.fn(async () => true);
-    const storage = { markSyncing: vi.fn(), remove: vi.fn(), markFailed: vi.fn(async (_item: SyncItem, _error: string) => undefined) };
+    const storage = { markSyncing: vi.fn(), remove: vi.fn(), markFailed: vi.fn(async (entry: SyncItem, message: string) => { void entry; void message; }) };
     expect(await processSyncQueue([item(1)], false, send, storage)).toEqual({ total: 1, synced: 0, failed: 1, offline: true });
     expect(send).not.toHaveBeenCalled();
   });
 
   it('removes only server-confirmed writes', async () => {
-    const storage = { markSyncing: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), markFailed: vi.fn(async (_item: SyncItem, _error: string) => undefined) };
+    const storage = { markSyncing: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), markFailed: vi.fn(async (entry: SyncItem, message: string) => { void entry; void message; }) };
     const result = await processSyncQueue([item(1), item(2)], true, async current => current.id === 1, storage);
     expect(result).toEqual({ total: 2, synced: 1, failed: 1, offline: false });
     expect(storage.remove).toHaveBeenCalledWith(1);
@@ -29,7 +34,7 @@ describe('sync queue processor', () => {
   });
 
   it('retains failed writes with a bounded error message', async () => {
-    const storage = { markSyncing: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), markFailed: vi.fn(async (_item: SyncItem, _error: string) => undefined) };
+    const storage = { markSyncing: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), markFailed: vi.fn(async (entry: SyncItem, message: string) => { void entry; void message; }) };
     await processSyncQueue([item(1)], true, async () => { throw new Error('x'.repeat(300)); }, storage);
     const message = storage.markFailed.mock.calls[0]?.[1];
     expect(message).toHaveLength(240);

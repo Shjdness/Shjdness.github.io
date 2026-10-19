@@ -7,6 +7,8 @@ type CacheValue<T> = { key: string; value: T; updatedAt: number };
 const DB_NAME = 'shjdshy-life';
 const DB_VERSION = 2;
 const CHANGE_EVENT = 'shjdshy-local-change';
+type LocalChangeKind = 'cache' | 'queue';
+const announceChange = (kind: LocalChangeKind) => window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: kind }));
 
 export function accountIdFromToken(token?: string) {
   if (!token) return null;
@@ -68,7 +70,7 @@ export async function setCached<T>(key: string, value: T) {
   const scopedKey = scopedCacheKey(key);
   if (!scopedKey) throw new Error('Authenticated account required for private cache');
   await storeRequest('cache', 'readwrite', store => store.put({ key: scopedKey, value, updatedAt: Date.now() }));
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+  announceChange('cache');
 }
 
 export async function clearLegacyRssCaches() {
@@ -86,7 +88,7 @@ export async function enqueueMutation(entity: SyncEntity, action: string, payloa
   const ownerId = currentAccountId();
   if (!ownerId) throw new Error('Authenticated account required for offline write');
   await storeRequest('sync_queue', 'readwrite', store => store.add({ ownerId, entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+  announceChange('queue');
 }
 
 export async function getSyncQueue() {
@@ -95,6 +97,8 @@ export async function getSyncQueue() {
   const queue = await storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
   return queueForAccount(queue, ownerId);
 }
+
+export const hasPendingSync = (queue: SyncItem[]) => queue.some(item => item.status !== 'failed');
 
 export const queueForAccount = (queue: SyncItem[], ownerId: number) => queue.filter(item => item.ownerId === ownerId);
 
@@ -141,16 +145,18 @@ export async function processSyncQueue(
 
 export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
   const queue = await getSyncQueue();
+  if (!queue.length) return { total: 0, synced: 0, failed: 0, offline: !navigator.onLine };
   const result = await processSyncQueue(queue, navigator.onLine, send, {
     markSyncing: async item => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined })); },
     remove: async id => { await storeRequest('sync_queue', 'readwrite', store => store.delete(id)); },
     markFailed: async (item, lastError) => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError })); },
   });
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+  announceChange('queue');
   return result;
 }
 
-export const onLocalChange = (listener: () => void) => {
-  window.addEventListener(CHANGE_EVENT, listener);
-  return () => window.removeEventListener(CHANGE_EVENT, listener);
+export const onLocalChange = (listener: (kind: LocalChangeKind) => void) => {
+  const handler = (event: Event) => listener((event as CustomEvent<LocalChangeKind>).detail);
+  window.addEventListener(CHANGE_EVENT, handler);
+  return () => window.removeEventListener(CHANGE_EVENT, handler);
 };
