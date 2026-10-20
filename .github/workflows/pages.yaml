@@ -60,8 +60,8 @@ jobs:
         run: bun run b
         env:
           AVATAR: https://shjdness.github.io/avatar.jpg
-          DESCRIPTION: Hasta que Llegue la Muerte
-          NAME: VA-11-Hall-A
+          DESCRIPTION: I Love the world and everything in it
+          NAME: 夏令时电波
           PAGE_SIZE: "5"
 
       - name: Verify frontend API target

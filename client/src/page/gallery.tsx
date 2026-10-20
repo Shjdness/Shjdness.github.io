@@ -44,7 +44,7 @@ function extractImageUrls(content: string) {
 
 const featuredImages: GalleryImage[] = [
   {
-    src: "/background-home-v2.jpg",
+    src: "/background-garden.png",
     title: "首页 · 花园",
     createdAt: new Date("2026-09-18T00:00:00+08:00"),
     order: 0,
@@ -165,7 +165,7 @@ export function GalleryPage() {
         <title>{`影集 - ${process.env.NAME}`}</title>
         <meta property="og:site_name" content={siteName} />
         <meta property="og:title" content="影集 Gallery" />
-        <meta property="og:image" content="/background-home-v2.jpg" />
+        <meta property="og:image" content="/background-garden.png" />
       </Helmet>
 
       <main className="gallery-page wauto mx-auto pb-12 ani-show">

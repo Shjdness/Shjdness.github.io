@@ -66,7 +66,7 @@ export function useLoginModal(onClose?: () => void) {
                         <img src="/guest-avatar.jpg" alt="悲若兮" className="h-14 w-14 rounded-2xl object-cover border border-white/30" />
                         <div>
                             <p className="text-xl font-semibold">{t('login.guest.name')}</p>
-                            <p className="text-xs t-secondary">Hasta que Llegue la Muerte</p>
+                            <p className="text-xs t-secondary">I Love the world and everything in it</p>
                         </div>
                     </div>
                     <div className="w-full space-y-3">
