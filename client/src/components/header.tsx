@@ -16,11 +16,11 @@ export function Header({ children }: { children?: React.ReactNode }) {
 
     return useMemo(() => (
         <>
-            <div className="fixed z-40">
+            <div className="site-header fixed z-40">
                 <div className="w-screen">
                     <Padding className="mx-4 mt-4">
-                        <div className="w-full flex justify-between items-center">
-                            <div className="hidden xl:flex items-center gap-4 mr-auto">
+                        <div className="site-header-row">
+                            <div className="site-header-brand">
                             <Link aria-label={t('home')} href="/"
                                 className="flex flex-row items-center">
                                 <img src={process.env.AVATAR} alt="Avatar" className="w-12 h-12 rounded-2xl border-2" />
@@ -35,15 +35,14 @@ export function Header({ children }: { children?: React.ReactNode }) {
                             </Link>
                             <SpaceSwitch />
                             </div>
-                            <div
-                                className="w-full md:w-max transition-all duration-500 md:absolute md:left-1/2 md:translate-x-[-50%] flex-row justify-center items-center">
+                            <div className="site-header-main">
                                 <div
-                                    className="glass-panel flex flex-row items-center bg-w t-primary rounded-full px-2 shadow-xl shadow-light">
+                                    className="site-header-pill glass-panel bg-w t-primary rounded-full shadow-xl shadow-light">
                                     <Link aria-label={t('home')} href="/"
-                                        className="visible opacity-100 md:hidden md:opacity-0 duration-300 mr-auto flex flex-row items-center py-2">
+                                        className="site-header-compact-home">
                                         <img src={process.env.AVATAR} alt="Avatar"
                                             className="w-10 h-10 rounded-full border-2" />
-                                        <div className="flex flex-col justify-center items-start mx-2">
+                                        <div className="site-header-compact-copy">
                                             <p className="text-sm font-bold">
                                                 {process.env.NAME}
                                             </p>
@@ -52,13 +51,13 @@ export function Header({ children }: { children?: React.ReactNode }) {
                                             </p>
                                         </div>
                                     </Link>
-                                    <div className="hidden md:flex xl:hidden"><SpaceSwitch /></div>
-                                    <NavBar menu={false} />
+                                    <div className="site-header-compact-switch"><SpaceSwitch /></div>
+                                    <nav className="site-header-desktop-nav" aria-label="栏目"><NavBar menu={false} /></nav>
                                     {children}
                                     <Menu />
                                 </div>
                             </div>
-                            <div className="ml-auto hidden opacity-0 md:opacity-100 duration-300 md:flex flex-row items-center space-x-2">
+                            <div className="site-header-actions">
                                 <AppearanceButton profile={profile} />
                                 <UserAvatar profile={profile} />
                             </div>
@@ -83,7 +82,7 @@ function NavItem({ menu, title, selected, href, when = true, onClick }: {
         <>
             {when &&
                 <Link href={href}
-                    className={`${menu ? "" : "hidden"} md:block cursor-pointer hover:text-theme duration-300 px-2 py-4 md:px-2.5 lg:px-4 text-xs lg:text-sm ${selected ? "text-theme" : "dark:text-white"}`}
+                    className={`${menu ? "site-menu-link" : "site-desktop-link"} cursor-pointer hover:text-theme duration-300 ${selected ? "text-theme" : "dark:text-white"}`}
                     state={{ animate: true }}
                     onClick={onClick}
                 >
@@ -103,11 +102,11 @@ function Menu() {
     }
 
     return (
-        <div className="visible md:hidden flex flex-row items-center">
+        <div className="site-header-menu">
             <Popup
                 arrow={false}
                 trigger={<div>
-                    <button onClick={() => setOpen(true)}
+                    <button onClick={() => setOpen(true)} aria-label="打开栏目菜单" aria-expanded={isOpen}
                         className="w-10 h-10 rounded-full flex flex-row items-center justify-center">
                         <i className="ri-menu-line ri-lg" />
                     </button>
@@ -122,7 +121,7 @@ function Menu() {
                 closeOnEscape
                 overlayStyle={{ background: "rgba(0,0,0,0.3)" }}
             >
-                <div className="flex flex-col bg-w rounded-xl p-2 mt-4 w-[50vw]">
+                <div className="site-header-popover flex flex-col bg-w rounded-xl p-2 mt-4">
                         <div className="flex flex-row justify-end space-x-2">
                             <AppearanceButton profile={profile} onClose={onClose} />
                             <UserAvatar profile={profile} />
