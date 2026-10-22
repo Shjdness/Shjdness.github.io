@@ -68,12 +68,12 @@ h3,
 }
 
 .site-shell--blog::before {
-  background-image: url("/background-inner.jpg");
+  background-image: url("/background-inner-20261022.jpg");
   background-position: center center;
 }
 
 .site-shell--life::before {
-  background-image: url("/background-inner.jpg");
+  background-image: url("/background-inner-20261022.jpg");
   background-position: center center;
   filter: blur(var(--background-blur)) brightness(var(--background-brightness)) saturate(var(--background-saturation));
 }
@@ -160,8 +160,8 @@ h3,
     background-position: 38% center;
   }
 
-  .site-shell--inner::before {
-    background-position: 50% center;
+  .site-shell--blog::before, .site-shell--life::before {
+    background-position: 70% center;
   }
 }
 

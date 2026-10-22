@@ -17,14 +17,15 @@ const request = async (url, options = {}, timeoutMs = 45_000) => {
   return response;
 };
 
-const fetchFeed = async (url) => {
+const fetchFeed = async (source) => {
   let lastStatus = 0;
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const response = await fetch(url, {
-      headers: { Accept: "application/atom+xml", "User-Agent": "Mozilla/5.0" },
+    const response = await fetch(source.feedUrl, {
+      headers: { Accept: "application/atom+xml", "User-Agent": "Mozilla/5.0", ...(source.etag ? {'If-None-Match':source.etag} : {}), ...(source.lastModified ? {'If-Modified-Since':source.lastModified} : {}) },
       signal: AbortSignal.timeout(30_000),
     });
-    if (response.ok) return response.text();
+    if (response.status === 304) return {feed:'',notModified:true};
+    if (response.ok) return {feed:await response.text(),etag:response.headers.get('etag') || '',lastModified:response.headers.get('last-modified') || ''};
     lastStatus = response.status;
     await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
   }
@@ -41,18 +42,18 @@ let failed = 0;
 
 const syncOne = async (source) => {
   try {
-    const feed = await fetchFeed(source.feedUrl);
+    const feed = await fetchFeed(source);
     const response = await request(
       `${endpoint}/rss/sync/ingest`,
       {
         method: "POST",
         headers: { ...auth, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: source.id, feed }),
+        body: JSON.stringify({ subscriptionId: source.id, ...feed }),
       },
       60_000,
     );
     const result = await response.json();
-    console.log(`OK ${source.title || source.id}: +${result.added || 0}`);
+    console.log(`OK source=${source.id}: added=${result.added || 0}, updated=${result.updated || 0}, unchanged=${result.unchanged || 0}, rowsWritten=${result.rowsWritten || 0}`);
     succeeded += 1;
   } catch (error) {
     const message =

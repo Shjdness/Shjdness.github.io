@@ -3,7 +3,7 @@ const STATIC_CACHE = `shjdness-static-${CACHE_VERSION}`;
 const PAGE_CACHE = `shjdness-pages-${CACHE_VERSION}`;
 const FIXED_ASSETS = [
   '/', '/index.html', '/manifest.webmanifest', '/favicon.png', '/avatar.jpg', '/guest-avatar.jpg',
-  '/background-garden.png', '/background-inner.jpg',
+  '/background-garden.png', '/background-inner-20261022.jpg',
   '/cantarell_5.0.12_latin-400-normal.woff2', '/cantarell_5.0.13_latin-400-normal.woff',
 ];
 

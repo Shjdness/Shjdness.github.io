@@ -16,7 +16,8 @@ S3_FORCE_PATH_STYLE = "false"
 WEBHOOK_URL = "https://<YourWebhookURL>"
 
 [triggers]
-crons = ["15 20 * * *"]
+# GitHub Actions owns the single daily feed poll; WebSub remains push-driven.
+crons = []
 
 [[d1_databases]]
 binding = "DB"

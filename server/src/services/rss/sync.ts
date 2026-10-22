@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { DB } from "../../_worker";
-import { rssItems, rssSubscriptions } from "../../db/schema";
+import { rssSubscriptions } from "../../db/schema";
+import { getEnv } from '../../utils/di';
+import { ingestVideos } from './ingestion';
 import { FEED, channelIdFromUrl, fetchText, isChannelId, parseYouTubeFeed, resolveChannelId } from "./youtube";
 import { subscribeWebSub } from "./websub";
 
@@ -8,8 +10,11 @@ export async function ingest(
   db: DB,
   subscription: typeof rssSubscriptions.$inferSelect,
   xml: string,
+  kind: 'feed' | 'push' = 'feed',
 ) {
+  if (xml.length > 2_000_000) throw Error('Feed is too large');
   const parsed = parseYouTubeFeed(xml);
+  if (isChannelId(subscription.externalId) && parsed.channelId && parsed.channelId !== subscription.externalId) throw Error('Feed channel does not match subscription');
   // Older imported records did not always store YouTube's canonical UC… id.
   // The official Atom feed is the source of truth, so repair legacy metadata
   // instead of rejecting every otherwise valid refresh.
@@ -24,44 +29,8 @@ export async function ingest(
     if (!duplicate || duplicate.id === subscription.id)
       canonicalExternalId = parsed.channelId;
   }
-  let added = 0;
+  const result = await ingestVideos(getEnv().DB, subscription, parsed.videos, kind);
   const now = new Date();
-  for (const video of parsed.videos) {
-    const before = await db.query.rssItems.findFirst({
-      where: and(
-        eq(rssItems.ownerId, subscription.ownerId),
-        eq(rssItems.externalId, video.externalId),
-      ),
-    });
-    const values = {
-        subscriptionId: subscription.id,
-        ownerId: subscription.ownerId,
-        externalId: video.externalId,
-        title: video.title,
-        url: video.url,
-        summary: video.summary,
-        author: video.author,
-        embedUrl: video.embedUrl,
-        thumbnailUrl: video.thumbnailUrl,
-        publishedAt: video.publishedAt,
-        updatedAt: now,
-      };
-    await db.insert(rssItems).values(values).onConflictDoUpdate({
-      target: [rssItems.ownerId, rssItems.externalId],
-      set: {
-        subscriptionId: subscription.id,
-        title: video.title,
-        summary: video.summary,
-        author: video.author,
-        url: video.url,
-        embedUrl: video.embedUrl,
-        thumbnailUrl: video.thumbnailUrl,
-        publishedAt: video.publishedAt,
-        updatedAt: now,
-      },
-    });
-    if (!before) added += 1;
-  }
   await db
     .update(rssSubscriptions)
     .set({
@@ -74,7 +43,7 @@ export async function ingest(
       updatedAt: now,
     })
     .where(eq(rssSubscriptions.id, subscription.id));
-  return { added, unchanged: added === 0 };
+  return result;
 }
 
 export async function canonicalFeed(

@@ -34,6 +34,7 @@
 .site-shell::after { background: rgb(34 55 75 / .09); }
 [data-color-mode="dark"] .site-shell::after { background: rgb(3 12 25 / .2); }
 .site-shell--home::before { filter: blur(var(--background-blur)) brightness(.95) saturate(.92); }
+.site-shell--blog::before, .site-shell--life::before { filter: brightness(var(--background-brightness)) saturate(var(--background-saturation)); }
 .site-shell--home::after { background: rgb(42 65 82 / .08); }
 [data-color-mode="dark"] .site-shell--home::after { background: rgb(3 12 25 / .15); }
 

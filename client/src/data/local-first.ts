@@ -75,7 +75,7 @@ export async function clearLegacyRssCaches() {
   const scopedPrefix = ownerId ? accountStorageKey('life:rss:', ownerId) : '';
   const keys = await storeRequest<IDBValidKey[]>('cache', 'readonly', store => store.getAllKeys());
   for (const key of keys) {
-    if (typeof key === 'string' && ((key.startsWith('life:rss:') && !key.startsWith('life:rss:youtube:v3:')) || (scopedPrefix && key.startsWith(scopedPrefix) && !key.startsWith(`${scopedPrefix}youtube:v3:`)))) {
+    if (typeof key === 'string' && ((key.startsWith('life:rss:') && !key.startsWith('life:rss:youtube:v4:')) || (scopedPrefix && key.startsWith(scopedPrefix) && !key.startsWith(`${scopedPrefix}youtube:v4:`)))) {
       await storeRequest('cache', 'readwrite', store => store.delete(key));
     }
   }

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql, SQL } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../../_worker";
 import { rssItems, rssSourceGroups, rssSubscriptions } from "../../db/schema";
@@ -7,6 +7,8 @@ import { getDB, getEnv } from "../../utils/di";
 import { canonicalFeed, ingest, refreshMany, refreshOne } from "./sync";
 import { resolveYouTubeSource } from "./youtube";
 import { subscribeWebSub } from "./websub";
+import { historyRoutes } from './history';
+import { rssStorage } from './storage';
 
 export function RssService() {
   const db: DB = getDB();
@@ -31,7 +33,7 @@ export function RssService() {
     return true;
   };
   return new Elysia({ aot: false }).use(setup()).group("/rss", (group) =>
-    group
+    group.use(historyRoutes(db, syncAuthorized))
       .get("/sync/sources", async ({ headers, set }) => {
         if (!syncAuthorized(headers.authorization)) {
           set.status = 401;
@@ -47,6 +49,8 @@ export function RssService() {
           id: number;
           title: string;
           feedUrl: string;
+          etag: string;
+          lastModified: string;
         }> = [];
         for (const source of rows) {
           try {
@@ -54,6 +58,8 @@ export function RssService() {
               id: source.id,
               title: source.alias || source.title,
               feedUrl: await canonicalFeed(db, source),
+              etag: source.etag,
+              lastModified: source.lastModified,
             });
           } catch {
             // Invalid legacy rows stay visible in source settings for manual
@@ -82,11 +88,12 @@ export function RssService() {
           }
           try {
             await canonicalFeed(db, source);
-            const result = await ingest(db, source, body.feed);
+            const result = body.notModified ? {added:0,updated:0,unchanged:0,rowsWritten:0} : await ingest(db, source, body.feed);
+            await db.update(rssSubscriptions).set({etag:body.etag ?? source.etag,lastModified:body.lastModified ?? source.lastModified,lastFetchedAt:new Date(),lastError:''}).where(eq(rssSubscriptions.id,source.id));
             try {
               await subscribeWebSub(db, source, new URL(request.url).origin);
             } catch {
-              // The two-hour reconciliation remains the fallback.
+              // The single daily reconciliation remains the fallback.
             }
             return result;
           } catch (error) {
@@ -108,6 +115,9 @@ export function RssService() {
           body: t.Object({
             subscriptionId: t.Number(),
             feed: t.String({ maxLength: 2_000_000 }),
+            notModified: t.Optional(t.Boolean()),
+            etag: t.Optional(t.String({maxLength:500})),
+            lastModified: t.Optional(t.String({maxLength:100})),
           }),
         },
       )
@@ -175,7 +185,7 @@ export function RssService() {
           return "Not found";
         }
         try {
-          await ingest(db, source, await request.text());
+            await ingest(db, source, await request.text(), 'push');
           return "OK";
         } catch {
           set.status = 422;
@@ -185,19 +195,7 @@ export function RssService() {
       .get("/storage", async ({ uid, lifeAccess, set }) => {
         if (!requireLife({ uid, lifeAccess, set }))
           return "Private Life access is required";
-        const estimate = await getEnv()
-          .DB.prepare(
-            "SELECT COALESCE(SUM(length(title)+length(url)+length(summary)+length(author)+length(embed_url)+length(thumbnail_url)), 0) AS bytes FROM rss_items WHERE owner_id = ?",
-          )
-          .bind(uid!)
-          .first<{ bytes: number }>();
-        return {
-          backend: {
-            usedBytes: Number(estimate?.bytes || 0),
-            limitBytes: 500 * 1024 * 1024,
-          },
-          rssBytes: Number(estimate?.bytes || 0),
-        };
+        return rssStorage(getEnv().DB, uid!);
       })
       .get(
         "/",
@@ -230,6 +228,19 @@ export function RssService() {
                 ? inArray(rssItems.subscriptionId, sourceIds)
                 : eq(rssItems.subscriptionId, -1),
             );
+          const years = await db.selectDistinct({year:sql<string>`strftime('%Y',${rssItems.publishedAt},'unixepoch')`}).from(rssItems).where(and(...conditions,sql`${rssItems.publishedPrecision} <> 'unknown'`)).orderBy(sql`1 DESC`);
+          if (query.q?.trim()) {
+            const needle = query.q.trim().slice(0,120);
+            // Literal substring matching also avoids D1's short LIKE-pattern
+            // byte limit for longer Chinese keywords.
+            conditions.push(sql`(instr(lower(${rssItems.title}),lower(${needle}))>0 OR instr(lower(${rssItems.summary}),lower(${needle}))>0 OR instr(lower(${rssItems.author}),lower(${needle}))>0)`);
+          }
+          if (query.year === 'unknown') conditions.push(eq(rssItems.publishedPrecision,'unknown'));
+          else if (query.year) {
+            const year = Number(query.year);
+            if (!Number.isInteger(year) || year < 2005 || year > 2100) { set.status=400; return 'Invalid year'; }
+            conditions.push(sql`${rssItems.publishedAt} >= ${Math.floor(Date.UTC(year,0,1)/1000)} AND ${rssItems.publishedAt} < ${Math.floor(Date.UTC(year+1,0,1)/1000)} AND ${rssItems.publishedPrecision} <> 'unknown'`);
+          }
           const where = and(...conditions);
           const [groups, items, filtered, all, unread, starred] =
             await Promise.all([
@@ -265,6 +276,7 @@ export function RssService() {
           return {
             subscriptions,
             groups,
+            years: years.map(value=>value.year).filter(Boolean),
             items,
             counts: {
               all: all[0]?.value || 0,
@@ -286,6 +298,8 @@ export function RssService() {
             category: t.Optional(t.String()),
             limit: t.Optional(t.String()),
             offset: t.Optional(t.String()),
+            q: t.Optional(t.String({maxLength:120})),
+            year: t.Optional(t.String({maxLength:7})),
           }),
         },
       )

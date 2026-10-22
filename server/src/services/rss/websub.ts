@@ -14,6 +14,8 @@ export async function subscribeWebSub(
     ? `${origin}/rss/websub/${subscription.id}/${key}`
     : subscription.websubCallback;
   if (!callback) return false;
+  // A healthy lease lasts ten days; do not renew it on every daily feed read.
+  if (subscription.websubCallback === callback && subscription.websubLeaseExpiresAt && subscription.websubLeaseExpiresAt.getTime() > Date.now() + 2 * 86400000) return true;
   // The hub can verify the callback immediately. Persist the secret first so
   // that the verification request cannot race the database update.
   await db

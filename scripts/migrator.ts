@@ -61,7 +61,7 @@ WEBHOOK_URL = "${WEBHOOK_URL}"
 mode = "smart"
 
 [triggers]
-crons = ["15 20 * * *"]
+crons = []
 `))
 
 type D1Item = {
@@ -157,12 +157,33 @@ try {
         // Contents are compared in memory and are never printed to the deploy log.
         return JSON.stringify(rows);
     };
+    const rssSnapshot = async () => {
+        const query = 'SELECT owner_id,external_id,url,embed_url,read,starred,read_at,starred_at FROM rss_items ORDER BY id';
+        const output = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${query} --json`.quiet().text();
+        const rows = (JSON.parse(output) as Array<{results?: Array<Record<string, any>>}>)[0]?.results;
+        if (!Array.isArray(rows)) throw Error('RSS preservation audit failed');
+        const merged = new Map<string, number[]>();
+        for (const row of rows) {
+            const id = String(row.embed_url || '').match(/\/embed\/([A-Za-z0-9_-]{11})/)?.[1]
+                || String(row.url || '').match(/(?:[?&]v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1]
+                || String(row.external_id).replace(/^yt:video:/,'');
+            const key = `${row.owner_id}:${id}`;
+            const flags = merged.get(key) || [0,0,0,0];
+            merged.set(key, [Math.max(flags[0],row.read || 0),Math.max(flags[1],row.starred || 0),Math.max(flags[2],row.read_at || 0),Math.max(flags[3],row.starred_at || 0)]);
+        }
+        return JSON.stringify([...merged.entries()].sort((a,b)=>a[0].localeCompare(b[0])));
+    };
     for (const file of sqlFiles) {
         const beforeTodos = file.startsWith('0024-') ? await todoSnapshot() : null;
+        const beforeRss = file.startsWith('0025-') ? await rssSnapshot() : null;
         await $`bunx wrangler d1 execute ${DB_NAME} --remote --file ./server/sql/${file} -y`
         if (beforeTodos !== null) {
             if (beforeTodos !== await todoSnapshot()) throw new Error('Todo records changed during migration; Worker deployment stopped.');
             console.log(`Todo migration audit passed: ${JSON.parse(beforeTodos).length} original records retained.`);
+        }
+        if (beforeRss !== null) {
+            if (beforeRss !== await rssSnapshot()) throw Error('RSS video identities or reading flags changed; deployment stopped.');
+            console.log(`RSS preservation audit passed: ${JSON.parse(beforeRss).length} unique videos retained with reading states.`);
         }
         console.log(`Migrated ${file}`)
     }

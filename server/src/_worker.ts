@@ -1,5 +1,4 @@
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
-import type { ScheduledController } from "@cloudflare/workers-types";
 import { Elysia } from "elysia";
 import "reflect-metadata";
 import Container from "typedi";
@@ -8,7 +7,6 @@ import * as schema from "./db/schema";
 import { app } from "./server";
 import { CacheImpl } from "./utils/cache";
 import { dbToken, envToken } from "./utils/di";
-import { refreshYouTubeSubscriptions } from "./services/rss";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
 export default {
@@ -25,11 +23,5 @@ export default {
     }
 
     return await new Elysia({ aot: false }).use(app()).handle(request);
-  },
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    const database = drizzle(env.DB, { schema });
-    Container.set(envToken, env);
-    Container.set(dbToken, database);
-    await refreshYouTubeSubscriptions(database);
   },
 };
