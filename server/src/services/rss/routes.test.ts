@@ -37,6 +37,10 @@ describe('RSS routes and actual query composition',()=>{
     expect(capability.status).toBe(200); expect(await capability.json()).toMatchObject({version:3});
     const denied=await service.handle(new Request('http://localhost/rss/sync/history-sources'));
     expect(denied.status).toBe(401);
+    const report=await service.handle(new Request('http://localhost/rss/sync/report',{headers:{authorization:'Bearer test-only-sync-token'}}));
+    const reportText=await report.text();
+    expect(report.status,reportText).toBe(200);
+    expect(JSON.parse(reportText)).toMatchObject({items:3,duplicates:{groups:0}});
   });
   it('combines channel/year/literal search with owner isolation and stable counts',async()=>{
     for(const q of ['100%','keyword']) {

@@ -7,6 +7,7 @@ import os
 import re
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 from yt_dlp import YoutubeDL
 from rss_history_policy import classify
@@ -20,14 +21,15 @@ VIDEO_ID = re.compile(r'^[A-Za-z0-9_-]{11}$')
 
 def api(path, body=None):
     payload = None if body is None else json.dumps(body).encode()
-    request = urllib.request.Request(ENDPOINT + '/rss' + path, data=payload, headers={'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json'})
+    request = urllib.request.Request(ENDPOINT + '/rss' + path, data=payload, headers={'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'ShjdnessRSS/1.0'})
     for attempt in range(4):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 return json.load(response)
-        except Exception:
+        except Exception as error:
             if attempt == 3:
-                raise RuntimeError(f'API request failed: {path}') from None
+                detail = f'HTTP {error.code}' if isinstance(error, urllib.error.HTTPError) else type(error).__name__
+                raise RuntimeError(f'API request failed: {path} ({detail})') from None
             time.sleep(2 * (attempt + 1))
 
 def state(source, policy, reason, status, error=''):
