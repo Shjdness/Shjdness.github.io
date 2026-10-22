@@ -25,6 +25,7 @@ rows.push({...rows[0],id:999,externalId:'unknown0001',title:'旧目录日期未�
    if(request.method()==='OPTIONS') return request.respond({status:204,headers});
    if(url.pathname==='/user/profile') return respond({id:1,username:'Owner',permission:true,role:'owner',canWrite:true});
    if(url.pathname==='/rss/storage') return respond({backend:{usedBytes:4194304,limitBytes:null,measured:true},rssBytes:102400,metrics:[{kind:'history',added:425,updated:0,unchanged:10,rowsRead:500,rowsWritten:1275,sizeBefore:1000000,sizeAfter:4194304}]});
+   if(/^\/rss\/subscriptions\/\d+\/refresh$/.test(url.pathname)) return respond({added:0,updated:0,unchanged:15});
    if(url.pathname==='/rss') {
     let results=rows.filter(row=>(!url.searchParams.get('sourceId') || row.subscriptionId===Number(url.searchParams.get('sourceId'))));
     const years=[...new Set(results.filter(row=>row.publishedPrecision!=='unknown').map(row=>row.publishedAt.slice(0,4)))];
@@ -39,6 +40,8 @@ rows.push({...rows[0],id:999,externalId:'unknown0001',title:'旧目录日期未�
   await page.goto(base+'/life/rss',{waitUntil:'networkidle2'});
   await page.waitForSelector('.rss-card');
   assert.equal(await page.$$('.rss-card').then(x=>x.length),200);
+  await page.click('.rss-sidebar-tools button[title="更新来源"]');
+  await page.waitForFunction(()=>document.querySelector('.rss-message')?.textContent.includes('跳过 30'));
   await page.click('.rss-load-more');
   await page.waitForFunction(()=>document.querySelectorAll('.rss-card').length===400);
   await page.click('.rss-source-row button:first-child');

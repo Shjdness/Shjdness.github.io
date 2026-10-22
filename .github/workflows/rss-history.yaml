@@ -12,13 +12,15 @@ concurrency:
   cancel-in-progress: false
 jobs:
   history:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Use the current trusted main script even if GitHub delivers an old
+          # deployment-completed event late. The importer checks API capability.
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

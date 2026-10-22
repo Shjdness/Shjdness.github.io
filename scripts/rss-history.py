@@ -41,6 +41,8 @@ class QuietLogger:
     def error(self, message): pass
 
 def main():
+    if api('/capabilities').get('version', 0) < 3:
+        raise RuntimeError('RSS 历史接口尚未就绪，本轮停止')
     before = api('/sync/report')
     if not before['backend'].get('measured'):
         raise RuntimeError('无法取得 D1 实际容量，本轮补录停止，避免失去容量保护')
