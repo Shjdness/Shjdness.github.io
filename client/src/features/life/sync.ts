@@ -1,5 +1,5 @@
 import { getCached, getSyncQueue, setCached } from '../../data/local-first';
-import type { DailyBasic, DailyNote, Habit, Log } from './model';
+import type { DailyBasic, DailyNote, Habit, Log, TodoType } from './model';
 import { lifeApi } from './model';
 
 export async function sendQueuedMutation(item: { entity: string; action: string; payload: unknown }) {
@@ -56,16 +56,20 @@ export async function sendQueuedMutation(item: { entity: string; action: string;
     return true;
   }
   if (item.entity === 'todo') {
-    const payload = item.payload as { localId?: number; id?: number; content?: string; type?: 'task' | 'learn'; completed?: boolean; clientKey?: string };
+    const payload = item.payload as { localId?: number; id?: number; content?: string; type?: TodoType; completed?: boolean; clientKey?: string; deadlineAt?: string | null; completedAt?: string | null; sortOrder?: number };
     if (item.action === 'create') {
-      const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify({ content: payload.content, type: payload.type, clientKey: payload.clientKey }) });
+      const { localId: _localId, id: _id, ...body } = payload;
+      const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify(body) });
       if (!result.insertedId || payload.localId === undefined) return false;
       await rememberLocalId('life:todo-id-map', payload.localId, result.insertedId);
       return true;
     }
     const id = await resolveTodoId(payload.id || 0);
     if (item.action === 'delete') await lifeApi(`/life/todos/${id}`, { method: 'DELETE' });
-    else await lifeApi(`/life/todos/${id}`, { method: 'POST', body: JSON.stringify({ content: payload.content, type: payload.type, completed: payload.completed }) });
+    else {
+      const { localId: _localId, id: _id, clientKey: _key, ...body } = payload;
+      await lifeApi(`/life/todos/${id}`, { method: 'POST', body: JSON.stringify(body) });
+    }
     return true;
   }
   if (item.entity === 'pomodoro' && item.action === 'create') {

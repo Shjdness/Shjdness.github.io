@@ -45,7 +45,7 @@ export const users = sqliteTable("users", {
 });
 
 /**
- * A small, user-owned preference store for the appearance controls.  This is
+ * Retired appearance preferences remain available in historical backups. This is
  * deliberately separate from the public client configuration: a visitor's
  * view can retain the site default while each signed-in person keeps their own
  * visual preferences across devices.
@@ -113,6 +113,9 @@ export const lifeTodos = sqliteTable("life_todos", {
     type: text("type").default("task").notNull(),
     completed: integer("completed").default(0).notNull(),
     clientKey: text("client_key"),
+    deadlineAt: integer("deadline_at", { mode: 'timestamp' }),
+    completedAt: integer("completed_at", { mode: 'timestamp' }),
+    sortOrder: integer("sort_order").default(0).notNull(),
     createdAt: created_at,
     updatedAt: updated_at,
 }, table => ({ ownerClientKey: uniqueIndex("life_todos_owner_client_key").on(table.ownerId, table.clientKey) }));

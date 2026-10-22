@@ -1,0 +1,63 @@
+/* Shared surfaces: fixed palettes, no account-dependent appearance overrides. */
+:root, .site-shell {
+  --background-blur: 1px;
+  --background-brightness: .9;
+  --background-saturation: .92;
+  --glass-opacity: .24;
+  --glass-blur: 22px;
+  --surface: rgb(187 207 219 / .76);
+  --surface-inner: rgb(172 195 211 / .2);
+  --surface-input: rgb(35 60 82 / .1);
+  --surface-edge: rgb(231 242 250 / .28);
+  --surface-sheen: rgb(237 247 255 / .12);
+  --ink: #152d41;
+  --ink-muted: #213647;
+  --accent: #b91650;
+  color: var(--ink);
+}
+[data-color-mode="dark"], [data-color-mode="dark"] .site-shell {
+  --background-brightness: .84;
+  --surface: rgb(9 25 43 / .61);
+  --surface-inner: rgb(94 135 166 / .1);
+  --surface-input: rgb(5 16 31 / .3);
+  --surface-edge: rgb(197 224 244 / .17);
+  --surface-sheen: rgb(214 237 255 / .07);
+  --ink: #e3edf7;
+  --ink-muted: #b8cbdc;
+  --accent: #ff759b;
+  color: var(--ink);
+}
+.site-shell::after { background: rgb(34 55 75 / .09); }
+[data-color-mode="dark"] .site-shell::after { background: rgb(3 12 25 / .2); }
+.site-shell--home::before { filter: blur(var(--background-blur)) brightness(.95) saturate(.92); }
+.site-shell--home::after { background: rgb(42 65 82 / .08); }
+[data-color-mode="dark"] .site-shell--home::after { background: rgb(3 12 25 / .15); }
+
+html[data-color-mode] .site-shell :is(.bg-w, .glass-panel, .life-panel, .home-landing-card, .blog-home > header, .diary-page > header, .diary-index, .tags-page),
+html[data-color-mode] .ReactModalPortal :is(.bg-w, .glass-panel) {
+  background: linear-gradient(145deg, var(--surface-sheen), transparent 48%), var(--surface);
+  border-color: var(--surface-edge);
+  box-shadow: 0 14px 40px rgb(5 22 40 / .12), inset 0 1px 0 var(--surface-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(118%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(118%);
+  color: var(--ink);
+}
+html[data-color-mode] .site-shell :is(.life-home-todos, .today-basics, .life-summary-grid > a, .life-overview-detail section, .todo-entry, .tag-picker, .writing-kind, .habit-row, .calendar-detail, .year-overview article, .year-heatmap, .monthly-strip, .home-portals a) {
+  background: var(--surface-inner);
+  border-color: var(--surface-edge);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 var(--surface-sheen);
+}
+html[data-color-mode] .site-shell :is(.t-primary, .life-panel, .home-landing h1, .home-portals strong, .dark\:text-white) { color: var(--ink); }
+html[data-color-mode] .site-shell :is(.t-secondary, .text-neutral-500, .text-gray-400, .home-motto, .home-portals small, .life-intro, .life-panel > p:not(.life-kicker), .blog-home > header span, .diary-page > header span, .life-summary-grid span) { color: var(--ink-muted) !important; }
+html[data-color-mode] .site-shell :is(.todo-compose input, .todo-compose select, .todo-search, .tag-picker-create input, .today-basics > footer input, .daily-note textarea, .pomodoro-task input, .pomodoro-task select, .life-add input) {
+  background: var(--surface-input);
+  color: var(--ink);
+  border-color: var(--surface-edge);
+}
+.site-shell input::placeholder, .site-shell textarea::placeholder { color: var(--ink-muted); opacity: .85; }
+html[data-color-mode] .site-shell .bg-secondary { background: var(--surface-input); color: var(--ink); }
+html[data-color-mode] .site-shell .rss-main-header { background: var(--surface); color: var(--ink); }
+.site-shell a:focus-visible, .site-shell button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.habit-modal > section { background:var(--surface); border-color:var(--surface-edge); color:var(--ink); }
+.site-shell :is(.life-kicker, .home-kicker, .life-summary-grid small, .space-switch a[aria-current="page"]) { color:var(--accent); }

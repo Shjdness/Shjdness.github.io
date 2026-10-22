@@ -44,6 +44,13 @@ jobs:
             sleep 10
           done
           if [ "$tags_ready" != "1" ]; then echo 'Tag options API was not ready' >&2; exit 1; fi
+          todos_ready=0
+          for attempt in $(seq 1 36); do
+            capabilities="$(curl --silent --show-error --max-time 15 "$API_URL/life/todo-capabilities" || true)"
+            if echo "$capabilities" | grep -Fq '"version":2'; then todos_ready=1; break; fi
+            sleep 10
+          done
+          if [ "$todos_ready" != "1" ]; then echo 'Todo workspace migration/API was not ready' >&2; exit 1; fi
           oauth_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --header 'Referer: https://shjdness.github.io/' "$API_URL/user/github")"
           case "$oauth_status" in
             301|302|303|307|308) ;;

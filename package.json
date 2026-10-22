@@ -21,7 +21,8 @@
     "clean": "rm -rf dist node_modules client/node_modules server/node_modules",
     "format:check": "turbo format:check",
     "format:write": "turbo format:write",
-    "test": "node node_modules/vitest/vitest.mjs run"
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "test:workspace": "node scripts/tests/todo-workspace.cjs"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",

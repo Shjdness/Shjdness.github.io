@@ -34,14 +34,16 @@ client/src/
 │   ├── model.ts             类型、日期与 API 客户端
 │   ├── sync.ts              离线写入映射与队列发送器
 │   ├── layout.tsx           Life 壳层与同步状态
-│   ├── overview.tsx         总览、待办、今日三件事
+│   ├── overview.tsx         总览、今日三件事、待办摘要
+│   ├── todos.tsx            四栏工作台、持久写入、每日执行排序
+│   ├── todo-workspace.ts    四栏归类、排序与 72 小时倒计时
 │   ├── habits.tsx           习惯与当天记录
 │   ├── calendar.tsx         月历与年历
 │   ├── pomodoro.tsx         番茄钟页面
 │   └── rss.tsx              YouTube 阅读器
-├── state/                   Profile、外观、全局番茄钟
+├── state/                   Profile、全局番茄钟
 ├── data/local-first.ts      IndexedDB 缓存与统一同步队列
-└── styles/                  Blog、Life、RSS、Writing 样式
+└── styles/                  Blog、Life、RSS、Writing、统一玻璃主题及响应式样式
 ```
 
 Life 读取采用 Local-first：先展示 IndexedDB 缓存，再拉取 Worker/D1；本地修改立即写缓存与 `sync_queue`，联网后由统一发送器重试。不要在各页面另建独立离线队列。

@@ -1,6 +1,5 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import Popup from "reactjs-popup";
 import { removeCookie } from "typescript-cookie";
 import { Link, useLocation } from "wouter";
 import { useLoginModal } from "../hooks/useLoginModal";
@@ -12,136 +11,29 @@ import { usePomodoro } from "../state/pomodoro";
 
 export function Header({ children }: { children?: React.ReactNode }) {
     const profile = useContext(ProfileContext);
-    const { t } = useTranslation()
-
-    return useMemo(() => (
-        <>
-            <div className="site-header fixed z-40">
-                <div className="w-screen">
-                    <Padding className="mx-4 mt-4">
-                        <div className="site-header-row">
-                            <div className="site-header-brand">
-                            <Link aria-label={t('home')} href="/"
-                                className="flex flex-row items-center">
-                                <img src={process.env.AVATAR} alt="Avatar" className="w-12 h-12 rounded-2xl border-2" />
-                                <div className="flex flex-col justify-center items-start mx-4">
-                                    <p className="text-xl font-bold dark:text-white">
-                                        {process.env.NAME}
-                                    </p>
-                                    <p className="text-xs text-neutral-500">
-                                        {process.env.DESCRIPTION}
-                                    </p>
-                                </div>
-                            </Link>
-                            <SpaceSwitch />
-                            </div>
-                            <div className="site-header-main">
-                                <div
-                                    className="site-header-pill glass-panel bg-w t-primary rounded-full shadow-xl shadow-light">
-                                    <Link aria-label={t('home')} href="/"
-                                        className="site-header-compact-home">
-                                        <img src={process.env.AVATAR} alt="Avatar"
-                                            className="w-10 h-10 rounded-full border-2" />
-                                        <div className="site-header-compact-copy">
-                                            <p className="text-sm font-bold">
-                                                {process.env.NAME}
-                                            </p>
-                                            <p className="text-xs text-neutral-500">
-                                                {process.env.DESCRIPTION}
-                                            </p>
-                                        </div>
-                                    </Link>
-                                    <div className="site-header-compact-switch"><SpaceSwitch /></div>
-                                    <nav className="site-header-desktop-nav" aria-label="栏目"><NavBar menu={false} /></nav>
-                                    {children}
-                                    <Menu />
-                                </div>
-                            </div>
-                            <div className="site-header-actions">
-                                <AppearanceButton profile={profile} />
-                                <UserAvatar profile={profile} />
-                            </div>
-                        </div>
-                    </Padding>
-                </div>
-            </div>
-            <div className="h-20"></div>
-        </>
-    ), [profile, children, t])
-}
-
-function NavItem({ menu, title, selected, href, when = true, onClick }: {
-    title: string,
-    selected: boolean,
-    href: string,
-    menu?: boolean,
-    when?: boolean,
-    onClick?: () => void
-}) {
-    return (
-        <>
-            {when &&
-                <Link href={href}
-                    className={`${menu ? "site-menu-link" : "site-desktop-link"} cursor-pointer hover:text-theme duration-300 ${selected ? "text-theme" : "dark:text-white"}`}
-                    state={{ animate: true }}
-                    onClick={onClick}
-                >
-                    {title}
-                </Link>}
-        </>
-    )
-}
-
-function Menu() {
-    const profile = useContext(ProfileContext);
-    const [isOpen, setOpen] = useState(false)
-
-    function onClose() {
-        document.body.style.overflow = "auto"
-        setOpen(false)
-    }
-
-    return (
-        <div className="site-header-menu">
-            <Popup
-                arrow={false}
-                trigger={<div>
-                    <button onClick={() => setOpen(true)} aria-label="打开栏目菜单" aria-expanded={isOpen}
-                        className="w-10 h-10 rounded-full flex flex-row items-center justify-center">
-                        <i className="ri-menu-line ri-lg" />
-                    </button>
-                </div>
-                }
-                position="bottom right"
-                open={isOpen}
-                nested
-                onOpen={() => document.body.style.overflow = "hidden"}
-                onClose={onClose}
-                closeOnDocumentClick
-                closeOnEscape
-                overlayStyle={{ background: "rgba(0,0,0,0.3)" }}
-            >
-                <div className="site-header-popover flex flex-col bg-w rounded-xl p-2 mt-4">
-                        <div className="flex flex-row justify-end space-x-2">
-                            <AppearanceButton profile={profile} onClose={onClose} />
-                            <UserAvatar profile={profile} />
+    const { t } = useTranslation();
+    return <>
+        <div className="site-header fixed z-40">
+            <Padding className="mx-4 mt-4">
+                <div className="site-header-row glass-panel">
+                    <div className="site-header-identity">
+                        <Link href="/" aria-label={t("home")} className="site-header-home">
+                            <img src={process.env.AVATAR || "/avatar.jpg"} alt="" />
+                            <span><strong>{process.env.NAME}</strong><small>{process.env.DESCRIPTION}</small></span>
+                        </Link>
+                        <SpaceSwitch />
                     </div>
-                    <SpaceSwitch onClick={onClose} />
-                    <NavBar menu={true} onClick={onClose} />
+                    <nav className="site-header-nav" aria-label="页面栏目"><NavBar /></nav>
+                    <div className="site-header-actions"><UserAvatar profile={profile} />{children}</div>
                 </div>
-            </Popup>
+            </Padding>
         </div>
-    )
+        <div className="site-header-spacer" />
+    </>;
 }
 
-function AppearanceButton({ profile, onClose }: { profile?: Profile, onClose?: () => void }) {
-    if (!profile) return null
-    return (
-        <Link href="/appearance" onClick={onClose} title="外观设置" aria-label="外观设置"
-            className="flex rounded-full border dark:border-neutral-600 px-2 bg-w aspect-[1] items-center justify-center t-primary bg-button">
-            <i className="ri-palette-line" />
-        </Link>
-    )
+function NavItem({ title, selected, href, when = true }: { title: string; selected: boolean; href: string; when?: boolean }) {
+    return when ? <Link href={href} aria-current={selected ? "page" : undefined} className="site-nav-link">{title}</Link> : null;
 }
 
 export function SpaceSwitch({ onClick }: { onClick?: () => void }) {
@@ -152,7 +44,7 @@ export function SpaceSwitch({ onClick }: { onClick?: () => void }) {
     </nav>;
 }
 
-function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
+function NavBar() {
     const profile = useContext(ProfileContext);
     const [location] = useLocation();
     const isBlog = location.startsWith('/blog');
@@ -163,22 +55,23 @@ function NavBar({ menu, onClick }: { menu: boolean, onClick?: () => void }) {
     );
     return (
         <>
-            {!isBlog && !isLife && <NavItem menu={menu} onClick={onClick} title="首页" selected={location === "/"} href="/" />}
+            {!isBlog && !isLife && <NavItem title="首页" selected={location === "/"} href="/" />}
             {isBlog && <>
-                <NavItem menu={menu} onClick={onClick} title="Blog 首页" selected={location === '/blog'} href="/blog" />
-                <NavItem menu={menu} onClick={onClick} title="文章" selected={isArticle} href="/blog/articles" />
-                <NavItem menu={menu} onClick={onClick} title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
-                <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
-                <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
-                <NavItem menu={menu} onClick={onClick} when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
+                <NavItem title="Blog 首页" selected={location === '/blog'} href="/blog" />
+                <NavItem title="文章" selected={isArticle} href="/blog/articles" />
+                <NavItem title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
+                <NavItem when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
+                <NavItem when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
+                <NavItem when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
             </>}
             {isLife && <>
-                <NavItem menu={menu} onClick={onClick} title="总览" selected={location === '/life'} href="/life" />
-                <NavItem menu={menu} onClick={onClick} title="习惯" selected={location === '/life/habits'} href="/life/habits" />
-                <NavItem menu={menu} onClick={onClick} title="日历" selected={location === '/life/calendar'} href="/life/calendar" />
-                <NavItem menu={menu} onClick={onClick} title="年历" selected={location === '/life/year'} href="/life/year" />
-                <NavItem menu={menu} onClick={onClick} title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
-                <NavItem menu={menu} onClick={onClick} title="RSS" selected={location === '/life/rss'} href="/life/rss" />
+                <NavItem title="总览" selected={location === '/life'} href="/life" />
+                <NavItem title="待办" selected={location === "/life/todos"} href="/life/todos" />
+                <NavItem title="习惯" selected={location === '/life/habits'} href="/life/habits" />
+                <NavItem title="日历" selected={location === '/life/calendar'} href="/life/calendar" />
+                <NavItem title="年历" selected={location === '/life/year'} href="/life/year" />
+                <NavItem title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
+                <NavItem title="RSS" selected={location === '/life/rss'} href="/life/rss" />
             </>}
         </>
     )

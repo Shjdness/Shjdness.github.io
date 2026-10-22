@@ -4,10 +4,13 @@ import { dailyBasics, habitLogs, habits, lifeDailyNotes, lifeTodos, pomodoroSess
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
 import { roleForUser } from '../utils/roles';
+import { todoState } from '../utils/todo-state';
 
 const dayPattern = '^\\d{4}-\\d{2}-\\d{2}$';
 const monthPattern = '^\\d{4}-\\d{2}$';
 const yearPattern = '^\\d{4}$';
+const todoType = t.Union([t.Literal('task'), t.Literal('learn'), t.Literal('success'), t.Literal('daily')]);
+const optionalTodoDate = t.Optional(t.Union([t.String({ format: 'date-time' }), t.Null()]));
 
 function validRange(startValue: string, endValue: string) {
     const start = new Date(startValue);
@@ -33,6 +36,7 @@ export function LifeService() {
     return new Elysia({ aot: false })
         .use(setup())
         .group('/life', group => group
+            .get('/todo-capabilities', () => ({ version: 2 }))
             .get('/overview', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const today = validRange(query.dayStart, query.dayEnd);
@@ -103,21 +107,23 @@ export function LifeService() {
             })
             .post('/todos', async ({ uid, lifeAccess, set, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                if (!body.content.trim()) { set.status = 400; return 'Content must not be blank'; }
                 if (body.clientKey) {
                     const existing = await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.ownerId, uid!), eq(lifeTodos.clientKey, body.clientKey)) });
                     if (existing) return { insertedId: existing.id };
                 }
-                const result = await db.insert(lifeTodos).values({ ownerId: uid!, content: body.content.trim(), type: body.type, clientKey: body.clientKey }).returning({ insertedId: lifeTodos.id });
+                const result = await db.insert(lifeTodos).values({ ownerId: uid!, content: body.content.trim(), clientKey: body.clientKey, ...todoState(undefined, body) }).returning({ insertedId: lifeTodos.id });
                 return result[0];
-            }, { body: t.Object({ content: t.String({ minLength: 1, maxLength: 500 }), type: t.Union([t.Literal('task'), t.Literal('learn')]), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
+            }, { body: t.Object({ content: t.String({ minLength: 1, maxLength: 500 }), type: todoType, clientKey: t.Optional(t.String({ maxLength: 80 })), deadlineAt: optionalTodoDate, completedAt: optionalTodoDate, sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }) })
             .post('/todos/:id', async ({ uid, lifeAccess, set, params, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const id = Number(params.id);
                 const existing = await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.id, id), eq(lifeTodos.ownerId, uid!)) });
                 if (!existing) { set.status = 404; return 'Todo not found'; }
-                await db.update(lifeTodos).set({ content: body.content?.trim(), type: body.type, completed: body.completed === undefined ? undefined : body.completed ? 1 : 0, updatedAt: new Date() }).where(and(eq(lifeTodos.id, id), eq(lifeTodos.ownerId, uid!)));
+                if (body.content !== undefined && !body.content.trim()) { set.status = 400; return 'Content must not be blank'; }
+                await db.update(lifeTodos).set({ content: body.content?.trim(), ...todoState(existing, body), updatedAt: new Date() }).where(and(eq(lifeTodos.id, id), eq(lifeTodos.ownerId, uid!)));
                 return 'OK';
-            }, { body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 500 })), type: t.Optional(t.Union([t.Literal('task'), t.Literal('learn')])), completed: t.Optional(t.Boolean()) }) })
+            }, { body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 500 })), type: t.Optional(todoType), completed: t.Optional(t.Boolean()), deadlineAt: optionalTodoDate, completedAt: optionalTodoDate, sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }) })
             .delete('/todos/:id', async ({ uid, lifeAccess, set, params }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const removed = await db.delete(lifeTodos).where(and(eq(lifeTodos.id, Number(params.id)), eq(lifeTodos.ownerId, uid!))).returning({ id: lifeTodos.id });

@@ -47,8 +47,14 @@ export function LifeSyncStatus() {
     verified.current = false;
     try {
       if ((await getSyncQueue()).length) setStatus('syncing');
-      const result = await flushSyncQueue(sendQueuedMutation);
-      if (result.failed) { await refresh(); setStatus('failed'); return; }
+      // A second edit can arrive while the first batch is in flight. Drain the
+      // newly queued writes before declaring the page synced; stop on failures.
+      let remaining = true;
+      while (remaining) {
+        const result = await flushSyncQueue(sendQueuedMutation);
+        if (result.failed) { await refresh(); setStatus('failed'); return; }
+        remaining = (await getSyncQueue()).length > 0;
+      }
       const todos = await lifeApi<unknown>('/life/todos');
       if (!Array.isArray(todos)) throw new Error('云端未返回待办列表');
       verified.current = true;

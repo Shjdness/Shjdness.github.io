@@ -118,8 +118,8 @@ try {
         })
         .sort();
     console.log("migration_version:", migrationVersion, "Migration SQL List: ", sqlFiles)
-    if (sqlFiles.some(name => name.startsWith('0020-') || name.startsWith('0021-') || name.startsWith('0022-') || name.startsWith('0023-'))) {
-        // Keep a restore point before RSS cleanup or account ownership repair.
+    if (sqlFiles.some(name => parseInt(name.split('-')[0]) >= 20)) {
+        // Keep a restore point before current and future private-data migrations.
         // The bookmark is printed in the private deployment log for rollback.
         const backup = await $`bunx wrangler d1 time-travel info ${DB_NAME}`.quiet().text()
         if (!backup.includes('bookmark')) throw new Error('D1 restore bookmark was not created; migration stopped.')
@@ -149,8 +149,21 @@ try {
         ownerRepairExpected = audit.legacy === 1 && audit.duplicate === 1;
         console.log(`Owner identity audit: legacy=${audit.legacy}, duplicate=${audit.duplicate}, other_records=${audit.other_records}`)
     }
+    const todoSnapshot = async () => {
+        const query = 'SELECT id, owner_id, content, type, completed, client_key, created_at, updated_at FROM life_todos ORDER BY id';
+        const output = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${query} --json`.quiet().text();
+        const rows = (JSON.parse(output) as Array<{ results?: unknown[] }>)[0]?.results;
+        if (!Array.isArray(rows)) throw new Error('Todo migration audit returned no records; deployment stopped.');
+        // Contents are compared in memory and are never printed to the deploy log.
+        return JSON.stringify(rows);
+    };
     for (const file of sqlFiles) {
+        const beforeTodos = file.startsWith('0024-') ? await todoSnapshot() : null;
         await $`bunx wrangler d1 execute ${DB_NAME} --remote --file ./server/sql/${file} -y`
+        if (beforeTodos !== null) {
+            if (beforeTodos !== await todoSnapshot()) throw new Error('Todo records changed during migration; Worker deployment stopped.');
+            console.log(`Todo migration audit passed: ${JSON.parse(beforeTodos).length} original records retained.`);
+        }
         console.log(`Migrated ${file}`)
     }
     if (ownerRepairExpected) {

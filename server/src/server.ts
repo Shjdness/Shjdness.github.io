@@ -8,7 +8,6 @@ import { StorageService } from './services/storage';
 import { TagService } from './services/tag';
 import { UserService } from './services/user';
 import { ConfigService } from './services/config';
-import { AppearanceService } from './services/appearance';
 import { LifeService } from './services/life';
 import { HabitService } from './services/habit';
 import { RssService } from './services/rss';
@@ -40,7 +39,6 @@ export const app = () => new Elysia({ aot: false })
     .use(StorageService())
     .use(SEOService())
     .use(ConfigService())
-    .use(AppearanceService())
     .use(LifeService())
     .use(HabitService())
     .use(RssService())

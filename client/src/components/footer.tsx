@@ -1,30 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { readThemeMode, setThemeMode, type ThemeMode } from '../utils/darkModeUtils';
 
-type ThemeMode = 'light' | 'dark' | 'system';
 function Footer() {
-    const [modeState, setModeState] = useState<ThemeMode>('system');
-    useEffect(() => {
-        const mode = localStorage.getItem('theme') as ThemeMode || 'system';
-        setModeState(mode);
-        setMode(mode);
-    }, [])
+    const [modeState, setModeState] = useState<ThemeMode>(readThemeMode);
 
     const setMode = (mode: ThemeMode) => {
         setModeState(mode);
-        localStorage.setItem('theme', mode);
-
-
-        if (mode !== 'system' || (!('theme' in localStorage) && window.matchMedia(`(prefers-color-scheme: ${mode})`).matches)) {
-            document.documentElement.setAttribute('data-color-mode', mode);
-        } else {
-            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-            if (mediaQuery.matches) {
-                document.documentElement.setAttribute('data-color-mode', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-color-mode', 'light');
-            }
-        }
-        window.dispatchEvent(new Event("colorSchemeChange"));
+        setThemeMode(mode);
     };
 
     return (

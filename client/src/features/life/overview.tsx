@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link } from 'wouter';
 import { client } from '../../main';
-import { enqueueMutation, getCached, getSyncQueue, setCached, withTimeout } from '../../data/local-first';
+import { enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
 import { headersWithAuth } from '../../utils/auth';
-import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type DailyBasic, type LifeOverviewData, type LifeTodo } from './model';
-import { mergePendingBasics, normalizeBasics, rememberLocalId, resolveBasicId, resolveTodoId } from './sync';
+import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type DailyBasic, type LifeOverviewData } from './model';
+import { mergePendingBasics, normalizeBasics, rememberLocalId, resolveBasicId } from './sync';
 import { LifeLayout } from './layout';
 import { patchCalendarCache } from './habits';
-import { usePomodoro } from '../../state/pomodoro';
+import { TodoBoard } from "./todos";
 import { LifeBackupButton } from './backup';
 
 export function LifeOverview() {
@@ -28,50 +28,13 @@ export function LifeOverview() {
   }, []);
   const summary = overview?.summary || { habits: 0, completed: 0, focusMinutes: 0, rounds: 0, unread: 0 };
   return <LifeLayout section="life" title="Life" intro="习惯、专注、阅读与时间，在这里汇成同一条生活轨迹。">
-    <div className="life-home-layout"><section className="life-home-todos"><header><h2>待办与以后学习</h2><Link href="/life/todos">独立页面</Link></header><TodoBoard /></section><div className="life-home-side">
+    <div className="life-home-layout"><section className="life-home-todos"><header><h2>待办</h2><Link href="/life/todos">四栏工作台</Link></header><TodoBoard /></section><div className="life-home-side">
     <TodayBasics initial={overview?.basics} />
     <div className="life-summary-grid"><Link href="/life/pomodoro"><small>TODAY FOCUS</small><strong>{summary.focusMinutes} min</strong><span>{summary.rounds} 轮专注</span></Link><Link href="/life/habits"><small>THIS WEEK</small><strong>{summary.completed}</strong><span>{summary.habits} 项习惯</span></Link><Link href="/life/calendar"><small>CALENDAR</small><strong>{new Date().getDate()}</strong><span>{new Date().toLocaleDateString('zh-CN', { month: 'long', weekday: 'long' })}</span></Link><Link href="/life/rss"><small>RSS</small><strong>{summary.unread}</strong><span>篇未读</span></Link></div>
     <LifeBackupButton />
     {overview && <div className="life-overview-detail"><section><h2>本周习惯</h2>{overview.habits.map(habit => <p key={habit.id}><strong>{habit.name}</strong><span>{Array.from({ length: 7 }, (_, index) => { const date = isoDay(addDays(mondayOf(), index)); return <i key={date} className={habit.days.includes(date) ? 'done' : ''} title={date} />; })}</span></p>)}</section><section><h2>最近订阅</h2>{overview.recentRss.length ? overview.recentRss.map(item => <Link href="/life/rss" key={item.id}>{item.title}</Link>) : <p>还没有订阅内容</p>}</section></div>}
     </div></div>
   </LifeLayout>;
-}
-
-export function TodoView() {
-  return <LifeLayout section="todos" title="待办" intro="把需要处理的事和想在以后认真了解的内容先放在这里，不让好奇心变成当下的负担。"><TodoBoard /></LifeLayout>;
-}
-
-function TodoBoard() {
-  const [, navigate] = useLocation();
-  const { timer, setTimer } = usePomodoro();
-  const cacheKey = 'life:todos';
-  const [items, setItems] = useState<LifeTodo[]>([]); const [draft, setDraft] = useState(''); const [type, setType] = useState<'task' | 'learn'>('task'); const [filter, setFilter] = useState<'all' | 'task' | 'learn'>('all'); const [query, setQuery] = useState(''); const [busy, setBusy] = useState(false);
-  const persist = async (next: LifeTodo[]) => { const sorted = [...next].sort((a, b) => a.completed - b.completed || new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()); setItems(sorted); await setCached(cacheKey, sorted); };
-  const load = async () => {
-    const cached = await getCached<LifeTodo[]>(cacheKey); if (cached) setItems(cached.value);
-    try { const cloud = await lifeApi<LifeTodo[]>('/life/todos'); const pending = (await getSyncQueue()).some(item => item.entity === 'todo'); if (Array.isArray(cloud) && !pending) await persist(cloud); } catch {}
-  };
-  useEffect(() => { void load(); const handler = () => void load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, []);
-  const create = async () => {
-    const content = draft.trim(); if (!content || busy) return; setBusy(true);
-    const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: LifeTodo = { id: localId, content, type, completed: 0, clientKey, updatedAt: new Date().toISOString() }; const next = [local, ...items]; setDraft(''); await persist(next);
-    try { const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify({ content, type, clientKey }) }); await rememberLocalId('life:todo-id-map', localId, result.insertedId); await persist(next.map(item => item.id === localId ? { ...item, id: result.insertedId } : item)); }
-    catch { await enqueueMutation('todo', 'create', { localId, content, type, clientKey }); }
-    finally { setBusy(false); }
-  };
-  const update = async (item: LifeTodo, patch: { content?: string; type?: 'task' | 'learn'; completed?: boolean }) => {
-    const next = items.map(value => value.id === item.id ? { ...value, ...patch, completed: patch.completed === undefined ? value.completed : patch.completed ? 1 : 0, updatedAt: new Date().toISOString() } : value); await persist(next);
-    try { await lifeApi(`/life/todos/${await resolveTodoId(item.id)}`, { method: 'POST', body: JSON.stringify(patch) }); }
-    catch { await enqueueMutation('todo', 'update', { id: item.id, ...patch }); }
-  };
-  const remove = async (item: LifeTodo) => { if (!window.confirm(`删除「${item.content}」？`)) return; await persist(items.filter(value => value.id !== item.id)); try { await lifeApi(`/life/todos/${await resolveTodoId(item.id)}`, { method: 'DELETE' }); } catch { await enqueueMutation('todo', 'delete', { id: item.id }); } };
-  const focusOn = (item: LifeTodo) => {
-    if (timer.startedAt || timer.mode === 'break') return;
-    setTimer(current => ({ ...current, taskName: item.content.slice(0, 160), todoId: item.id, todoClientKey: item.clientKey || undefined }));
-    navigate('/life/pomodoro');
-  };
-  const visible = items.filter(item => (filter === 'all' || item.type === filter) && item.content.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  return <><section className="todo-compose"><select value={type} onChange={event => setType(event.target.value as 'task' | 'learn')}><option value="task">待办</option><option value="learn">以后学习</option></select><input value={draft} maxLength={500} placeholder={type === 'learn' ? '以后想了解什么？' : '随手记下一件事'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void create(); }} /><button disabled={!draft.trim() || busy} onClick={() => void create()}>添加</button></section><nav className="todo-filters">{(['all', 'task', 'learn'] as const).map(value => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{value === 'all' ? '全部' : value === 'task' ? '待办' : '以后学习'}</button>)}<input className="todo-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索待办" aria-label="搜索待办" /></nav><section className="todo-list">{visible.map(item => <article key={item.id} className={item.completed ? 'done' : ''}><button className="todo-check" onClick={() => void update(item, { completed: !item.completed })} aria-label={item.completed ? '恢复' : '完成'}><i className={item.completed ? 'ri-check-line' : ''} /></button><div><input value={item.content} maxLength={500} onChange={event => setItems(current => current.map(value => value.id === item.id ? { ...value, content: event.target.value } : value))} onBlur={event => { const content = event.target.value.trim(); if (content) void update(item, { content }); }} /><button className="todo-type" onClick={() => void update(item, { type: item.type === 'task' ? 'learn' : 'task' })}>{item.type === 'learn' ? '以后学习' : '待办'}</button></div><button className="todo-focus" disabled={Boolean(timer.startedAt) || timer.mode === 'break'} onClick={() => focusOn(item)} title="将此待办带入番茄钟">专注{item.focusMinutes ? ` · ${item.focusMinutes} 分钟` : ""}</button><button className="todo-remove" onClick={() => void remove(item)} aria-label="删除"><i className="ri-delete-bin-line" /></button></article>)}{!visible.length && <p className="life-coming-soon">这里暂时是空的。</p>}</section></>;
 }
 
 function TodayBasics({ initial }: { initial?: DailyBasic[] }) {

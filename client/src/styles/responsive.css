@@ -1,114 +1,3 @@
-/* The header changes from a full navigation row to a compact menu before its
-   labels collide with the brand, space switch, and clock. */
-.site-header-row {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  width: 100%;
-  min-width: 0;
-}
-
-.site-header-brand,
-.site-header-desktop-nav,
-.site-header-actions {
-  display: none;
-}
-
-.site-header-main { flex: 1; min-width: 0; }
-.site-header-pill {
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  width: 100%;
-  min-width: 0;
-  padding: .25rem .5rem;
-}
-.site-header-compact-home {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: .55rem;
-  min-width: 0;
-}
-.site-header-compact-home img { flex: none; }
-.site-header-compact-copy { min-width: 0; }
-.site-header-compact-copy p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.site-header-compact-switch,
-.site-header-menu { flex: none; }
-.site-header-menu { display: flex; }
-.site-header-popover {
-  width: min(18rem, calc(100vw - 2rem));
-  max-height: calc(100svh - 6rem);
-  overflow-y: auto;
-  border: 1px solid rgb(148 163 184 / .22);
-  background: #f8fafc;
-  color: #1e293b;
-  box-shadow: 0 20px 50px rgb(2 8 23 / .28);
-}
-[data-color-mode="dark"] .site-header-popover {
-  border-color: rgb(255 255 255 / .16);
-  background: #0d1d36;
-  color: #e7edf8;
-}
-.site-header-popover .space-switch { align-self: flex-start; margin: .4rem 0; }
-.site-header-popover .header-clock { display: none; }
-.site-menu-link {
-  display: block;
-  padding: .65rem .8rem;
-  border-radius: .7rem;
-  font-size: .9rem;
-  line-height: 1.4;
-  color: inherit;
-}
-.site-header-popover .site-menu-link { color: inherit; }
-.site-header-popover .site-menu-link.text-theme { color: #e11d62; }
-.site-menu-link:hover,
-.site-menu-link:focus-visible { background: rgb(225 29 98 / .12); }
-
-@media (min-width: 768px) {
-  .site-header-actions {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: .5rem;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1023px) {
-  .site-header-actions .header-clock { min-width: 0; font-size: .9rem; }
-  .site-header-actions .header-task { max-width: 4rem; font-size: .8rem; }
-}
-
-@media (min-width: 1440px) {
-  .site-header-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 1rem; }
-  .site-header-brand { display: flex; align-items: center; gap: 1rem; min-width: 0; }
-  .site-header-brand > a { display: flex; align-items: center; min-width: 0; }
-  .site-header-brand > a img { flex: none; }
-  .site-header-brand > a > div { min-width: 0; }
-  .site-header-brand > a p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .site-header-main { flex: none; }
-  .site-header-pill { width: auto; }
-  .site-header-compact-home,
-  .site-header-compact-switch,
-  .site-header-menu { display: none; }
-  .site-header-desktop-nav { display: flex; align-items: center; }
-  .site-desktop-link { display: block; padding: 1rem .85rem; font-size: .875rem; white-space: nowrap; }
-  .site-header-actions { justify-self: end; min-width: 0; }
-}
-
-@media (max-width: 640px) {
-  .site-header-compact-copy p:last-child { display: none; }
-  .site-header-pill { gap: .15rem; }
-}
-
-@media (max-width: 360px) {
-  .site-header-compact-copy { display: none; }
-}
-
 /* Keep the 1:2 Life overview on wide screens while allowing its left board
    to reflow when that column itself is narrow. */
 .life-panel:has(.life-home-layout) { width: min(100%, 112rem); }
@@ -169,3 +58,39 @@
   opacity: .8;
 }
 .feed-hashtag > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+/* Page links remain directly reachable at every size. */
+.site-header { inset: 0 0 auto; width: 100%; }
+.site-header-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .65rem 1rem; align-items: center; min-width: 0; padding:.5rem .75rem; border:1px solid; border-radius:1.6rem; }
+.site-header-identity { display:flex; align-items:center; gap:1rem; min-width:0; }
+.site-header-home { display:flex; align-items:center; gap:.65rem; min-width:0; }
+.site-header-home img { width:2.6rem; height:2.6rem; flex:none; border:1px solid var(--surface-edge); border-radius:.9rem; }
+.site-header-home span { min-width:0; }
+.site-header-home strong,.site-header-home small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.site-header-home strong { font-size:1rem; }
+.site-header-home small { max-width:16rem; color:var(--ink-muted); font-size:.67rem; }
+.site-header-identity .space-switch { flex:none; background:var(--surface); }
+.site-header-actions { display:flex; align-items:center; justify-self:end; gap:.4rem; min-width:0; }
+.site-header-nav { grid-column:1/-1; grid-row:2; display:flex; align-items:center; justify-content:center; gap:.15rem; padding:.3rem; border:1px solid transparent; border-radius:999px; overflow-x:auto; scrollbar-width:thin; max-width:100%; background:var(--surface-inner); }
+.site-nav-link { flex:none; padding:.55rem .85rem; border-radius:999px; color:var(--ink); font-size:.82rem; font-weight:700; white-space:nowrap; }
+.site-nav-link[aria-current="page"] { color:var(--accent); background:rgb(225 29 98 / .12); }
+.site-nav-link:hover { background:var(--surface-input); }
+.site-header-spacer { height:8rem; }
+.site-header .header-clock { color:var(--ink); font-size:1rem; min-width:0; text-shadow:none; }
+.site-header .header-pomodoro { max-width:24rem; }
+.diary-index { top:8.5rem; max-height:calc(100svh - 10rem); }
+.diary-list > div { scroll-margin-top:9rem; }
+@media (min-width:1500px) {
+  .site-header-row { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
+  .site-header-nav { grid-column:2; grid-row:1; }
+  .site-header-actions { grid-column:3; }
+  .site-header-spacer { height:6rem; }
+}
+@media (max-width:767px) {
+  .site-header-home small { display:none; }
+  .site-header-identity { gap:.5rem; }
+  .site-header-home strong { font-size:.85rem; }
+  .site-header-nav { justify-content:flex-start; }
+  .site-nav-link { flex:1 0 auto; text-align:center; padding:.5rem .72rem; font-size:.78rem; }
+  .site-header .header-clock { display:none; }
+}
+@media (max-width:380px) { .site-header-home span { display:none; } }

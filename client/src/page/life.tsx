@@ -4,7 +4,8 @@ import { CalendarView } from '../features/life/calendar';
 import { HabitView } from '../features/life/habits';
 import { LifeDenied } from '../features/life/layout';
 import { mayAccessLife, type LifeSection } from '../features/life/model';
-import { LifeOverview, TodoView } from '../features/life/overview';
+import { LifeOverview } from '../features/life/overview';
+import { TodoView } from '../features/life/todos';
 import { PomodoroView } from '../features/life/pomodoro';
 import { RssView } from '../features/life/rss';
 
