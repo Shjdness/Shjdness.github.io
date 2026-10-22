@@ -22,7 +22,8 @@
     "format:check": "turbo format:check",
     "format:write": "turbo format:write",
     "test": "node node_modules/vitest/vitest.mjs run",
-    "test:workspace": "node scripts/tests/todo-workspace.cjs"
+    "test:workspace": "node scripts/tests/todo-workspace.cjs",
+    "test:forms": "node scripts/tests/form-theme.cjs"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
