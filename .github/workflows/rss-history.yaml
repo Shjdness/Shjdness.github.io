@@ -37,11 +37,11 @@ jobs:
         run: python -m pip install 'yt-dlp==2026.10.21'
       - name: Reconcile latest feed before frequency assessment
         env:
-          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT || 'https://rin-server.1322589722.workers.dev' }}
           RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
         run: node scripts/youtube-sync.mjs
       - name: Assess and backfill accessible history
         env:
-          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT || 'https://rin-server.1322589722.workers.dev' }}
           RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
         run: python scripts/rss-history.py

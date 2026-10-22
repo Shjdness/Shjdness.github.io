@@ -11,7 +11,7 @@ from pathlib import Path
 from yt_dlp import YoutubeDL
 from rss_history_policy import classify
 
-ENDPOINT = os.environ.get('RSS_SYNC_ENDPOINT', 'https://rin-server.1322589722.workers.dev').rstrip('/')
+ENDPOINT = (os.environ.get('RSS_SYNC_ENDPOINT') or 'https://rin-server.1322589722.workers.dev').rstrip('/')
 TOKEN = os.environ['RSS_SYNC_TOKEN']
 MAX_BYTES = int(os.environ.get('RSS_HISTORY_MAX_DATABASE_BYTES', 350 * 1024 * 1024))
 MAX_ITEMS = int(os.environ.get('RSS_HISTORY_MAX_ITEMS', 20000))
