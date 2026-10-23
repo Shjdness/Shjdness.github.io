@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 const endpoint = (
   process.env.RSS_SYNC_ENDPOINT ||
   "https://rin-server.1322589722.workers.dev"
@@ -19,7 +20,7 @@ const request = async (url, options = {}, timeoutMs = 45_000) => {
 
 const fetchFeed = async (source) => {
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch(source.feedUrl, {
       headers: { Accept: "application/atom+xml", "User-Agent": "Mozilla/5.0", ...(source.etag ? {'If-None-Match':source.etag} : {}), ...(source.lastModified ? {'If-Modified-Since':source.lastModified} : {}) },
       signal: AbortSignal.timeout(30_000),
@@ -39,6 +40,7 @@ const { sources = [] } = await sourceResponse.json();
 let cursor = 0;
 let succeeded = 0;
 let failed = 0;
+const failedIds = [];
 
 const syncOne = async (source) => {
   try {
@@ -58,8 +60,9 @@ const syncOne = async (source) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message.slice(0, 400) : "Unknown error";
-    console.error(`FAIL ${source.title || source.id}: ${message}`);
+    console.error(`FAIL source=${source.id}: ${message}`);
     failed += 1;
+    failedIds.push(source.id);
     try {
       await request(`${endpoint}/rss/sync/error`, {
         method: "POST",
@@ -80,4 +83,5 @@ await Promise.all(Array.from({ length: Math.min(3, sources.length) }, worker));
 console.log(
   `YouTube sync complete: ${succeeded} succeeded, ${failed} failed, ${sources.length} total`,
 );
-if (sources.length > 0 && succeeded === 0) process.exitCode = 1;
+if (process.env.RSS_SYNC_FAILURE_FILE) await writeFile(process.env.RSS_SYNC_FAILURE_FILE,JSON.stringify(failedIds));
+if (!process.env.RSS_SYNC_FAILURE_FILE && failed > 0) process.exitCode = 1;

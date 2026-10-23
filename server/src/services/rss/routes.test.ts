@@ -32,6 +32,22 @@ beforeEach(()=>{
 });
 
 describe('RSS routes and actual query composition',()=>{
+  it('accepts and replays history batches without losing read or star state',async()=>{
+    const headers={authorization:'Bearer test-only-sync-token','content-type':'application/json'};
+    const videos=[{externalId:'abcdefghijk',title:'estimated replacement',publishedAt:0,publishedPrecision:'unknown'}, {externalId:'newvideo123',title:'historical entry',publishedAt:1451606400,publishedPrecision:'estimated'}];
+    for(let attempt=0;attempt<2;attempt++) {
+      const response=await service.handle(new Request('http://localhost/rss/sync/history-batch',{method:'POST',headers,body:JSON.stringify({subscriptionId:1,videos})}));
+      const body=await response.text();
+      expect(response.status,body).toBe(200);
+      expect(JSON.parse(body)).toMatchObject(attempt===0?{added:1,updated:1}:{added:0,unchanged:2,rowsWritten:0});
+    }
+    const state=await service.handle(new Request('http://localhost/rss/sync/history-state',{method:'POST',headers,body:JSON.stringify({subscriptionId:1,policy:'full',reason:'test history',status:'complete'})}));
+    expect(state.status,await state.text()).toBe(200);
+    const sources=await service.handle(new Request('http://localhost/rss/sync/history-sources',{headers}));
+    expect(await sources.json()).toMatchObject({sources:expect.arrayContaining([expect.objectContaining({id:1,status:'complete',policy:'full'})])});
+    const report=await service.handle(new Request('http://localhost/rss/sync/report',{headers}));
+    expect(await report.json()).toMatchObject({items:4,duplicates:{groups:0},flags:{read:1,starred:1}});
+  });
   it('mounts capability and protected automation routes at their intended paths',async()=>{
     const capability=await service.handle(new Request('http://localhost/rss/capabilities'));
     expect(capability.status).toBe(200); expect(await capability.json()).toMatchObject({version:3});
