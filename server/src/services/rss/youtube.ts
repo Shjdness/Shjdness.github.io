@@ -88,11 +88,15 @@ export function parseYouTubeFeed(xml: string) {
   const self = list<Record<string, any>>(root.link).find(
     (link) => link?.["@_rel"] === "self",
   );
+  // YouTube's Atom yt:channelId can omit the UC prefix, while the self
+  // link and channel URLs contain the complete public channel ID.
+  const rawChannelId = clean(root['yt:channelId'], 100);
+  const selfChannelId = channelIdFromFeed(text(self?.['@_href']));
+  const canonicalChannelId = isChannelId(selfChannelId) ? selfChannelId
+    : isChannelId(rawChannelId) ? rawChannelId
+    : /^[A-Za-z0-9_-]{22}$/.test(rawChannelId) ? `UC${rawChannelId}` : '';
   return {
-    channelId: clean(
-      root["yt:channelId"] || channelIdFromFeed(text(self?.["@_href"])),
-      100,
-    ),
+    channelId: canonicalChannelId,
     title: clean(root.title || author || "YouTube", 160),
     videos,
   };

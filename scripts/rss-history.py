@@ -10,7 +10,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from yt_dlp import YoutubeDL
-from rss_history_policy import classify
+from rss_history_policy import classify, recover_channel
 
 ENDPOINT = (os.environ.get('RSS_SYNC_ENDPOINT') or 'https://rin-server.1322589722.workers.dev').rstrip('/')
 TOKEN = os.environ['RSS_SYNC_TOKEN']
@@ -55,7 +55,7 @@ def main():
         for source, policy, reason in decisions:
             if total >= MAX_TOTAL or before['backend']['usedBytes'] >= MAX_BYTES:
                 break
-            channel = source.get('channelId') or ''
+            channel = recover_channel(source)
             if not re.fullmatch(r'UC[A-Za-z0-9_-]{20,}', channel):
                 state(source, policy, reason, 'failed', '无有效频道ID，需要修正来源')
                 failed += 1

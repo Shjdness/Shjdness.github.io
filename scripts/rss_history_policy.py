@@ -1,8 +1,22 @@
 """Explainable prioritization; inactivity alone does not identify a creator."""
 import re
 import time
+from urllib.parse import urlparse, parse_qs
 
 INSTITUTIONS = re.compile(r'\b(?:TED(?:-Ed)?|PBS|NOVA|NASA|SpaceX|BBC|DW Documental|National Geographic|Paramount|Museum of Modern Art)\b', re.I)
+
+def recover_channel(source):
+    candidates = [source.get('channelId') or '', source.get('externalId') or '']
+    for key in ['siteUrl', 'feedUrl']:
+        url = urlparse(source.get(key) or '')
+        if url.hostname in ['youtube.com', 'www.youtube.com']:
+            candidates.extend(parse_qs(url.query).get('channel_id', []))
+            match = re.match(r'^/channel/(UC[A-Za-z0-9_-]+)', url.path)
+            if match: candidates.append(match.group(1))
+    for candidate in candidates:
+        if re.fullmatch(r'UC[A-Za-z0-9_-]{22}', candidate): return candidate
+        if re.fullmatch(r'[A-Za-z0-9_-]{22}', candidate): return 'UC' + candidate
+    return ''
 
 def classify(source, now=None):
     now = time.time() if now is None else now

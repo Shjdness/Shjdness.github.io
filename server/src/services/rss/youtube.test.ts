@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchText, isSafeYouTubeUrl, resolveChannelId } from "./youtube";
+import { fetchText, isSafeYouTubeUrl, resolveChannelId, parseYouTubeFeed } from "./youtube";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("YouTube fetch boundary", () => {
+  it('normalizes the prefixless channel ID actually returned by official Atom feeds',()=>{
+    const bare='Vh47EKH9VLresRqiYi9txw';
+    expect(parseYouTubeFeed(`<feed><yt:channelId>${bare}</yt:channelId><link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UC${bare}"/></feed>`).channelId).toBe(`UC${bare}`);
+    expect(parseYouTubeFeed(`<feed><yt:channelId>${bare}</yt:channelId></feed>`).channelId).toBe(`UC${bare}`);
+  });
   it("accepts only HTTPS YouTube hosts without credentials or custom ports", () => {
     expect(isSafeYouTubeUrl("https://www.youtube.com/channel/UC123")).toBe(true);
     for (const url of [
