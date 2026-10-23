@@ -22,7 +22,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install metadata extractor
-        run: python -m pip install 'yt-dlp==2026.10.21'
+        run: |
+          python -B scripts/tests/test_rss_transport.py
+          python -m pip install 'yt-dlp==2026.10.21'
       - name: Fetch official YouTube feeds
         env:
           RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}

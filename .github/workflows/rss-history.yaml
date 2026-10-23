@@ -36,7 +36,9 @@ jobs:
           bun install --frozen-lockfile
           bunx wrangler d1 time-travel info "$DB_NAME"
       - name: Install metadata extractor
-        run: python -m pip install 'yt-dlp==2026.10.21'
+        run: |
+          python -B scripts/tests/test_rss_transport.py
+          python -m pip install 'yt-dlp==2026.10.21'
       - name: Reconcile latest feed before frequency assessment
         continue-on-error: true # History can still recover metadata if a Feed is unavailable.
         env:

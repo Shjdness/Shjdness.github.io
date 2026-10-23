@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import time
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('rss_history', Path(__file__).with_name('rss-history.py'))
@@ -23,6 +24,7 @@ def main():
             if not channel:
                 raise RuntimeError('Invalid channel ID')
             videos = {}
+            accessible = False
             opts = {'extract_flat': True, 'lazy_playlist': True, 'skip_download': True,
                     'quiet': True, 'logger': history.QuietLogger(), 'socket_timeout':25,
                     'retries':2, 'extractor_retries':2, 'playlistend':15,
@@ -35,6 +37,7 @@ def main():
                         if any(text in str(error).lower() for text in ['does not have a', 'no uploads']):
                             continue
                         raise
+                    accessible = True
                     for entry in listing.get('entries') or []:
                         if not entry or entry.get('live_status') in ['is_live','is_upcoming'] or entry.get('is_live'):
                             continue
@@ -43,11 +46,13 @@ def main():
                         if not history.VIDEO_ID.fullmatch(identity) or not title or title in ['[Private video]','[Deleted video]']:
                             continue
                         timestamp = entry.get('release_timestamp') or entry.get('timestamp') or 0
+                        if source.get('policy') == 'two-years' and timestamp and timestamp < time.time()-(2*365+45)*86400:
+                            continue
                         videos[identity] = {'externalId':identity,'title':title[:500],
                             'summary':str(entry.get('description') or '')[:4000],
                             'publishedAt':max(0,int(timestamp)),
                             'publishedPrecision':'exact' if entry.get('release_timestamp') else 'estimated' if timestamp else 'unknown'}
-            if not videos:
+            if not accessible:
                 raise RuntimeError('No accessible recent metadata')
             result = history.api('/sync/history-batch',{'subscriptionId':source['id'],'videos':list(videos.values())})
             # A successful bounded fallback does not mark historical coverage complete.
