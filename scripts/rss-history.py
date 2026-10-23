@@ -25,7 +25,10 @@ def api(path, body=None):
     for attempt in range(4):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                return json.load(response)
+                content = response.read().decode('utf-8')
+                if path == '/sync/error' and content.strip() == 'OK':
+                    return {'ok': True}
+                return json.loads(content)
         except Exception as error:
             if attempt == 3:
                 detail = f'HTTP {error.code}' if isinstance(error, urllib.error.HTTPError) else type(error).__name__
