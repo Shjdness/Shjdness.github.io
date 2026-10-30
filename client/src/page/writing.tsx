@@ -19,6 +19,9 @@ import { siteName } from "../utils/constants";
 import { useColorMode } from "../utils/darkModeUtils";
 import mermaid from 'mermaid';
 import { readingStats } from '../utils/reading';
+import { getCookie } from 'typescript-cookie';
+import { ProfileContext } from '../state/profile';
+import { writingAccountId } from '../utils/writing-access';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
@@ -54,6 +57,15 @@ function uploadImage(file: File, onSuccess: (url: string) => void, showAlert: Sh
 
 // 写作页面
 export function WritingPage({ id }: { id?: number }) {
+  const profile = React.useContext(ProfileContext);
+  const ownerId = writingAccountId(profile, getCookie('token'));
+  if (ownerId === null) {
+    return <p role="status">请先登录有写作权限的账号。本地稿件已保留。</p>;
+  }
+  return <WritingEditor key={`${ownerId}:${id ?? 'new'}`} id={id} />;
+}
+
+function WritingEditor({ id }: { id?: number }) {
   const { t } = useTranslation();
   const colorMode = useColorMode();
   const cache = Cache.with(id);
