@@ -14,7 +14,12 @@ export async function migratePrivateConfig(database:string) {
   if(!await check()) {
     let data:unknown={};
     try {const legacy=await s3.send(new GetObjectCommand({Bucket:env.S3_BUCKET,Key:objectKey}));data=JSON.parse(await legacy.Body!.transformToString());}
-    catch(error:any) {if(error.name!=='NoSuchKey'&&error.$metadata?.httpStatusCode!==404)throw Error('Cannot read legacy configuration securely');}
+    catch(error:any) {
+      if(error.name!=='NoSuchKey'&&error.$metadata?.httpStatusCode!==404) {
+        const kind=/^[A-Za-z0-9_]+$/.test(error.name)?error.name:'UnknownError';
+        throw Error(`Cannot read legacy configuration securely (${kind}, HTTP ${Number(error.$metadata?.httpStatusCode)||0})`);
+      }
+    }
     if(!data||Array.isArray(data)||typeof data!=='object')throw Error('Invalid legacy configuration');
     const value=JSON.stringify(data).replace(/'/g,"''");
     const file='.wrangler/private-config-migration.sql';
