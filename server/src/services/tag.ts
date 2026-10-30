@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
 import { feedHashtags, hashtags, writingTagOptions } from "../db/schema";
@@ -107,17 +107,14 @@ async function getTagIdOrCreate(db: DB, name: string) {
   const tag = await getTagByName(db, name);
   if (tag) {
     return tag.id;
-  } else {
-    const result = await db
-      .insert(hashtags)
-      .values({
-        name,
-      })
-      .returning({ insertedId: hashtags.id });
-    if (result.length === 0) {
-      throw new Error("Failed to insert");
-    } else {
-      return result[0].insertedId;
-    }
   }
+  // The legacy table has no unique name constraint. A single conditional INSERT
+  // prevents two requests that both observed absence from creating two rows.
+  // Keep existing duplicates intact; only the creation race is addressed here.
+  const inserted=await db.get<{id:number}>(sql`INSERT INTO hashtags(name)
+    SELECT ${name} WHERE NOT EXISTS(SELECT 1 FROM hashtags WHERE name=${name}) RETURNING id`);
+  if(inserted)return inserted.id;
+  const raced=await getTagByName(db,name);
+  if(raced)return raced.id;
+  throw new Error('Tag creation was not acknowledged');
 }
