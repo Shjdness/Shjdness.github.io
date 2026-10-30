@@ -66,7 +66,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
             }).catch(() => setStatus('idle'))
             return
         }
-        client.feed.index.get({
+        client.feed.get({
             query: {
                 page: page,
                 limit: limit,

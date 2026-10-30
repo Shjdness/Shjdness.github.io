@@ -6,6 +6,9 @@ import { setup } from '../../setup';
 import { getEnv } from '../../utils/di';
 import { ingestVideos } from './ingestion';
 import { rssStorage } from './storage';
+import type {Static} from '@sinclair/typebox';
+
+const historyVideoSchema=t.Object({ externalId:t.String({pattern:'^[A-Za-z0-9_-]{11}$'}), title:t.String({maxLength:500}),summary:t.Optional(t.String({maxLength:4000})),publishedAt:t.Number({minimum:0,maximum:4102444800}),publishedPrecision:t.Union([t.Literal('exact'),t.Literal('estimated'),t.Literal('unknown')]) });
 
 export function historyRoutes(db: DB, authorized: (value?: string) => boolean) {
   const sourceById = (id: number) => db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id,id),eq(rssSubscriptions.active,1),eq(rssSubscriptions.platform,'youtube')) });
@@ -31,8 +34,8 @@ export function historyRoutes(db: DB, authorized: (value?: string) => boolean) {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
       const source = await sourceById(body.subscriptionId);
       if (!source) { set.status=404; return 'Source not found'; }
-      return ingestVideos(getEnv().DB,source,body.videos.map(video=>({ ...video, url:'',summary:video.summary || '',author:source.title,embedUrl:'',thumbnailUrl:'',publishedAt:new Date(video.publishedAt*1000) })), 'history');
-    }, { body:t.Object({ subscriptionId:t.Integer({minimum:1}), videos:t.Array(t.Object({ externalId:t.String({pattern:'^[A-Za-z0-9_-]{11}$'}), title:t.String({maxLength:500}),summary:t.Optional(t.String({maxLength:4000})),publishedAt:t.Number({minimum:0,maximum:4102444800}),publishedPrecision:t.Union([t.Literal('exact'),t.Literal('estimated'),t.Literal('unknown')]) }),{maxItems:30}) }) })
+      return ingestVideos(getEnv().DB,source,body.videos.map((video:Static<typeof historyVideoSchema>)=>({ ...video, url:'',summary:video.summary || '',author:source.title,embedUrl:'',thumbnailUrl:'',publishedAt:new Date(video.publishedAt*1000) })), 'history');
+    }, { body:t.Object({ subscriptionId:t.Integer({minimum:1}), videos:t.Array(historyVideoSchema,{maxItems:30}) }) })
     .post('/sync/history-state', async ({headers,set,body}) => {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
       const source=await sourceById(body.subscriptionId);

@@ -33,3 +33,4 @@ jobs:
         run: |
           node scripts/youtube-sync.mjs
           python scripts/rss-feed-fallback.py
+          node scripts/renew-websub.mjs

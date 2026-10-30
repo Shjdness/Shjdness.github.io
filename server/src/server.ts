@@ -19,9 +19,13 @@ import { quotaResponse } from './utils/write-budget';
 import { allowBurst } from './utils/rate-limit';
 import { authenticate } from './utils/authentication';
 import {getDB} from './utils/di';
+import {hasBodyLimitError} from './utils/request-body';
 
 export const app = () => new Elysia({ aot: false })
     .onRequest(async({request,set})=>{
+        set.headers['X-Content-Type-Options']='nosniff';
+        set.headers['Referrer-Policy']='no-referrer';
+        if(request.headers.has('authorization'))set.headers['Cache-Control']='private, no-store';
         const ip=request.headers.get('cf-connecting-ip') || 'unknown';
         if(!allowBurst(ip)) {set.status=429;set.headers['Retry-After']='60';return '请求过于频繁，请稍后重试';}
         if(Number(request.headers.get('content-length')||0)>6*1024*1024) {set.status=413;return 'Request body is too large';}
@@ -29,11 +33,6 @@ export const app = () => new Elysia({ aot: false })
             const identity=await authenticate(request,getDB(),getEnv());
             if(!identity.writer) {set.status=401;return 'Unauthorized';}
         }
-    })
-    .onAfterHandle(({set,headers}) => {
-        set.headers['X-Content-Type-Options']='nosniff';
-        set.headers['Referrer-Policy']='no-referrer';
-        if (headers.authorization) set.headers['Cache-Control']='private, no-store';
     })
     .use(cors({
         aot: false,
@@ -62,12 +61,16 @@ export const app = () => new Elysia({ aot: false })
     .use(RssService())
     .use(PomodoroService())
     .use(LifeBackupService())
-    .get('/reliability/capabilities',()=>({version:1,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true}))
+    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true}))
     .get('/', () => `Hi`)
-    .onError(({ path, params, code, error }) => {
+    .onError(({ path, params, code, error, set }) => {
+        if(hasBodyLimitError(error))return new Response('Request body is too large',{status:413,headers:{'Cache-Control':'no-store'}});
         const quota=quotaResponse(error);if(quota)return quota;
         if (code === 'NOT_FOUND')
             return `${path} ${JSON.stringify(params)} not found`
+        if(code==='VALIDATION'||code==='PARSE'||code==='INVALID_COOKIE_SIGNATURE')return;
+        set.status=500;
+        return '服务暂时不可用，请稍后重试';
     })
 
 export type App = ReturnType<typeof app>;

@@ -10,7 +10,7 @@ import { Markdown } from "../components/markdown";
 import { client } from "../main";
 import { ClientConfigContext } from "../state/config";
 import { ProfileContext } from "../state/profile";
-import { headersWithAuth } from "../utils/auth";
+import { apiErrorMessage,headersWithAuth } from "../utils/auth";
 import { siteName } from "../utils/constants";
 import { timeago } from "../utils/timeago";
 import { Button } from "../components/button";
@@ -66,7 +66,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
           })
           .then(({ error }) => {
             if (error) {
-              showAlert(error.value as string);
+              showAlert(apiErrorMessage(error.value));
             } else {
               showAlert(t("delete.success"));
               setLocation("/");
@@ -92,7 +92,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
           })
           .then(({ error }) => {
             if (error) {
-              showAlert(error.value as string);
+              showAlert(apiErrorMessage(error.value));
             } else {
               showAlert(isUnTop ? t("article.top.success") : t("article.untop.success"));
               setTop(topNew);
@@ -112,7 +112,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
       })
       .then(({ data, error }) => {
         if (error) {
-          setError(error.value as string);
+          setError(apiErrorMessage(error.value));
         } else if (data && typeof data !== "string") {
           setTimeout(() => {
             setFeed(data);
@@ -373,7 +373,7 @@ function CommentInput({
       )
       .then(({ error }) => {
         if (error) {
-          setError(errorHumanize(error.value as string));
+          setError(errorHumanize(apiErrorMessage(error.value)));
         } else {
           setContent("");
           setError("");
@@ -446,7 +446,7 @@ function Comments({ id }: { id: string }) {
       })
       .then(({ data, error }) => {
         if (error) {
-          setError(error.value as string);
+          setError(apiErrorMessage(error.value));
         } else if (data && Array.isArray(data)) {
           setComments(data);
         }
@@ -513,7 +513,7 @@ function CommentItem({
           })
           .then(({ error }) => {
             if (error) {
-              showAlert(error.value as string);
+              showAlert(apiErrorMessage(error.value));
             } else {
               showAlert(t("delete.success"), () => {
                 onRefresh();

@@ -62,7 +62,7 @@ function App() {
           };
           setProfile(nextProfile)
           localStorage.setItem(LIFE_PROFILE_CACHE, JSON.stringify(nextProfile))
-        } else if (error?.status === 401 || error?.status === 403) {
+        } else if (Number(error?.status) === 401 || Number(error?.status) === 403) {
           removeCookie('token')
           localStorage.removeItem(LIFE_PROFILE_CACHE)
           setProfile(undefined)

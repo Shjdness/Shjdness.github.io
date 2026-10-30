@@ -77,7 +77,7 @@ export function GalleryPage() {
         let hasNext = true
 
         while (hasNext) {
-          const { data } = await client.feed.index.get({
+          const { data } = await client.feed.get({
             query: { page, limit: 50, type: "normal" },
             headers: headersWithAuth(),
           })

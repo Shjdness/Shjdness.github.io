@@ -36,10 +36,7 @@ export function FeedService() {
             const page_num = (page ? (page > 0 ? page : 1) : 1) - 1;
             const limit_num = limit ? (+limit > 50 ? 50 : +limit) : 20;
             const cacheKey = `feeds_${type}_${contentType || "all"}_${page_num}_${limit_num}`;
-            if (!privateList) {
-              const cached = await cache.get(cacheKey);
-              if (cached) return cached;
-            }
+            const loadPage=async()=>{
             const visibility =
               type === "draft"
                 ? eq(feeds.draft, 1)
@@ -116,8 +113,9 @@ export function FeedService() {
               data: feed_list,
               hasNext,
             };
-            if (!privateList) await cache.set(cacheKey, data);
             return data;
+            };
+            return privateList ? loadPage() : cache.getOrSet(cacheKey,loadPage);
           },
           {
             query: t.Object({

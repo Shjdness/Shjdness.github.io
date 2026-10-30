@@ -1,5 +1,4 @@
 import Elysia, { t } from "elysia";
-import { oauth2 } from "elysia-oauth2";
 import type { DB } from "./_worker";
 import type { Env } from "./db/db";
 import { getDB, getEnv } from "./utils/di";
@@ -20,14 +19,7 @@ export function setup() {
     if (!jwt_secret) {
         throw new Error('Please set JWT_SECRET');
     }
-    const oauth = oauth2({
-        GitHub: [
-            gh_client_id,
-            gh_client_secret
-        ],
-    })
     return new Elysia({ aot: false, name: 'setup' })
-        .use(oauth)
         .use(
             jwt({
                 aot: false,

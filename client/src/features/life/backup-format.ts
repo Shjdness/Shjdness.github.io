@@ -34,7 +34,7 @@ const fromBase64 = (value: string) => Uint8Array.from(atob(value), char => char.
 
 async function backupKey(passphrase: string, salt: Uint8Array, usage: KeyUsage) {
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 310_000 }, material, { name: 'AES-GCM', length: 256 }, false, [usage]);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt:new Uint8Array(salt), iterations: 310_000 }, material, { name: 'AES-GCM', length: 256 }, false, [usage]);
 }
 
 export async function encryptBackup(backup: Backup, passphrase: string): Promise<EncryptedBackup> {
@@ -57,7 +57,7 @@ export async function decryptBackup(value: unknown, passphrase: string, expected
   if (salt.length !== 16 || iv.length !== 12) throw new Error('备份加密参数无效');
   try {
     const key = await backupKey(passphrase, salt, 'decrypt');
-    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, fromBase64(wrapper.ciphertext));
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv:new Uint8Array(iv) }, key, fromBase64(wrapper.ciphertext));
     return validateBackup(JSON.parse(new TextDecoder().decode(plaintext)), expectedOwnerId);
   } catch (error) {
     if (error instanceof Error && error.message.includes('账号不符')) throw error;

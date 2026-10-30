@@ -13,6 +13,10 @@ export function createS3Client() {
         region: region,
         endpoint: endpoint,
         forcePathStyle: forcePathStyle,
+        // R2 implements required checksums; avoid new SDK optional checksum
+        // negotiation changing existing S3-compatible upload behaviour.
+        requestChecksumCalculation:'WHEN_REQUIRED',
+        responseChecksumValidation:'WHEN_REQUIRED',
         credentials: {
             accessKeyId: accessKeyId,
             secretAccessKey: secretAccessKey

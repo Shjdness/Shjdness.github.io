@@ -67,9 +67,9 @@ export function StorageService() {
                     try {
                         await s3.send(new PutObjectCommand({ Bucket: bucket, Key: hashkey, Body: new Uint8Array(bytes), ContentType: format.contentType }))
                         return `${accessHost}/${hashkey}`
-                    } catch (e: any) {
+                    } catch {
                         set.status = 502;
-                        console.error(e.message)
+                        console.error('Image storage request failed')
                         return 'Image storage is unavailable'
                     }
                 }, {

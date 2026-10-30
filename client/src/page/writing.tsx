@@ -26,7 +26,7 @@ const tagScope = (kind: ContentKind): TagScope => kind === 'diary' || kind === '
 
 function uploadImage(file: File, onSuccess: (url: string) => void, showAlert: ShowAlertType) {
   const t = i18n.t
-  client.storage.index
+  client.storage
     .post(
       {
         key: file.name,
@@ -146,7 +146,7 @@ export function WritingPage({ id }: { id?: number }) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
         if (error) throw new Error(typeof error.value === 'string' ? error.value : JSON.stringify(error.value));
       } else {
-        const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
+        const { data, error } = await client.feed.post(payload, { headers: headersWithAuth() });
         if (error || !data || typeof data === 'string') throw new Error(error ? JSON.stringify(error.value) : '发布失败');
         publishedId = data.insertedId;
       }
@@ -170,7 +170,7 @@ export function WritingPage({ id }: { id?: number }) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
         if (error) throw new Error(String(error.value));
       } else {
-        const { data, error } = await client.feed.index.post(payload, { headers: headersWithAuth() });
+        const { data, error } = await client.feed.post(payload, { headers: headersWithAuth() });
         if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
         setCurrentId(data.insertedId); setLoadedDraft(true);
       }

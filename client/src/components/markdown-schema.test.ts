@@ -34,3 +34,11 @@ it('preserves mathematical notation after sanitization', () => {
   const tree = processor.runSync(processor.parse('$x^2$'));
   expect(JSON.stringify(tree)).toContain('katex');
 });
+
+it('keeps ordinary formula output while rejecting untrusted mathematical HTML and script links',()=>{
+  const processor=unified().use(remarkParse).use(remarkMath).use(remarkRehype,{allowDangerousHtml:true}).use(rehypeRaw).use(rehypeSanitize,markdownSchema).use(rehypeKatex);
+  const output=JSON.stringify(processor.runSync(processor.parse('$\\href{javascript:alert(1)}{click}$ $\\htmlData{onmouseover=alert(1)}{x}$ $\\frac{1}{2}\\alpha$')));
+  expect(output).toContain('katex');
+  expect(output).not.toContain('"href":"javascript:');
+  expect(output).not.toContain('"onmouseover":');
+});

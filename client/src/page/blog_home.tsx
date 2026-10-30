@@ -10,7 +10,7 @@ import { siteName } from '../utils/constants';
 export function BlogHomePage() {
   const [feeds, setFeeds] = useState<any[] | null>(null);
   useEffect(() => {
-    client.feed.index.get({ query: { page: 1, limit: 8, type: 'normal', contentType: 'normal' }, headers: headersWithAuth() }).then(({ data }: any) => {
+    client.feed.get({ query: { page: 1, limit: 8, type: 'normal', contentType: 'normal' }, headers: headersWithAuth() }).then(({ data }: any) => {
       setFeeds(data && typeof data !== 'string' ? data.data : []);
     });
   }, []);

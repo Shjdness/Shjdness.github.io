@@ -6,6 +6,7 @@ import { setup } from "../setup";
 import { getDB, getEnv } from "../utils/di";
 import { roleForUser } from "../utils/roles";
 import { frontendOrigin } from "../utils/frontend-origin";
+import {GitHub,generateState} from 'arctic';
 
 const GUEST_OPENID = "guest:beiruoxi";
 const GUEST_NAME = "悲若兮";
@@ -33,19 +34,26 @@ export function UserService() {
     const env = getEnv();
     const ownerGithubId = env.OWNER_GITHUB_ID;
     const redirectOrigin = frontendOrigin(env.FRONTEND_URL);
+    const github=new GitHub(env.GITHUB_CLIENT_ID || env.RIN_GITHUB_CLIENT_ID,env.GITHUB_CLIENT_SECRET || env.RIN_GITHUB_CLIENT_SECRET,null);
     return new Elysia({ aot: false })
         .use(setup())
         .group('/user', (group) =>
             group
-                .get("/github", ({ oauth2 }) =>
-                    oauth2.redirect("GitHub", { scopes: ["read:user"] }))
-                .get("/github/callback", async ({ jwt, oauth2, set }) => {
-
-                    const gh_token = await oauth2.authorize("GitHub");
+                .get("/github", ({cookie,redirect}) => {
+                    const state=generateState();
+                    cookie.state.set({value:state,secure:true,httpOnly:true,sameSite:'lax',path:'/',maxAge:1800});
+                    return redirect(github.createAuthorizationURL(state,['read:user']).href);
+                })
+                .get("/github/callback", async ({ jwt, cookie, query, set, redirect }) => {
+                    if(typeof cookie.state.value!=='string' || cookie.state.value!==query.state) {
+                        set.status=400;return 'Invalid OAuth state';
+                    }
+                    cookie.state.remove();
+                    const gh_token = await github.validateAuthorizationCode(query.code);
                     // request https://api.github.com/user for user info
                     const response = await fetch("https://api.github.com/user", {
                         headers: {
-                            Authorization: `Bearer ${gh_token.accessToken}`,
+                            Authorization: `Bearer ${gh_token.accessToken()}`,
                             Accept: "application/json",
                             "User-Agent": "elysia"
                         },
@@ -97,7 +105,7 @@ export function UserService() {
                         'Cache-Control': 'no-store',
                         'Referrer-Policy': 'no-referrer',
                     }
-                    set.redirect = redirect_url
+                    return redirect(redirect_url)
                 }, {
                     query: t.Object({
                         state: t.String(),

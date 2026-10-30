@@ -13,13 +13,13 @@
   },
   "dependencies": {
     "@astroimg/timeago": "^1.1.6",
-    "@elysiajs/eden": "^1.0.13",
+    "@elysiajs/eden": "1.4.9",
     "@monaco-editor/react": "^4.6.0",
     "@tailwindcss/typography": "^0.5.13",
     "i18next": "^23.11.5",
     "i18next-http-backend": "^4.0.2",
     "lodash": "^4.17.21",
-    "mermaid": "^10.9.1",
+    "mermaid": "^10.9.8",
     "primereact": "^10.6.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -54,7 +54,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
     "shjdshy-server": "workspace:shjdshy-server@latest",
-    "typescript": "^5.2.2",
+    "typescript": "^5.9.3",
     "unified": "^11.0.4",
     "vite": "^6.4.3"
   }

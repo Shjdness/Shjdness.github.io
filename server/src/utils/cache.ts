@@ -5,7 +5,7 @@ import path from "node:path";
 import Container, { Service } from "typedi";
 import type { DB } from "../_worker";
 import type { Env } from "../db/db";
-import { getDB, getEnv } from "./di";
+import { getDB, getEnv,requestContext } from "./di";
 import { createS3Client } from "./s3";
 
 // Cache Utils for storing data in memory and persisting to S3
@@ -161,6 +161,16 @@ export class CacheImpl {
     }
 }
 
-export const PublicCache = () => Container.get<CacheImpl>("cache");
-export const ServerConfig = () => Container.get<CacheImpl>("server.config");
-export const ClientConfig = () => Container.get<CacheImpl>("client.config");
+const requestCaches=new WeakMap<Env,Map<string,CacheImpl>>();
+function cacheFor(type:string) {
+    const context=requestContext();
+    if(!context)return Container.get<CacheImpl>(type);
+    let caches=requestCaches.get(context.env);
+    if(!caches){caches=new Map();requestCaches.set(context.env,caches);}
+    let cache=caches.get(type);
+    if(!cache){cache=new CacheImpl(type);caches.set(type,cache);}
+    return cache;
+}
+export const PublicCache = () => cacheFor("cache");
+export const ServerConfig = () => cacheFor("server.config");
+export const ClientConfig = () => cacheFor("client.config");

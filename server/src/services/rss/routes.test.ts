@@ -8,6 +8,8 @@ import * as schema from '../../db/schema';
 import { dbToken, envToken } from '../../utils/di';
 vi.mock('../../setup',async()=>{const {default:Elysia}=await import('elysia');return {setup:()=>new Elysia({name:'test-setup',aot:false}).derive({as:'global'},()=>({uid:1,lifeAccess:true}))};});
 import { RssService } from './routes';
+import {websubSecret} from './websub';
+import {createHmac} from 'node:crypto';
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
 let service:ReturnType<typeof RssService>;
@@ -32,6 +34,33 @@ beforeEach(()=>{
 });
 
 describe('RSS routes and actual query composition',()=>{
+  it('renews signed leases through the automation credential without polling or changing feed items',async()=>{
+    const env=Container.get<any>(envToken);env.JWT_SECRET='test-only-jwt';
+    const body=JSON.stringify({offset:0,limit:5});
+    const denied=await service.handle(new Request('http://localhost/rss/sync/renew-websub',{method:'POST',headers:{'content-type':'application/json'},body}));
+    expect(denied.status).toBe(401);
+    const hub=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(null,{status:202}));
+    try {
+      const response=await service.handle(new Request('http://localhost/rss/sync/renew-websub',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer test-only-sync-token'},body}));
+      expect(response.status,await response.clone().text()).toBe(200);
+      expect(await response.json()).toMatchObject({processed:2,failed:[],hasMore:false,status:{active:2,signed:2,verified:0}});
+      expect(hub).toHaveBeenCalledTimes(2);
+      expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM rss_items').first()).count).toBe(3);
+    } finally {hub.mockRestore();}
+  });
+  it('rejects forged pushes before writing and accepts signed raw XML without losing read/star state',async()=>{
+    const env=Container.get<any>(envToken);env.JWT_SECRET='test-only-jwt';
+    await env.DB.prepare('UPDATE rss_subscriptions SET websub_key=? WHERE id=1').bind('v2_test').run();
+    const xml='<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><id>yt:video:newvideo123</id><yt:videoId>newvideo123</yt:videoId><title>Signed video</title><link href="https://www.youtube.com/watch?v=newvideo123"/><published>2026-10-30T00:00:00Z</published><author><name>Creator</name></author></entry></feed>';
+    const secret=await websubSecret(1,'v2_test','test-only-jwt');
+    const signed='sha1='+createHmac('sha1',secret).update(xml).digest('hex');
+    const request=(signature?:string,body=xml)=>new Request('http://localhost/rss/websub/1/v2_test',{method:'POST',headers:{'content-type':'application/atom+xml',...(signature?{'x-hub-signature':signature}:{})},body});
+    for(const notification of [request(),request('sha1='+'0'.repeat(40)),request(signed,xml+' ')])expect((await service.handle(notification)).status).toBe(403);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM rss_items').first()).count).toBe(3);
+    const accepted=await service.handle(request(signed));expect(accepted.status,await accepted.text()).toBe(200);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM rss_items').first()).count).toBe(4);
+    expect(await env.DB.prepare('SELECT read,starred FROM rss_items WHERE external_id=?').bind('abcdefghijk').first()).toMatchObject({read:1,starred:1});
+  });
   it('accepts and replays history batches without losing read or star state',async()=>{
     const headers={authorization:'Bearer test-only-sync-token','content-type':'application/json'};
     const videos=[{externalId:'abcdefghijk',title:'estimated replacement',publishedAt:0,publishedPrecision:'unknown'}, {externalId:'newvideo123',title:'historical entry',publishedAt:1451606400,publishedPrecision:'estimated'}];

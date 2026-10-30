@@ -30,7 +30,9 @@ jobs:
           bun-version: 1.4.3
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/audit-runtime.ts
 
       - name: Check backend
         run: |
@@ -65,7 +67,7 @@ jobs:
             sleep 10
           done
           for attempt in $(seq 1 36); do
-            if curl --fail --silent --max-time 15 "$API_URL/reliability/capabilities" | grep -Fq '"version":1'; then break; fi
+            if curl --fail --silent --max-time 15 "$API_URL/reliability/capabilities" | grep -Fq '"version":2'; then break; fi
             if [ "$attempt" = 36 ]; then echo 'Reliability API not ready' >&2; exit 1; fi
             sleep 10
           done

@@ -6,7 +6,8 @@ import { setup } from "../../setup";
 import { getDB, getEnv } from "../../utils/di";
 import { canonicalFeed, ingest, refreshMany, refreshOne } from "./sync";
 import { resolveYouTubeSource } from "./youtube";
-import { subscribeWebSub } from "./websub";
+import { subscribeWebSub,verifyWebsub,websubSecret } from "./websub";
+import { BodyLimitError,readLimitedBody } from '../../utils/request-body';
 import { historyRoutes } from './history';
 import { rssStorage } from './storage';
 import { isD1QuotaError, WriteBudgetError } from '../../utils/write-budget';
@@ -35,6 +36,19 @@ export function RssService() {
   };
   return new Elysia({ aot: false }).use(setup()).group("/rss", (group) =>
     group.use(historyRoutes(db, syncAuthorized))
+      .post('/sync/renew-websub',async({headers,set,body,request})=>{
+        if(!syncAuthorized(headers.authorization)){set.status=401;return 'Unauthorized';}
+        const where=and(eq(rssSubscriptions.active,1),eq(rssSubscriptions.platform,'youtube'));
+        const [size]=await db.select({total:count()}).from(rssSubscriptions).where(where);
+        const rows=await db.query.rssSubscriptions.findMany({where,orderBy:rssSubscriptions.id,limit:body.limit,offset:body.offset});
+        let processed=0;const failed:number[]=[];
+        for(const source of rows) {
+          try {await canonicalFeed(db,source);await subscribeWebSub(db,source,new URL(request.url).origin);processed++;}
+          catch(error){if(error instanceof WriteBudgetError||isD1QuotaError(error))throw error;failed.push(source.id);}
+        }
+        const status=await getEnv().DB.prepare(`SELECT COUNT(*) AS active,SUM(CASE WHEN substr(websub_key,1,3)='v2_' THEN 1 ELSE 0 END) AS signed,SUM(CASE WHEN substr(websub_key,1,3)='v2_' AND websub_lease_expires_at>? THEN 1 ELSE 0 END) AS verified FROM rss_subscriptions WHERE active=1 AND platform='youtube'`).bind(Math.floor(Date.now()/1000)).first();
+        return {processed,failed,total:size.total,nextOffset:body.offset+rows.length,hasMore:body.offset+rows.length<size.total,status};
+      },{body:t.Object({offset:t.Integer({minimum:0,maximum:10000}),limit:t.Integer({minimum:1,maximum:5})})})
       .get("/sync/sources", async ({ headers, set }) => {
         if (!syncAuthorized(headers.authorization)) {
           set.status = 401;
@@ -153,16 +167,18 @@ export function RssService() {
         });
         const query = new URL(request.url).searchParams;
         const challenge = query.get("hub.challenge");
+        const lease = Number(query.get("hub.lease_seconds") || 0);
         if (
           !source ||
           source.websubKey !== params.key ||
+          source.active!==1 ||
+          query.get('hub.mode')!=='subscribe' ||
           query.get("hub.topic") !== source.feedUrl ||
-          !challenge
+          !challenge || challenge.length>1024 || !Number.isSafeInteger(lease) || lease<1 || lease>31536000
         ) {
           set.status = 404;
           return "Not found";
         }
-        const lease = Number(query.get("hub.lease_seconds") || 0);
         await db
           .update(rssSubscriptions)
           .set({
@@ -181,20 +197,29 @@ export function RssService() {
         if (
           !source ||
           source.websubKey !== params.key ||
+          source.active!==1 ||
           source.platform !== "youtube"
         ) {
           set.status = 404;
           return "Not found";
         }
         try {
-            await ingest(db, source, await request.text(), 'push');
+          const raw=await readLimitedBody(request,1024*1024);
+          // Old leases are upgraded on the next daily reconciliation. Never
+          // ingest an unsigned push; polling remains available during renewal.
+          const signature=request.headers.get('x-hub-signature-256') || request.headers.get('x-hub-signature');
+          if(!source.websubKey.startsWith('v2_') || !await verifyWebsub(raw,signature,await websubSecret(source.id,source.websubKey))) {
+            set.status=403;return 'Invalid notification signature';
+          }
+          await ingest(db, source, new TextDecoder().decode(raw), 'push');
           return "OK";
         } catch (error) {
           if (error instanceof WriteBudgetError || isD1QuotaError(error)) throw error;
+          if(error instanceof BodyLimitError){set.status=413;return error.message;}
           set.status = 422;
           return "Invalid notification";
         }
-      })
+      },{parse:'none'})
       .get("/storage", async ({ uid, lifeAccess, set }) => {
         if (!requireLife({ uid, lifeAccess, set }))
           return "Private Life access is required";
@@ -452,7 +477,7 @@ export function RssService() {
           if (!requireLife({ uid, lifeAccess, set }))
             return "Private Life access is required";
           await Promise.all(
-            body.ids.map((id, sortOrder) =>
+            body.ids.map((id:number, sortOrder:number) =>
               db
                 .update(rssSourceGroups)
                 .set({ sortOrder })

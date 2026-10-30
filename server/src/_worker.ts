@@ -1,29 +1,20 @@
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { Elysia } from "elysia";
 import "reflect-metadata";
-import Container from "typedi";
 import type { Env } from "./db/db";
 import * as schema from "./db/schema";
 import { app } from "./server";
-import { CacheImpl, ServerConfig } from "./utils/cache";
+import { ServerConfig } from "./utils/cache";
 import {quotaResponse} from './utils/write-budget';
 import {frontendOrigin} from './utils/frontend-origin';
-import { dbToken, envToken } from "./utils/di";
+import { runRequestContext } from "./utils/di";
+import {limitRequestBody} from './utils/request-body';
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const db = drizzle(env.DB, { schema: schema });
-    Container.set(envToken, env);
-    Container.set(dbToken, db);
-
-    const exist = Container.has("cache");
-    if (!exist) {
-      Container.set("cache", new CacheImpl());
-      Container.set("server.config", new CacheImpl("server.config"));
-      Container.set("client.config", new CacheImpl("client.config"));
-    }
-
+    return runRequestContext(env,db,async()=>{
     try { await ServerConfig().all(); }
     catch(error) {
       const response=quotaResponse(error) || new Response('Private configuration initialization failed; retry later', {status:503,headers:{'Cache-Control':'no-store','Retry-After':'60'}});
@@ -36,6 +27,7 @@ export default {
       response.headers.set('X-Content-Type-Options','nosniff');
       return response;
     }
-    return await new Elysia({ aot: false }).use(app()).handle(request);
+    return await new Elysia({ aot: false }).use(app()).handle(limitRequestBody(request,6*1024*1024));
+    });
   },
 };
