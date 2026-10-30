@@ -1,0 +1,24 @@
+import 'reflect-metadata';
+import {createRequire} from 'node:module';
+import {drizzle} from 'drizzle-orm/d1';
+import Container from 'typedi';
+import {it,expect,vi} from 'vitest';
+import * as schema from '../db/schema';
+import {dbToken,envToken} from '../utils/di';
+vi.mock('../setup',async()=>{const {default:Elysia}=await import('elysia');return {setup:()=>new Elysia({name:'test-notes',aot:false}).derive({as:'global'},()=>({uid:1,lifeAccess:true}))};});
+import {LifeService} from './life';
+const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
+it('CAS rejects a simultaneous conflicting write even within the same timestamp second',async()=>{
+  const sqlite=new DatabaseSync(':memory:');
+  sqlite.exec("CREATE TABLE life_daily_notes(id INTEGER PRIMARY KEY,owner_id INTEGER,date TEXT,content TEXT,created_at INTEGER DEFAULT(unixepoch()),updated_at INTEGER,revision INTEGER NOT NULL DEFAULT 0,UNIQUE(owner_id,date));");
+  const prepare=(sql:string)=>{let values:any[]=[];return {bind(...args:any[]){values=args;return this;},async all(){return {results:sqlite.prepare(sql).all(...values)};},async raw(){return sqlite.prepare(sql).all(...values).map((v:any)=>Object.values(v));},async run(){const result=sqlite.prepare(sql).run(...values);return {meta:{changes:Number(result.changes)}};}};};
+  const raw={prepare} as any;Container.set(dbToken,drizzle(raw,{schema}));Container.set(envToken,{DB:raw} as any);
+  const app=LifeService(),updatedAt=new Date().toISOString();
+  const save=(content:string,baseRevision?:number)=>app.handle(new Request('http://localhost/life/notes/2026-10-30',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({content,updatedAt,baseRevision})})).then(r=>r.json() as Promise<any>);
+  expect((await save('initial')).saved).toBe(true);
+  const results=await Promise.all([save('first',0),save('second',0)]);
+  expect(results.filter(r=>r.saved===true)).toHaveLength(1);
+  expect(results.filter(r=>r.saved===false)).toHaveLength(1);
+  expect(sqlite.prepare('SELECT revision FROM life_daily_notes').get().revision).toBe(1);
+  expect((await save('stale',0)).saved).toBe(false);
+});

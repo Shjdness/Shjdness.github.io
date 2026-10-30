@@ -58,6 +58,9 @@ def main():
             # A successful bounded fallback does not mark historical coverage complete.
             history.api('/sync/error',{'subscriptionId':source['id'],'error':''})
             print(f"FALLBACK source={source['id']} added={result['added']} changed={result['updated']} skipped={result['unchanged']}",flush=True)
+        except history.QuotaPaused:
+            print('Metadata fallback paused until quota reset; pending sources retained',flush=True)
+            return
         except Exception:
             failed += 1
             history.api('/sync/error',{'subscriptionId':source['id'],'error':'官方 Feed 与公开目录均暂不可用；保留已有内容，下次每日同步重试'})

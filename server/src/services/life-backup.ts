@@ -3,13 +3,13 @@ import Elysia from 'elysia';
 import {
   appearancePreferences, comments, dailyBasics, feedHashtags, feeds, habitLogs, habits,
   hashtags, lifeDailyNotes, lifeTodos, pomodoroSessions, rssItems, rssSourceGroups,
-  rssSubscriptions,
+  rssSubscriptions, writingTagOptions,
 } from '../db/schema';
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
 
 export const BACKUP_FORMAT = 'shjdshy-personal-data';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 export async function buildBackupEnvelope(ownerId: number, data: Record<string, unknown[]>) {
   const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
@@ -47,11 +47,13 @@ export function LifeBackupService() {
     const ownTagIds = db.select({ id: feedHashtags.hashtagId }).from(feedHashtags).where(inArray(feedHashtags.feedId, ownFeedIds));
     const ownTags = await db.query.hashtags.findMany({ where: inArray(hashtags.id, ownTagIds) });
     const safeSubscriptions = subscriptions.map(({ websubKey: _key, websubCallback: _callback, ...row }) => row);
+    const tagOptions=await db.query.writingTagOptions.findMany({where:eq(writingTagOptions.ownerId,uid)});
     const data = {
       feeds: ownFeeds, comments: ownComments, hashtags: ownTags, feedHashtags: ownFeedTags,
       habits: ownHabits, habitLogs: logs, lifeDailyNotes: notes, dailyBasics: basics,
       lifeTodos: todos, pomodoroSessions: sessions, rssSubscriptions: safeSubscriptions,
       rssSourceGroups: groups, rssItems: items, appearancePreferences: appearance,
+      writingTagOptions:tagOptions,
     };
     return buildBackupEnvelope(uid, data);
   });

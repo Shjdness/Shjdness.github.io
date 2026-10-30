@@ -5,6 +5,7 @@ import { getEnv } from '../../utils/di';
 import { ingestVideos } from './ingestion';
 import { FEED, channelIdFromUrl, fetchText, isChannelId, parseYouTubeFeed, resolveChannelId } from "./youtube";
 import { subscribeWebSub } from "./websub";
+import { isD1QuotaError, WriteBudgetError } from '../../utils/write-budget';
 
 export async function ingest(
   db: DB,
@@ -111,6 +112,7 @@ export async function refreshOne(
       (await fetchText(feedUrl)).body,
     );
   } catch (error) {
+    if (error instanceof WriteBudgetError || isD1QuotaError(error)) throw error;
     const message =
       error instanceof Error ? error.message.slice(0, 240) : "更新失败";
     await db
@@ -142,6 +144,7 @@ export async function refreshMany(
         /* Daily feed refresh remains the fallback. */
       }
     } catch (error) {
+      if (error instanceof WriteBudgetError || isD1QuotaError(error)) throw error;
       failures.push({
         id: source.id,
         title: source.alias || source.title,

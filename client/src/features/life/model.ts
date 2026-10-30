@@ -1,5 +1,5 @@
 import { endpoint } from '../../main';
-import { withTimeout } from '../../data/local-first';
+import { currentWritePause, pauseWrites, SyncPauseError } from '../../data/local-first';
 import { headersWithAuth } from '../../utils/auth';
 
 export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
@@ -36,8 +36,18 @@ export const WRITE_TIMEOUT = 20000;
 
 export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverride?: number): Promise<T> {
   const timeout = timeoutOverride ?? ((init?.method || 'GET').toUpperCase() === 'GET' ? READ_TIMEOUT : WRITE_TIMEOUT);
-  const response = await withTimeout(fetch(`${endpoint}${path}`, { ...init, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...headersWithAuth(), ...(init?.headers || {}) } }), timeout);
-  if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`);
+  if((init?.method||'GET')!=='GET' && currentWritePause()>Date.now())throw new SyncPauseError('今日数据库额度已暂停，本地更改已保留',currentWritePause());
+  const controller=new AbortController(), timer=window.setTimeout(()=>controller.abort(),timeout);
+  let response:Response;
+  try {response=await fetch(`${endpoint}${path}`, { ...init, signal:init?.signal || controller.signal, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...headersWithAuth(), ...(init?.headers || {}) } });}
+  finally {window.clearTimeout(timer);}
+  if (!response.ok) {
+    const text=await response.text();let detail:any;try{detail=JSON.parse(text);}catch{}
+    const hard=detail?.code==='D1_QUOTA_PAUSED'||/exceeded D1.*daily.*limit/i.test(text);
+    const retryAt=detail?.retryAt || Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
+    if(hard) {pauseWrites(retryAt);throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留',retryAt);}
+    throw new Error(detail?.message || text || `Request failed: ${response.status}`);
+  }
   const body = await response.text();
   const trimmed = body.trim();
   if (trimmed && response.headers.get('content-type')?.includes('application/json')) {

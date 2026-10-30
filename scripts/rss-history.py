@@ -19,6 +19,8 @@ MAX_ITEMS = int(os.environ.get('RSS_HISTORY_MAX_ITEMS', 20000))
 MAX_TOTAL = int(os.environ.get('RSS_HISTORY_MAX_TOTAL', 30000))
 VIDEO_ID = re.compile(r'^[A-Za-z0-9_-]{11}$')
 
+class QuotaPaused(RuntimeError): pass
+
 def api(path, body=None):
     payload = None if body is None else json.dumps(body).encode()
     request = urllib.request.Request(ENDPOINT + '/rss' + path, data=payload, headers={'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'ShjdnessRSS/1.0'})
@@ -30,6 +32,8 @@ def api(path, body=None):
                     return {'ok': True}
                 return json.loads(content)
         except Exception as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code in [429,503]:
+                raise QuotaPaused('后台安全预算或数据库额度已暂停；保留进度，下一个 UTC 日再续传') from None
             if attempt == 3:
                 detail = f'HTTP {error.code}' if isinstance(error, urllib.error.HTTPError) else type(error).__name__
                 raise RuntimeError(f'API request failed: {path} ({detail})') from None
@@ -51,6 +55,7 @@ def main():
         raise RuntimeError('无法取得 D1 实际容量，本轮补录停止，避免失去容量保护')
     sources = api('/sync/history-sources')['sources']
     completed, failed, partial, total = 0, 0, 0, 0
+    paused = False
     decisions = [(source, *classify(source)) for source in sources if source.get('status') != 'complete']
     decisions.sort(key=lambda entry: (entry[1] != 'full', entry[0]['id']))
     report = {'before': before, 'sources': []}
@@ -130,16 +135,18 @@ def main():
                 message = str(error) if isinstance(error, RuntimeError) else 'YouTube 历史目录暂不可访问；保留已导入内容，可重试'
                 status = 'partial' if stats['added'] or stats['unchanged'] else 'failed'
                 state(source, policy, reason, status, message)
-                failed += 1
+                paused = isinstance(error, QuotaPaused)
+                failed += int(not paused)
                 stats.update(status=status, error=message)
             report['sources'].append(stats)
             print(f"source={source['id']} policy={policy} status={stats['status']} added={stats['added']} changed={stats['updated']} skipped={stats['unchanged']}", flush=True)
+            if paused: break
     finally:
         report['after'] = api('/sync/report')
         # Ephemeral runner file only; never upload a private subscription list as
         # a publicly downloadable Actions artifact.
         Path(os.environ.get('RSS_HISTORY_REPORT', 'rss-history-report.json')).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(json.dumps({'completed': completed, 'failed': failed, 'partial': partial, 'processed': total, 'beforeBytes': before['backend']['usedBytes'], 'afterBytes': report['after']['backend']['usedBytes'], 'duplicates': report['after']['duplicates']}, ensure_ascii=False), flush=True)
+        print(json.dumps({'paused': paused, 'completed': completed, 'failed': failed, 'partial': partial, 'processed': total, 'beforeBytes': before['backend']['usedBytes'], 'afterBytes': report['after']['backend']['usedBytes'], 'duplicates': report['after']['duplicates']}, ensure_ascii=False), flush=True)
     if failed or partial:
         raise SystemExit(1)
 

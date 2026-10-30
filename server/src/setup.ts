@@ -1,12 +1,10 @@
-import { eq } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import { oauth2 } from "elysia-oauth2";
 import type { DB } from "./_worker";
 import type { Env } from "./db/db";
-import { users } from "./db/schema";
 import { getDB, getEnv } from "./utils/di";
 import jwt from "./utils/jwt";
-import { canAccessLife, roleForUser } from "./utils/roles";
+import { authenticate } from "./utils/authentication";
 
 
 export function setup() {
@@ -41,30 +39,5 @@ export function setup() {
                 })
             })
         )
-        .derive({ as: 'global' }, async ({ headers, jwt }) => {
-            const authorization = headers['authorization']
-            if (!authorization) {
-                return {};
-            }
-            if (!authorization.startsWith('Bearer ')) return {};
-            const token = authorization.slice(7);
-            const profile = await jwt.verify(token)
-            if (!profile || typeof profile.exp !== 'number') {
-                return {};
-            }
-
-            const user = await db.query.users.findFirst({ where: eq(users.id, profile.id) })
-            if (!user) {
-                return {};
-            }
-            const role = roleForUser(user);
-            return {
-                uid: user.id,
-                username: user.username,
-                role,
-                admin: role === 'owner',
-                writer: role === 'owner' || role === 'trusted',
-                lifeAccess: canAccessLife(role),
-            }
-        })
+        .derive({ as: 'global' }, ({request}) => authenticate(request,db,env))
 }

@@ -9,6 +9,7 @@ import { resolveYouTubeSource } from "./youtube";
 import { subscribeWebSub } from "./websub";
 import { historyRoutes } from './history';
 import { rssStorage } from './storage';
+import { isD1QuotaError, WriteBudgetError } from '../../utils/write-budget';
 
 export function RssService() {
   const db: DB = getDB();
@@ -97,6 +98,7 @@ export function RssService() {
             }
             return result;
           } catch (error) {
+            if (error instanceof WriteBudgetError || isD1QuotaError(error)) throw error;
             const message =
               error instanceof Error ? error.message.slice(0, 240) : "解析失败";
             await db
@@ -187,7 +189,8 @@ export function RssService() {
         try {
             await ingest(db, source, await request.text(), 'push');
           return "OK";
-        } catch {
+        } catch (error) {
+          if (error instanceof WriteBudgetError || isD1QuotaError(error)) throw error;
           set.status = 422;
           return "Invalid notification";
         }
@@ -274,7 +277,7 @@ export function RssService() {
             ]);
           const total = filtered[0]?.value || 0;
           return {
-            subscriptions,
+            subscriptions: subscriptions.map(({websubKey:_key,websubCallback:_callback,...source})=>source),
             groups,
             years: years.map(value=>value.year).filter(Boolean),
             items,
@@ -463,7 +466,7 @@ export function RssService() {
           );
           return "OK";
         },
-        { body: t.Object({ ids: t.Array(t.Number()) }) },
+        { body: t.Object({ ids: t.Array(t.Integer({minimum:1}),{maxItems:100}) }) },
       )
       .post(
         "/groups/:id",

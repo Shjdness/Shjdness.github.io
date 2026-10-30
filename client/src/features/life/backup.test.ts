@@ -12,6 +12,13 @@ async function fixture() {
 }
 
 describe('personal backup validation', () => {
+  it('continues to validate legacy v1 backups without the new tag-options table',async()=>{
+    const backup=await fixture();delete (backup.data as any).writingTagOptions;delete (backup.counts as any).writingTagOptions;
+    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(backup.data)));
+    backup.sha256=Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
+    expect((await validateBackup(backup,12)).version).toBe(1);
+    await expect(validateBackup({...backup,version:2},12)).rejects.toThrow('清单不完整');
+  });
   it('accepts a matching owner and complete snapshot', async () => {
     expect((await validateBackup(await fixture(), 12)).counts.feeds).toBe(1);
   });

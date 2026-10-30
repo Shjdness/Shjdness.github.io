@@ -1,4 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import { reserveRssWrites } from '../../utils/write-budget';
 
 export type VideoRecord = {
   externalId: string; title: string; url: string; summary: string; author: string;
@@ -50,6 +51,7 @@ export async function ingestVideos(db: D1Database, source: { id: number; ownerId
       .bind(source.ownerId, old?.subscription_id ?? source.id, video.externalId, ...contentFields.map(key => values[key]), now, now));
   }
   let sizeAfter = Number(snapshot.meta.size_after || 0);
+  await reserveRssWrites(db, statements.length, kind === 'history');
   if (statements.length) for (const result of await db.batch(statements)) {
     rowsRead += Number(result.meta.rows_read || 0); rowsWritten += Number(result.meta.rows_written || 0);
     sizeAfter = Number(result.meta.size_after || sizeAfter);

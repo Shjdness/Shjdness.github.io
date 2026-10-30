@@ -3,7 +3,7 @@ name: YouTube Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 20 * * *" # Daily, 04:17 Asia/Shanghai (GitHub may delay schedules).
+    - cron: "17 0 * * *" # Daily, 08:17 Asia/Shanghai (GitHub may delay schedules).
 
 permissions:
   contents: read

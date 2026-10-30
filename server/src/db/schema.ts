@@ -83,6 +83,7 @@ export const habitLogs = sqliteTable("habit_logs", {
 });
 
 export const lifeDailyNotes = sqliteTable("life_daily_notes", {
+    revision: integer('revision').notNull().default(0),
     id: integer("id").primaryKey(),
     ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
     date: text("date").notNull(),

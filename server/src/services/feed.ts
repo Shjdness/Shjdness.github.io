@@ -4,7 +4,10 @@ import type { DB } from "../_worker";
 import { feeds, visits } from "../db/schema";
 import { setup } from "../setup";
 import { ClientConfig, PublicCache } from "../utils/cache";
-import { getDB } from "../utils/di";
+import { getDB, getEnv } from "../utils/di";
+import { reserveBackgroundWrites } from '../utils/write-budget';
+import { allowBurst } from '../utils/rate-limit';
+import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
 import { bindTagToPost, normalizeTagNames } from "./tag";
@@ -118,9 +121,9 @@ export function FeedService() {
           },
           {
             query: t.Object({
-              page: t.Optional(t.Numeric()),
-              limit: t.Optional(t.Numeric()),
-              type: t.Optional(t.String()),
+              page: t.Optional(t.Numeric({minimum:1,maximum:10000,multipleOf:1})),
+              limit: t.Optional(t.Numeric({minimum:1,maximum:50,multipleOf:1})),
+              type: t.Optional(t.Union([t.Literal('draft'),t.Literal('normal')])),
               contentType: t.Optional(t.Literal("normal")),
             }),
           },
@@ -289,14 +292,14 @@ export function FeedService() {
           },
           {
             body: t.Object({
-              title: t.String(),
-              content: t.String(),
-              summary: t.String(),
-              alias: t.Optional(t.String()),
+              title: t.String({maxLength:500}),
+              content: t.String({maxLength:1000000}),
+              summary: t.String({maxLength:5000}),
+              alias: t.Optional(t.String({maxLength:200})),
               draft: t.Boolean(),
               listed: t.Optional(t.Boolean()),
               createdAt: t.Optional(t.Date()),
-              tags: t.Array(t.String()),
+              tags: t.Array(t.String({maxLength:64}),{maxItems:20}),
               kind: t.Optional(
                 t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
               ),
@@ -345,16 +348,15 @@ export function FeedService() {
           if (enableVisit) {
             const ip =
               headers["cf-connecting-ip"] || headers["x-real-ip"] || "UNK";
-            await db.insert(visits).values({
-              feedId: feed.id,
-              ip: ip,
-            });
-            const visit = await db.query.visits.findMany({
-              where: eq(visits.feedId, feed.id),
-              columns: { id: true, ip: true },
-            });
-            pv = visit.length;
-            uv = new Set(visit.map((v) => v.ip)).size;
+            if(allowBurst(`visit:${feed.id}:${ip}`,1)) {
+              try {
+                await reserveBackgroundWrites(getEnv().DB,'visits',8,8000);
+                await db.insert(visits).values({feedId:feed.id,ip});
+              } catch { /* Optional statistics must never block article reading. */ }
+            }
+            const [visit] = await db.select({pv:sql<number>`count(*)`,uv:sql<number>`count(distinct ${visits.ip})`}).from(visits).where(eq(visits.feedId,feed.id));
+            pv = visit?.pv || 0;
+            uv = visit?.uv || 0;
           }
           const data = {
             ...other,
@@ -429,14 +431,14 @@ export function FeedService() {
           },
           {
             body: t.Object({
-              title: t.Optional(t.String()),
-              alias: t.Optional(t.String()),
-              content: t.Optional(t.String()),
-              summary: t.Optional(t.String()),
+              title: t.Optional(t.String({maxLength:500})),
+              alias: t.Optional(t.String({maxLength:200})),
+              content: t.Optional(t.String({maxLength:1000000})),
+              summary: t.Optional(t.String({maxLength:5000})),
               listed: t.Optional(t.Boolean()),
               draft: t.Optional(t.Boolean()),
               createdAt: t.Optional(t.Date()),
-              tags: t.Optional(t.Array(t.String())),
+              tags: t.Optional(t.Array(t.String({maxLength:64}),{maxItems:20})),
               kind: t.Optional(
                 t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
               ),

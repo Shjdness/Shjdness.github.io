@@ -2,7 +2,7 @@ import { and, desc, eq, gte, isNotNull, lt, lte, or, sql } from 'drizzle-orm';
 import Elysia, { t } from 'elysia';
 import { dailyBasics, habitLogs, habits, lifeDailyNotes, lifeTodos, pomodoroSessions, rssItems, users } from '../db/schema';
 import { setup } from '../setup';
-import { getDB } from '../utils/di';
+import { getDB, getEnv } from '../utils/di';
 import { roleForUser } from '../utils/roles';
 import { todoState } from '../utils/todo-state';
 
@@ -45,7 +45,7 @@ export function LifeService() {
                     return 'Invalid date range';
                 }
 
-                const [user, ownerHabits, logs, sessions, items, basics, todos] = await Promise.all([
+                const [user, ownerHabits, logs, sessions, items, basics, todos, unread] = await Promise.all([
                     db.query.users.findFirst({ where: eq(users.id, uid!) }),
                     db.query.habits.findMany({ where: and(eq(habits.ownerId, uid!), eq(habits.active, 1)) }),
                     db.query.habitLogs.findMany({
@@ -63,6 +63,7 @@ export function LifeService() {
                     }),
                     db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, query.day)), orderBy: [dailyBasics.sortOrder] }),
                     db.query.lifeTodos.findMany({ where: eq(lifeTodos.ownerId, uid!), orderBy: [lifeTodos.completed, desc(lifeTodos.updatedAt)], limit: 8 }),
+                    db.select({value:sql<number>`count(*)`}).from(rssItems).where(and(eq(rssItems.ownerId,uid!),eq(rssItems.read,0))),
                 ]);
 
                 return {
@@ -73,7 +74,7 @@ export function LifeService() {
                         completed: logs.filter(log => log.completed).length,
                         focusMinutes: sessions.filter(session => session.completed).reduce((sum, session) => sum + session.focusMinutes, 0),
                         rounds: sessions.filter(session => session.completed).length,
-                        unread: items.filter(item => !item.read).length,
+                        unread: unread[0]?.value || 0,
                     },
                     habits: ownerHabits.map(habit => ({
                         id: habit.id,
@@ -185,11 +186,16 @@ export function LifeService() {
                 const incoming = new Date(body.updatedAt);
                 if (!Number.isFinite(incoming.getTime())) { set.status = 400; return 'Invalid updatedAt'; }
                 const existing = await db.query.lifeDailyNotes.findFirst({ where: and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)) });
-                if (existing && existing.updatedAt.getTime() > incoming.getTime()) return { saved: false, note: existing };
-                await db.insert(lifeDailyNotes).values({ ownerId: uid!, date: params.date, content: body.content, updatedAt: incoming }).onConflictDoUpdate({ target: [lifeDailyNotes.ownerId, lifeDailyNotes.date], set: { content: body.content, updatedAt: incoming } });
-                const note = await db.query.lifeDailyNotes.findFirst({ where: and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)) });
-                return { saved: true, note };
-            }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }), body: t.Object({ content: t.String({ maxLength: 2000 }), updatedAt: t.String() }) })
+                if(existing?.content===body.content)return {saved:true,note:existing};
+                if(existing && (body.baseRevision!==undefined ? existing.revision!==body.baseRevision : body.baseUpdatedAt ? existing.updatedAt.getTime()!==new Date(body.baseUpdatedAt).getTime() : existing.updatedAt.getTime()>incoming.getTime()))return {saved:false,note:existing};
+                if(incoming.getTime()>Date.now()+300000) {set.status=400;return '设备时间超前，请校准后同步；本地修改已保留';}
+                const updatedAt=Math.floor((body.baseUpdatedAt?Date.now():incoming.getTime())/1000);
+                const result=await getEnv().DB.prepare(`INSERT INTO life_daily_notes(owner_id,date,content,updated_at) VALUES(?,?,?,?)
+                    ON CONFLICT(owner_id,date) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at,revision=life_daily_notes.revision+1
+                    WHERE life_daily_notes.revision=?`).bind(uid!,params.date,body.content,updatedAt,existing?.revision ?? -1).run();
+                const note=await db.query.lifeDailyNotes.findFirst({where:and(eq(lifeDailyNotes.ownerId,uid!),eq(lifeDailyNotes.date,params.date))});
+                return {saved:Number(result.meta.changes)>0,note};
+            }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }), body: t.Object({ content: t.String({ maxLength: 2000 }), updatedAt: t.String(), baseUpdatedAt:t.Optional(t.String({format:'date-time'})),baseRevision:t.Optional(t.Integer({minimum:0})) }) })
             .delete('/notes/:date', async ({ uid, lifeAccess, set, params }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 await db.delete(lifeDailyNotes).where(and(eq(lifeDailyNotes.ownerId, uid!), eq(lifeDailyNotes.date, params.date)));

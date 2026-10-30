@@ -5,7 +5,8 @@ import Container from "typedi";
 import type { Env } from "./db/db";
 import * as schema from "./db/schema";
 import { app } from "./server";
-import { CacheImpl } from "./utils/cache";
+import { CacheImpl, ServerConfig } from "./utils/cache";
+import {quotaResponse} from './utils/write-budget';
 import { dbToken, envToken } from "./utils/di";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
@@ -22,6 +23,8 @@ export default {
       Container.set("client.config", new CacheImpl("client.config"));
     }
 
+    try { await ServerConfig().all(); }
+    catch(error) { return quotaResponse(error) || new Response('Private configuration initialization failed; retry later', {status:503,headers:{'Cache-Control':'no-store','Retry-After':'60'}}); }
     return await new Elysia({ aot: false }).use(app()).handle(request);
   },
 };

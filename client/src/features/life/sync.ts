@@ -1,11 +1,20 @@
-import { getCached, getSyncQueue, setCached } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
+import { accountIdFromToken, SyncConflictError, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import type { DailyBasic, DailyNote, Habit, Log, TodoType } from './model';
 import { lifeApi } from './model';
 
-export async function sendQueuedMutation(item: { entity: string; action: string; payload: unknown }) {
+export async function sendQueuedMutation(item: { ownerId?:number; entity: string; action: string; payload: unknown }) {
+  const account=accountIdFromToken(getCookie('token'));
+  if(item.ownerId!==undefined && item.ownerId!==account)throw Error('账号已切换，离线记录已保留');
+  const sendApi:typeof lifeApi=async(...args)=>{
+    if(accountIdFromToken(getCookie('token'))!==account)throw Error('账号已切换，离线记录已保留');
+    const result=await lifeApi(...args);
+    if(accountIdFromToken(getCookie('token'))!==account)throw Error('账号已切换，离线记录已保留');
+    return result as any;
+  };
   if (item.entity === 'habit' && item.action === 'create') {
     const payload = item.payload as { localId: number; name: string; description?: string; color?: string; clientKey: string };
-    const data = await lifeApi<{ insertedId: number }>('/habit', { method: 'POST', body: JSON.stringify({ name: payload.name, description: payload.description, color: payload.color, clientKey: payload.clientKey }) });
+    const data = await sendApi<{ insertedId: number }>('/habit', { method: 'POST', body: JSON.stringify({ name: payload.name, description: payload.description, color: payload.color, clientKey: payload.clientKey }) });
     if (!data?.insertedId) return false;
     const mapping = (await getCached<Record<string, number>>('life:habit-id-map'))?.value || {};
     mapping[String(payload.localId)] = data.insertedId;
@@ -15,35 +24,36 @@ export async function sendQueuedMutation(item: { entity: string; action: string;
   if (item.entity === 'habit' && (item.action === 'update' || item.action === 'archive')) {
     const payload = item.payload as { id: number; patch: { name?: string; description?: string; color?: string; active?: boolean } };
     const id = await resolveHabitId(payload.id);
-    await lifeApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
+    await sendApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
     return true;
   }
   if (item.entity === 'habit' && item.action === 'delete') {
     const payload = item.payload as { id: number };
     const id = await resolveHabitId(payload.id);
-    await lifeApi(`/habit/${id}`, { method: 'DELETE' });
+    await sendApi(`/habit/${id}`, { method: 'DELETE' });
     return true;
   }
   if (item.entity === 'habit' && item.action === 'toggle') {
     const payload = item.payload as { id: number; date: string; completed: boolean };
     const id = await resolveHabitId(payload.id);
-    await lifeApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date: payload.date, completed: payload.completed }) });
+    await sendApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date: payload.date, completed: payload.completed }) });
     return true;
   }
   if (item.entity === 'note' && item.action === 'save') {
     const payload = item.payload as { date: string; content: string; updatedAt: string };
-    await lifeApi(`/life/notes/${payload.date}`, { method: 'POST', body: JSON.stringify({ content: payload.content, updatedAt: payload.updatedAt }) });
+    const result=await sendApi<{saved:boolean;note:unknown}>(`/life/notes/${payload.date}`, { method: 'POST', body: JSON.stringify({ content: payload.content, updatedAt: payload.updatedAt }) });
+    if(result?.saved!==true)throw new SyncConflictError(result?.note);
     return true;
   }
   if (item.entity === 'note' && item.action === 'delete') {
     const payload = item.payload as { date: string };
-    await lifeApi(`/life/notes/${payload.date}`, { method: 'DELETE' });
+    await sendApi(`/life/notes/${payload.date}`, { method: 'DELETE' });
     return true;
   }
   if (item.entity === 'basic') {
     const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string };
     if (item.action === 'create') {
-      const result = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey }) });
+      const result = await sendApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey }) });
       if (!result.insertedId || payload.localId === undefined) return false;
       const mapping = (await getCached<Record<string, number>>('life:basic-id-map'))?.value || {};
       mapping[String(payload.localId)] = result.insertedId;
@@ -51,24 +61,24 @@ export async function sendQueuedMutation(item: { entity: string; action: string;
       return true;
     }
     const id = await resolveBasicId(payload.id || 0);
-    if (item.action === 'delete') await lifeApi(`/life/basics/${id}`, { method: 'DELETE' });
-    else await lifeApi(`/life/basics/${id}`, { method: 'POST', body: JSON.stringify({ content: payload.content, completed: payload.completed, sortOrder: payload.sortOrder }) });
+    if (item.action === 'delete') await sendApi(`/life/basics/${id}`, { method: 'DELETE' });
+    else await sendApi(`/life/basics/${id}`, { method: 'POST', body: JSON.stringify({ content: payload.content, completed: payload.completed, sortOrder: payload.sortOrder }) });
     return true;
   }
   if (item.entity === 'todo') {
     const payload = item.payload as { localId?: number; id?: number; content?: string; type?: TodoType; completed?: boolean; clientKey?: string; deadlineAt?: string | null; completedAt?: string | null; sortOrder?: number };
     if (item.action === 'create') {
       const { localId: _localId, id: _id, ...body } = payload;
-      const result = await lifeApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify(body) });
+      const result = await sendApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify(body) });
       if (!result.insertedId || payload.localId === undefined) return false;
       await rememberLocalId('life:todo-id-map', payload.localId, result.insertedId);
       return true;
     }
     const id = await resolveTodoId(payload.id || 0);
-    if (item.action === 'delete') await lifeApi(`/life/todos/${id}`, { method: 'DELETE' });
+    if (item.action === 'delete') await sendApi(`/life/todos/${id}`, { method: 'DELETE' });
     else {
       const { localId: _localId, id: _id, clientKey: _key, ...body } = payload;
-      await lifeApi(`/life/todos/${id}`, { method: 'POST', body: JSON.stringify(body) });
+      await sendApi(`/life/todos/${id}`, { method: 'POST', body: JSON.stringify(body) });
     }
     return true;
   }
@@ -78,16 +88,16 @@ export async function sendQueuedMutation(item: { entity: string; action: string;
     if (payload.todoClientKey && (await getSyncQueue()).some(queued => queued.entity === 'todo' && queued.action === 'create' && (queued.payload as { clientKey?: string }).clientKey === payload.todoClientKey)) {
       throw new Error('关联待办尚未同步，番茄钟记录等待重试');
     }
-    await lifeApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(item.payload) });
+    await sendApi('/pomodoro/sessions', { method: 'POST', body: JSON.stringify(item.payload) });
     return true;
   }
   if (item.entity === 'rss' && item.action === 'update') {
     const payload = item.payload as { id: number; patch: { read?: boolean; starred?: boolean } };
-    await lifeApi(`/rss/items/${payload.id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
+    await sendApi(`/rss/items/${payload.id}`, { method: 'POST', body: JSON.stringify(payload.patch) });
     return true;
   }
   if (item.entity === 'rss' && item.action === 'mark-all-read') {
-    await lifeApi('/rss/items/mark-all-read', { method: 'POST' });
+    await sendApi('/rss/items/mark-all-read', { method: 'POST' });
     return true;
   }
   throw new Error(`Unsupported queued mutation: ${item.entity}/${item.action}`);

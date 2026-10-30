@@ -1,6 +1,7 @@
 import { $ } from "bun"
 import { readdir } from "node:fs/promises"
 import stripIndent from 'strip-indent'
+import { migratePrivateConfig } from './migrate-private-config';
 import { fixTopField, getMigrationVersion, isInfoExist, updateMigrationVersion } from "./fix-top-field"
 
 function env(name: string, defaultValue?: string, required = false) {
@@ -173,10 +174,22 @@ try {
         }
         return JSON.stringify([...merged.entries()].sort((a,b)=>a[0].localeCompare(b[0])));
     };
+    const noteSnapshot = async () => {
+        const query = 'SELECT id,owner_id,date,content,updated_at FROM life_daily_notes ORDER BY id';
+        const output = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${query} --json`.quiet().text();
+        const rows = (JSON.parse(output) as Array<{results?: unknown[]}>)[0]?.results;
+        if (!Array.isArray(rows)) throw Error('Note preservation audit returned no records');
+        return JSON.stringify(rows);
+    };
     for (const file of sqlFiles) {
+        const beforeNotes = file.startsWith('0026-') ? await noteSnapshot() : null;
         const beforeTodos = file.startsWith('0024-') ? await todoSnapshot() : null;
         const beforeRss = file.startsWith('0025-') ? await rssSnapshot() : null;
         await $`bunx wrangler d1 execute ${DB_NAME} --remote --file ./server/sql/${file} -y`
+        if (beforeNotes !== null) {
+            if (beforeNotes !== await noteSnapshot()) throw Error('Note contents changed during migration; deployment stopped.');
+            console.log(`Note preservation audit passed: ${JSON.parse(beforeNotes).length} original notes retained.`);
+        }
         if (beforeTodos !== null) {
             if (beforeTodos !== await todoSnapshot()) throw new Error('Todo records changed during migration; Worker deployment stopped.');
             console.log(`Todo migration audit passed: ${JSON.parse(beforeTodos).length} original records retained.`);
@@ -239,6 +252,7 @@ console.log(`Legacy unlisted audit passed.`)
 console.log(`----------------------------`)
 
 console.log(`Patch D1`)
+await migratePrivateConfig(DB_NAME);
 await fixTopField(typ, DB_NAME, isInfoExistResult);
 console.log(`----------------------------`)
 console.log(`Put secrets`)
@@ -246,7 +260,10 @@ console.log(`Put secrets`)
 async function putSecret(name: string, value?: string) {
     if (value) {
         console.log(`Put ${name}`)
-        await $`echo "${value}" | bun wrangler secret put ${name}`
+        const child=Bun.spawn(['bun','wrangler','secret','put',name],{stdin:'pipe',stdout:'pipe',stderr:'pipe'});
+        child.stdin.write(value);child.stdin.end();
+        const [code]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+        if(code!==0)throw Error(`Secret update failed: ${name}`);
     } else {
         console.log(`Skip ${name}, value is not defined.`)
     }

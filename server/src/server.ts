@@ -15,8 +15,26 @@ import { PomodoroService } from './services/pomodoro';
 import { LifeBackupService } from './services/life-backup';
 import { getEnv } from './utils/di';
 import { frontendOrigin } from './utils/frontend-origin';
+import { quotaResponse } from './utils/write-budget';
+import { allowBurst } from './utils/rate-limit';
+import { authenticate } from './utils/authentication';
+import {getDB} from './utils/di';
 
 export const app = () => new Elysia({ aot: false })
+    .onRequest(async({request,set})=>{
+        const ip=request.headers.get('cf-connecting-ip') || 'unknown';
+        if(!allowBurst(ip)) {set.status=429;set.headers['Retry-After']='60';return '请求过于频繁，请稍后重试';}
+        if(Number(request.headers.get('content-length')||0)>6*1024*1024) {set.status=413;return 'Request body is too large';}
+        if(request.method==='POST'&&new URL(request.url).pathname.replace(/\/$/,'')==='/storage') {
+            const identity=await authenticate(request,getDB(),getEnv());
+            if(!identity.writer) {set.status=401;return 'Unauthorized';}
+        }
+    })
+    .onAfterHandle(({set,headers}) => {
+        set.headers['X-Content-Type-Options']='nosniff';
+        set.headers['Referrer-Policy']='no-referrer';
+        if (headers.authorization) set.headers['Cache-Control']='private, no-store';
+    })
     .use(cors({
         aot: false,
         origin: (request) => request.headers.get('Origin') === frontendOrigin(getEnv().FRONTEND_URL),
@@ -44,8 +62,10 @@ export const app = () => new Elysia({ aot: false })
     .use(RssService())
     .use(PomodoroService())
     .use(LifeBackupService())
+    .get('/reliability/capabilities',()=>({version:1,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true}))
     .get('/', () => `Hi`)
-    .onError(({ path, params, code }) => {
+    .onError(({ path, params, code, error }) => {
+        const quota=quotaResponse(error);if(quota)return quota;
         if (code === 'NOT_FOUND')
             return `${path} ${JSON.stringify(params)} not found`
     })

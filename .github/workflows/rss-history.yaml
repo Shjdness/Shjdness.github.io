@@ -2,7 +2,7 @@ name: RSS History
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: [Deploy]
+    workflows: [YouTube Sync]
     types: [completed]
     branches: [main]
 permissions:
@@ -24,10 +24,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Plan pending historical work
+        id: plan
+        env:
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
+        run: python scripts/rss-history-pending.py
       - uses: oven-sh/setup-bun@v2
+        if: steps.plan.outputs.pending == 'true'
         with:
           bun-version: 1.4.3
       - name: Create restore bookmark before historical import
+        if: steps.plan.outputs.pending == 'true'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,19 +44,12 @@ jobs:
           bun install --frozen-lockfile
           bunx wrangler d1 time-travel info "$DB_NAME"
       - name: Install metadata extractor
+        if: steps.plan.outputs.pending == 'true'
         run: |
           python -B scripts/tests/test_rss_transport.py
           python -m pip install 'yt-dlp==2026.10.21'
-      - name: Reconcile latest feed before frequency assessment
-        continue-on-error: true # History can still recover metadata if a Feed is unavailable.
-        env:
-          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT || 'https://rin-server.1322589722.workers.dev' }}
-          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
-          RSS_SYNC_FAILURE_FILE: ${{ runner.temp }}/rss-feed-failures.json
-        run: |
-          node scripts/youtube-sync.mjs
-          python scripts/rss-feed-fallback.py
       - name: Assess and backfill accessible history
+        if: steps.plan.outputs.pending == 'true'
         env:
           RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT || 'https://rin-server.1322589722.workers.dev' }}
           RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}

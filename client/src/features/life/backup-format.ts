@@ -22,7 +22,7 @@ export type EncryptedBackup = {
 export const BACKUP_TABLES = [
   'feeds', 'comments', 'hashtags', 'feedHashtags', 'habits', 'habitLogs',
   'lifeDailyNotes', 'dailyBasics', 'lifeTodos', 'pomodoroSessions',
-  'rssSubscriptions', 'rssSourceGroups', 'rssItems', 'appearancePreferences',
+  'rssSubscriptions', 'rssSourceGroups', 'rssItems', 'appearancePreferences', 'writingTagOptions',
 ] as const;
 
 const toBase64 = (value: Uint8Array) => {
@@ -68,11 +68,12 @@ export async function decryptBackup(value: unknown, passphrase: string, expected
 export async function validateBackup(value: unknown, expectedOwnerId: number): Promise<Backup> {
   if (!value || typeof value !== 'object') throw new Error('备份内容无效');
   const backup = value as Backup;
-  if (backup.format !== 'shjdshy-personal-data' || backup.version !== 1) throw new Error('备份格式不受支持');
+  if (backup.format !== 'shjdshy-personal-data' || ![1,2].includes(backup.version)) throw new Error('备份格式不受支持');
   if (backup.ownerId !== expectedOwnerId) throw new Error('备份所属账号不符');
   if (!Number.isSafeInteger(backup.ownerId) || backup.ownerId <= 0 || !Number.isFinite(Date.parse(backup.exportedAt))) throw new Error('备份元数据无效');
   if (!backup.data || typeof backup.data !== 'object' || !backup.counts || typeof backup.counts !== 'object') throw new Error('备份数据不完整');
-  if (BACKUP_TABLES.some(name => !(name in backup.data) || !(name in backup.counts)) || Object.keys(backup.data).length !== Object.keys(backup.counts).length) throw new Error('备份清单不完整');
+  const required=backup.version===1?BACKUP_TABLES.filter(name=>name!=='writingTagOptions'):BACKUP_TABLES;
+  if (required.some(name => !(name in backup.data) || !(name in backup.counts)) || Object.keys(backup.data).length !== Object.keys(backup.counts).length) throw new Error('备份清单不完整');
   for (const [name, count] of Object.entries(backup.counts)) {
     if (!Number.isSafeInteger(count) || count < 0 || !Array.isArray(backup.data[name]) || backup.data[name].length !== count) throw new Error(`备份清单不符：${name}`);
   }

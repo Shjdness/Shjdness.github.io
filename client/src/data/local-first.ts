@@ -1,7 +1,11 @@
 import { getCookie } from 'typescript-cookie';
 
 export type SyncEntity = 'habit' | 'note' | 'basic' | 'todo' | 'pomodoro' | 'rss';
-export type SyncItem = { id?: number; ownerId?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed'; lastError?: string };
+export type SyncItem = { id?: number; ownerId?: number; entity: SyncEntity; action: string; payload: unknown; createdAt: number; retryCount: number; status: 'pending' | 'syncing' | 'failed' | 'conflict'; lastError?: string; remote?: unknown };
+export class SyncConflictError extends Error {constructor(public remote:unknown) {super('云端已有不同版本；本地内容已保留，请展开冲突处理');}}
+export class SyncPauseError extends Error {constructor(message:string,public retryAt:number) {super(message);}}
+export const currentWritePause = () => Number(localStorage.getItem(`account:${currentAccountId()}:write-pause`)||0);
+export function pauseWrites(until:number) {localStorage.setItem(`account:${currentAccountId()}:write-pause`,String(until));}
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 
 const DB_NAME = 'shjdshy-life';
@@ -46,9 +50,12 @@ async function storeRequest<T>(storeName: string, mode: IDBTransactionMode, oper
   return new Promise<T>((resolve, reject) => {
     const transaction = db.transaction(storeName, mode);
     const request = operation(transaction.objectStore(storeName));
-    request.onsuccess = () => resolve(request.result);
+    let result:T;
+    request.onsuccess = () => {result=request.result;};
     request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
+    transaction.onabort = () => {db.close();reject(transaction.error || new Error('本机保存未提交，请保留页面并重试'));};
+    transaction.onerror = () => reject(transaction.error);
+    transaction.oncomplete = () => {db.close();resolve(result);};
   });
 }
 
@@ -121,6 +128,7 @@ export async function processSyncQueue(
   let failed = 0;
   for (const item of queue) {
     if (!item.id) continue;
+    if(item.status==='conflict') {failed++;continue;}
     try {
       await storage.markSyncing(item);
       if (await send(item)) {
@@ -131,23 +139,50 @@ export async function processSyncQueue(
         failed += 1;
       }
     } catch (error) {
-      await storage.markFailed(item, error instanceof Error ? error.message.slice(0, 240) : '同步失败');
+      await storage.markFailed(error instanceof SyncConflictError ? {...item,status:'conflict',remote:error.remote}:item, error instanceof Error ? error.message.slice(0, 240) : '同步失败');
       failed += 1;
+      if(error instanceof SyncPauseError)break;
     }
   }
   return { total: queue.length, synced, failed, offline: false };
 }
 
 export async function flushSyncQueue(send: (item: SyncItem) => Promise<boolean>): Promise<SyncResult> {
+  const ownerId=currentAccountId();
+  const run=async()=>flushOwnedQueue(send,ownerId);
+  return navigator.locks && ownerId ? navigator.locks.request(`life-sync:${ownerId}`,run) : run();
+}
+
+async function flushOwnedQueue(send:(item:SyncItem)=>Promise<boolean>,ownerId:number|null):Promise<SyncResult> {
+  if(currentAccountId()!==ownerId)throw Error('账号已切换，原账号离线记录已保留');
   const queue = await getSyncQueue();
   if (!queue.length) return { total: 0, synced: 0, failed: 0, offline: !navigator.onLine };
   const result = await processSyncQueue(queue, navigator.onLine, send, {
     markSyncing: async item => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, status: 'syncing', lastError: undefined })); },
     remove: async id => { await storeRequest('sync_queue', 'readwrite', store => store.delete(id)); },
-    markFailed: async (item, lastError) => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: 'failed', lastError })); },
+    markFailed: async (item, lastError) => { await storeRequest('sync_queue', 'readwrite', store => store.put({ ...item, retryCount: item.retryCount + 1, status: item.status==='conflict'?'conflict':'failed', lastError })); },
   });
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
   return result;
+}
+
+export async function resolveSyncConflict(item:SyncItem,useLocal:boolean,send:(payload:any)=>Promise<void>) {
+  if(item.ownerId!==currentAccountId()||item.status!=='conflict'||!item.id)throw Error('请使用原账号处理冲突');
+  // Archive first, including discarded versions; never clear the pending store.
+  await setCached(`life:conflict-archive:${item.id}`,item);
+  if(useLocal) {
+    try {await send(item.payload);}
+    catch(error) {
+      if(error instanceof SyncConflictError) {
+        await storeRequest('sync_queue','readwrite',store=>store.put({...item,remote:error.remote}));
+        window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+      }
+      throw error;
+    }
+  }
+  if(item.ownerId!==currentAccountId())throw Error('账号已切换，原始记录已保留');
+  await storeRequest('sync_queue','readwrite',store=>store.delete(item.id!));
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
 export const onLocalChange = (listener: () => void) => {

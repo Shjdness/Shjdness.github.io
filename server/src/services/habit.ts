@@ -56,8 +56,8 @@ export function HabitService() {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
       const prefix = `${query.month}-`;
       const ownerHabits = await db.query.habits.findMany({ where: eq(habits.ownerId, uid) });
-      const logs = await db.query.habitLogs.findMany({ where: eq(habitLogs.ownerId, uid) });
-      return { habits: ownerHabits, logs: logs.filter(log => log.date.startsWith(prefix)) };
+      const logs = await db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid),gte(habitLogs.date,prefix+'01'),lte(habitLogs.date,prefix+'31')) });
+      return { habits: ownerHabits, logs };
     }, { query: t.Object({ month: t.String({ pattern: '^\\d{4}-\\d{2}$' }) }) })
   );
 }

@@ -6,7 +6,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 function database() {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(`CREATE TABLE rss_items(id INTEGER PRIMARY KEY,owner_id INTEGER,subscription_id INTEGER,external_id TEXT,title TEXT,url TEXT,summary TEXT,author TEXT,embed_url TEXT,thumbnail_url TEXT,published_at INTEGER,published_precision TEXT,read INTEGER DEFAULT 0,starred INTEGER DEFAULT 0,created_at INTEGER,updated_at INTEGER,UNIQUE(owner_id,external_id));
+  sqlite.exec(`CREATE TABLE rss_write_budget(day TEXT PRIMARY KEY,reserved INTEGER NOT NULL DEFAULT 0); CREATE TABLE rss_items(id INTEGER PRIMARY KEY,owner_id INTEGER,subscription_id INTEGER,external_id TEXT,title TEXT,url TEXT,summary TEXT,author TEXT,embed_url TEXT,thumbnail_url TEXT,published_at INTEGER,published_precision TEXT,read INTEGER DEFAULT 0,starred INTEGER DEFAULT 0,created_at INTEGER,updated_at INTEGER,UNIQUE(owner_id,external_id));
     CREATE TABLE rss_sync_runs(id INTEGER PRIMARY KEY,owner_id INTEGER,source_id INTEGER,kind TEXT,added INTEGER,updated INTEGER,unchanged INTEGER,rows_read INTEGER,rows_written INTEGER,size_before INTEGER,size_after INTEGER,created_at INTEGER);`);
   const prepare = (sql: string) => {
     let bindings: any[]=[];
