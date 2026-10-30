@@ -7,6 +7,7 @@ import * as schema from "./db/schema";
 import { app } from "./server";
 import { CacheImpl, ServerConfig } from "./utils/cache";
 import {quotaResponse} from './utils/write-budget';
+import {frontendOrigin} from './utils/frontend-origin';
 import { dbToken, envToken } from "./utils/di";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
@@ -24,7 +25,17 @@ export default {
     }
 
     try { await ServerConfig().all(); }
-    catch(error) { return quotaResponse(error) || new Response('Private configuration initialization failed; retry later', {status:503,headers:{'Cache-Control':'no-store','Retry-After':'60'}}); }
+    catch(error) {
+      const response=quotaResponse(error) || new Response('Private configuration initialization failed; retry later', {status:503,headers:{'Cache-Control':'no-store','Retry-After':'60'}});
+      // Initialization precedes Elysia: preserve the same strict CORS boundary
+      // so the frontend can recognize quota pauses instead of retrying blindly.
+      if(request.headers.get('Origin')===frontendOrigin(env.FRONTEND_URL)) {
+        response.headers.set('Access-Control-Allow-Origin',frontendOrigin(env.FRONTEND_URL));
+        response.headers.set('Vary','Origin');
+      }
+      response.headers.set('X-Content-Type-Options','nosniff');
+      return response;
+    }
     return await new Elysia({ aot: false }).use(app()).handle(request);
   },
 };
