@@ -259,7 +259,9 @@ export function FeedService() {
             const exist = draft
               ? null
               : await db.query.feeds.findFirst({
-                  where: or(eq(feeds.title, title), eq(feeds.content, content)),
+                  // Duplicate checks must not disclose another account's private
+                  // title/content through a different create response.
+                  where: and(eq(feeds.uid, uid), or(eq(feeds.title, title), eq(feeds.content, content))),
                 });
             if (exist) {
               set.status = 400;

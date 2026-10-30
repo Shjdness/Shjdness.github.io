@@ -116,5 +116,14 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const guestHeaders={authorization:'Bearer '+guestTokens[0]};
   expect((await fetcher('http://localhost/config/server',{headers:guestHeaders})).status).toBe(401);
   expect(await (await fetcher('http://localhost/life/todos',{headers:guestHeaders})).json()).toEqual([]);
+  for(const [title,content] of [['fixture diary','independent guest diary'],['independent guest memo','fixture content memo']]) {
+    const ownCopy=await api.feed.post({title,content,summary:'',draft:false,kind:'diary',tags:[]},{headers:guestHeaders});
+    expect(ownCopy.status,JSON.stringify(ownCopy.error)).toBe(200);
+  }
+  // Same-account duplicate behavior stays intact; another account's private
+  // existence must not be observable through creation or direct reads.
+  const duplicate=await api.feed.post({title:'fixture diary',content:'another content',summary:'',draft:false,kind:'diary',tags:[]},{headers:guestHeaders});
+  expect(duplicate.status).toBe(400);
+  expect((await api.feed({id:inserted[1]}).get({headers:guestHeaders})).status).toBe(403);
   sqlite.close();
 });
