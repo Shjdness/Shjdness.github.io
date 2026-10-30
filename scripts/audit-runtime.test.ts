@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {runtimeNodes} from './audit-runtime';
+import {runtimeNodes,parseAudit} from './audit-runtime';
 it('follows nested runtime versions while excluding development-only roots',()=>{
   const nodes=runtimeNodes({workspaces:{server:{dependencies:{api:'1'}},client:{dependencies:{ui:'1'}}},packages:{
     api:['api@1.0.0','',{dependencies:{shared:'1'}}],
@@ -11,4 +11,12 @@ it('follows nested runtime versions while excluding development-only roots',()=>
 });
 it('stops when a declared runtime dependency is missing from the lockfile',()=>{
   expect(()=>runtimeNodes({workspaces:{server:{dependencies:{missing:'1'}}},packages:{}})).toThrow('Missing installed runtime dependency');
+});
+it('rejects audit failures even when stdout contains valid JSON',()=>{
+  for(const [stdout,code] of [['{}',2],['{}',1],['{"error":"unavailable"}',1],['[]',0],['null',0],['not json',0],['{"pkg":[]}',1],['{"pkg":[{"url":"https://example.invalid","severity":"high"}]}',1]] as const) {
+    expect(()=>parseAudit(stdout,code)).toThrow('audit unavailable');
+  }
+  expect(parseAudit('{}',0)).toEqual({});
+  const valid={pkg:[{url:'https://github.com/advisories/test',severity:'high',vulnerable_versions:'<1.0.0'}]};
+  expect(parseAudit(JSON.stringify(valid),1)).toEqual(valid);
 });

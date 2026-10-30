@@ -20,8 +20,11 @@ export function HabitService() {
         const existing = await db.query.habits.findFirst({ where: and(eq(habits.ownerId, uid), eq(habits.clientKey, body.clientKey)) });
         if (existing) return { insertedId: existing.id };
       }
-      const result = await db.insert(habits).values({ ownerId: uid, ...body }).returning({ insertedId: habits.id });
-      return result[0];
+      const result = await db.insert(habits).values({ ownerId: uid, ...body, clientKey: body.clientKey || null }).onConflictDoNothing({ target: [habits.ownerId, habits.clientKey] }).returning({ insertedId: habits.id });
+      if (result[0]) return result[0];
+      const raced = body.clientKey ? await db.query.habits.findFirst({ where: and(eq(habits.ownerId, uid), eq(habits.clientKey, body.clientKey)) }) : null;
+      if (raced) return { insertedId: raced.id };
+      set.status = 409; return 'Habit could not be saved';
     }, { body: t.Object({ name: t.String({ minLength: 1, maxLength: 80 }), description: t.Optional(t.String({ maxLength: 240 })), color: t.Optional(t.String({ maxLength: 16 })), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
     .post('/:id', async ({ uid, lifeAccess, set, params, body }) => {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }

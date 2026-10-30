@@ -27,8 +27,12 @@ export function LifeBackupService() {
     set.headers['Cache-Control'] = 'private, no-store, max-age=0';
     set.headers['Pragma'] = 'no-cache';
 
+    const ownFeedIds = db.select({ id: feeds.id }).from(feeds).where(eq(feeds.uid, uid));
+    const ownTagIds = db.select({ id: feedHashtags.hashtagId }).from(feedHashtags).where(inArray(feedHashtags.feedId, ownFeedIds));
+    // D1 executes a batch as one transaction: every table belongs to the same snapshot.
+    // Keep subqueries in that transaction too; do not fetch IDs in an earlier request.
     const [ownFeeds, ownComments, ownHabits, logs, notes, basics, todos, sessions,
-      subscriptions, groups, items, appearance] = await Promise.all([
+      subscriptions, groups, items, appearance, ownFeedTags, ownTags, tagOptions] = await db.batch([
       db.query.feeds.findMany({ where: eq(feeds.uid, uid) }),
       db.query.comments.findMany({ where: eq(comments.userId, uid) }),
       db.query.habits.findMany({ where: eq(habits.ownerId, uid) }),
@@ -41,13 +45,11 @@ export function LifeBackupService() {
       db.query.rssSourceGroups.findMany({ where: eq(rssSourceGroups.ownerId, uid) }),
       db.query.rssItems.findMany({ where: eq(rssItems.ownerId, uid) }),
       db.query.appearancePreferences.findMany({ where: eq(appearancePreferences.userId, uid) }),
+      db.query.feedHashtags.findMany({ where: inArray(feedHashtags.feedId, ownFeedIds) }),
+      db.query.hashtags.findMany({ where: inArray(hashtags.id, ownTagIds) }),
+      db.query.writingTagOptions.findMany({ where: eq(writingTagOptions.ownerId, uid) }),
     ]);
-    const ownFeedIds = db.select({ id: feeds.id }).from(feeds).where(eq(feeds.uid, uid));
-    const ownFeedTags = await db.query.feedHashtags.findMany({ where: inArray(feedHashtags.feedId, ownFeedIds) });
-    const ownTagIds = db.select({ id: feedHashtags.hashtagId }).from(feedHashtags).where(inArray(feedHashtags.feedId, ownFeedIds));
-    const ownTags = await db.query.hashtags.findMany({ where: inArray(hashtags.id, ownTagIds) });
     const safeSubscriptions = subscriptions.map(({ websubKey: _key, websubCallback: _callback, ...row }) => row);
-    const tagOptions=await db.query.writingTagOptions.findMany({where:eq(writingTagOptions.ownerId,uid)});
     const data = {
       feeds: ownFeeds, comments: ownComments, hashtags: ownTags, feedHashtags: ownFeedTags,
       habits: ownHabits, habitLogs: logs, lifeDailyNotes: notes, dailyBasics: basics,

@@ -1,5 +1,24 @@
 type LockEntry=[string,string,{dependencies?:Record<string,string>;optionalDependencies?:Record<string,string>},...unknown[]];
 type Lock={workspaces:Record<string,{dependencies?:Record<string,string>}>;packages:Record<string,LockEntry>};
+type Advisory={url:string;severity:string;vulnerable_versions:string};
+
+export function parseAudit(stdout:string,exitCode:number):Record<string,Advisory[]> {
+  const unavailable=()=>new Error('Dependency audit unavailable; release stopped rather than reporting a clean scan');
+  if(exitCode!==0 && exitCode!==1)throw unavailable();
+  let value:unknown;
+  try{value=JSON.parse(stdout);}catch{throw unavailable();}
+  if(!value || typeof value!=='object' || Array.isArray(value))throw unavailable();
+  const entries=Object.entries(value);
+  if(exitCode===1 && !entries.length)throw unavailable();
+  for(const [,rows] of entries) {
+    if(!Array.isArray(rows)||!rows.length)throw unavailable();
+    for(const row of rows)if(!row || typeof row!=='object' ||
+      typeof row.url!=='string' || !row.url.startsWith('https://') ||
+      !['low','moderate','high','critical'].includes(row.severity) ||
+      typeof row.vulnerable_versions!=='string' || !row.vulnerable_versions.trim())throw unavailable();
+  }
+  return value as Record<string,Advisory[]>;
+}
 
 /** Conservative runtime closure; build tools and optional database-driver peers
  * are not executable dependencies of this D1/React application. */
@@ -30,9 +49,7 @@ export function runtimeNodes(lock:Lock) {
 if(import.meta.main) {
   const lock=Bun.JSONC.parse(await Bun.file('bun.lock').text()) as Lock;
   const result=Bun.spawnSync(['bun','audit','--json'],{stdout:'pipe',stderr:'pipe'});
-  let advisories:Record<string,Array<{url:string;severity:string;vulnerable_versions:string}>>;
-  try{advisories=JSON.parse(new TextDecoder().decode(result.stdout));}
-  catch{throw Error('Dependency audit unavailable; release stopped rather than reporting a clean scan');}
+  const advisories=parseAudit(new TextDecoder().decode(result.stdout),result.exitCode);
   const nodes=runtimeNodes(lock),affected=nodes.flatMap(node=>(advisories[node.name]||[])
     .filter(advisory=>Bun.semver.satisfies(node.version,advisory.vulnerable_versions))
     .map(advisory=>({package:node.name,version:node.version,severity:advisory.severity,url:advisory.url})));

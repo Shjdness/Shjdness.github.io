@@ -21,12 +21,22 @@ export async function reserveBackgroundWrites(db: D1Database, scope:string, cost
   if (!result.results.length) throw new WriteBudgetError(Date.parse(day+'T00:00:00Z')+86400000);
 }
 
+function errorChain(error:unknown):unknown[] {
+  const chain:unknown[]=[],seen=new Set<unknown>();
+  for(let depth=0;error!=null && depth<8 && !seen.has(error);depth++) {
+    seen.add(error);chain.push(error);
+    error=error instanceof Error?error.cause:undefined;
+  }
+  return chain;
+}
+
 export function isD1QuotaError(error: unknown) {
-  return /exceeded D1.*daily.*(?:write|read).*limit|daily row (?:write|read) limit/i.test(error instanceof Error ? error.message : String(error));
+  return errorChain(error).some(cause=>/exceeded D1.*daily.*(?:write|read).*limit|daily row (?:write|read) limit/i.test(cause instanceof Error ? cause.message : String(cause)));
 }
 
 export function quotaResponse(error:unknown):Response|undefined {
-  if(!(error instanceof WriteBudgetError)&&!isD1QuotaError(error))return;
-  const retryAt=error instanceof WriteBudgetError?error.retryAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
-  return Response.json({code:error instanceof WriteBudgetError?'RSS_BUDGET_PAUSED':'D1_QUOTA_PAUSED',message:error instanceof WriteBudgetError?error.message:'数据库今日额度已耗尽，本地更改已保留，请在额度重置后同步',retryAt},{status:503,headers:{'Cache-Control':'no-store','Retry-After':String(Math.max(1,Math.ceil((retryAt-Date.now())/1000)))}});
+  const budget=errorChain(error).find((cause):cause is WriteBudgetError=>cause instanceof WriteBudgetError);
+  if(!budget&&!isD1QuotaError(error))return;
+  const retryAt=budget?budget.retryAt:Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
+  return Response.json({code:budget?'RSS_BUDGET_PAUSED':'D1_QUOTA_PAUSED',message:budget?budget.message:'数据库今日额度已耗尽，本地更改已保留，请在额度重置后同步',retryAt},{status:503,headers:{'Cache-Control':'no-store','Retry-After':String(Math.max(1,Math.ceil((retryAt-Date.now())/1000)))}});
 }

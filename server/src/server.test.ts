@@ -51,6 +51,15 @@ describe('framework upgrade compatibility and security boundary',()=>{
     const response=await runRequestContext(env,broken,()=>service.handle(new Request('http://localhost/user/profile',{headers:{authorization:'Bearer '+token}})));
     expect(response.status).toBe(500);expect(await response.text()).not.toContain('private database diagnostic');
   });
+  it('returns a structured pause when the database driver wraps a daily quota failure',async()=>{
+    const broken={query:{users:{findFirst:async()=>{throw new Error('Failed query with private parameters',{cause:new Error("D1_ERROR: Your account has exceeded D1's free tier daily row read limit.")});}}}} as any;
+    const service=runRequestContext(env,broken,()=>app());
+    const token=await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
+    const response=await runRequestContext(env,broken,()=>service.handle(new Request('http://localhost/user/profile',{headers:{authorization:'Bearer '+token}})));
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toMatch(/^\d+$/);
+    const text=await response.text();expect(text).toContain('D1_QUOTA_PAUSED');expect(text).not.toContain('private parameters');
+  });
   it('preserves GitHub OAuth redirect/state cookies and rejects mismatched callbacks before token exchange',async()=>{
     const service=make();
     const response=await call(service,new Request('https://worker.invalid/user/github'));

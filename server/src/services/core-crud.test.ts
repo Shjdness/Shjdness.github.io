@@ -8,7 +8,7 @@ import {it,expect,vi} from 'vitest';
 import {app} from '../server';
 import * as schema from '../db/schema';
 import {runRequestContext} from '../utils/di';
-import {validateBackup} from '../../../client/src/features/life/backup-format';
+import {validateBackup,encryptBackup,decryptBackup} from '../../../client/src/features/life/backup-format';
 vi.mock('../utils/s3',()=>({createS3Client:()=>({send:vi.fn(async()=>({}))})}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
@@ -25,7 +25,16 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
     const execute=()=>sqlite.prepare(sql).all(...values);
     return {bind(...args:unknown[]){values=args;return this;},async all(){return {results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
   };
-  const raw={prepare,async batch(statements:Array<{all:()=>Promise<unknown>}>){return Promise.all(statements.map(statement=>statement.all()));}} as any;
+  let afterBatch: (()=>void)|undefined;
+  const batch=vi.fn(async(statements:Array<{all:()=>Promise<unknown>}>)=>{
+    sqlite.exec('BEGIN');
+    let result:unknown[];
+    try{result=await Promise.all(statements.map(statement=>statement.all()));sqlite.exec('COMMIT');}
+    catch(error){sqlite.exec('ROLLBACK');throw error;}
+    afterBatch?.();
+    return result;
+  });
+  const raw={prepare,batch} as any;
   const db=drizzle(raw,{schema});
   const env={DB:raw,JWT_SECRET:'test-only-signing-secret-at-least-32-characters',RIN_GITHUB_CLIENT_ID:'test-client',RIN_GITHUB_CLIENT_SECRET:'test-secret',FRONTEND_URL:'https://site.invalid',S3_ACCESS_HOST:'https://assets.invalid',S3_CACHE_FOLDER:'cache/',S3_ENDPOINT:'https://r2.invalid',S3_BUCKET:'test',S3_ACCESS_KEY_ID:'test-only',S3_SECRET_ACCESS_KEY:'test-only',S3_REGION:'auto'} as any;
   const service=runRequestContext(env,db,()=>app());
@@ -52,10 +61,42 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const uploaded=await api.storage.post({key:'cover.png',file:new File([new Uint8Array([137,80,78,71,13,10,26,10])],'cover.png',{type:'image/png'})},{headers});
   expect(uploaded.status,JSON.stringify(uploaded.error)).toBe(200);
   expect(uploaded.data).toMatch(/^https:\/\/assets\.invalid\/.*\.png$/);
+  batch.mockClear();
+  afterBatch=()=>{
+    // A foreground edit committed immediately after the read transaction must
+    // not change any table in the already captured backup.
+    sqlite.prepare('UPDATE feeds SET content=? WHERE id=?').run('new edit after snapshot',inserted[1]);
+    sqlite.prepare('DELETE FROM feed_hashtags WHERE feed_id=?').run(inserted[1]);
+  };
   const backup=await api.life.backup.get({headers});
+  afterBatch=undefined;
   expect(backup.status,JSON.stringify(backup.error)).toBe(200);
   const validated=await validateBackup(backup.data,1);
+  expect(batch).toHaveBeenCalledTimes(1);
+  expect(batch.mock.calls[0][0]).toHaveLength(15);
   expect(validated.counts).toMatchObject({feeds:3,lifeTodos:1,writingTagOptions:3});
-  expect(sqlite.prepare('SELECT content,listed FROM feeds WHERE id=?').get(inserted[1])).toMatchObject({content:'updated private note',listed:0});
+  expect(validated.data.feeds).toContainEqual(expect.objectContaining({id:inserted[1],content:'updated private note'}));
+  expect(validated.data.feedHashtags).toContainEqual(expect.objectContaining({feedId:inserted[1]}));
+  expect(sqlite.prepare('SELECT content,listed FROM feeds WHERE id=?').get(inserted[1])).toMatchObject({content:'new edit after snapshot',listed:0});
+  const encrypted=await encryptBackup(validated,'isolated-fixture-recovery-passphrase');
+  expect((await decryptBackup(JSON.parse(JSON.stringify(encrypted)),'isolated-fixture-recovery-passphrase',1)).data).toEqual(JSON.parse(JSON.stringify(validated.data)));
+
+  for(const [url,body,table] of [
+    ['/life/todos',{content:'concurrent task',type:'task',clientKey:'parallel-todo'},'life_todos'],
+    ['/life/basics',{content:'concurrent basic',date:'2026-10-30',sortOrder:0,clientKey:'parallel-basic'},'daily_basics'],
+    ['/habit',{name:'concurrent habit',clientKey:'parallel-habit'},'habits'],
+  ] as const) {
+    const create=()=>fetcher('http://localhost'+url,{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(body)});
+    const results=await Promise.all([create(),create()]);
+    expect(results.map(result=>result.status)).toEqual([200,200]);
+    const ids=await Promise.all(results.map(result=>result.json()));
+    expect(ids[0]).toEqual(ids[1]);
+    expect(sqlite.prepare(`SELECT count(*) AS n FROM ${table} WHERE owner_id=1 AND client_key=?`).get(body.clientKey)).toMatchObject({n:1});
+  }
+  // The content-based uniqueness constraint also needs a stable acknowledgement
+  // when different tabs generated different local operation keys.
+  const basics=await Promise.all(['different-key-a','different-key-b'].map(clientKey=>fetcher('http://localhost/life/basics',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({content:'same daily item',date:'2026-10-30',sortOrder:1,clientKey})})));
+  expect(basics.map(result=>result.status)).toEqual([200,200]);
+  expect(await basics[0].json()).toEqual(await basics[1].json());
   sqlite.close();
 });

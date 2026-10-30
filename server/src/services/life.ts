@@ -113,8 +113,11 @@ export function LifeService() {
                     const existing = await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.ownerId, uid!), eq(lifeTodos.clientKey, body.clientKey)) });
                     if (existing) return { insertedId: existing.id };
                 }
-                const result = await db.insert(lifeTodos).values({ ownerId: uid!, content: body.content.trim(), clientKey: body.clientKey, ...todoState(undefined, body) }).returning({ insertedId: lifeTodos.id });
-                return result[0];
+                const result = await db.insert(lifeTodos).values({ ownerId: uid!, content: body.content.trim(), clientKey: body.clientKey || null, ...todoState(undefined, body) }).onConflictDoNothing({ target: [lifeTodos.ownerId, lifeTodos.clientKey] }).returning({ insertedId: lifeTodos.id });
+                if (result[0]) return result[0];
+                const raced = body.clientKey ? await db.query.lifeTodos.findFirst({ where: and(eq(lifeTodos.ownerId, uid!), eq(lifeTodos.clientKey, body.clientKey)) }) : null;
+                if (raced) return { insertedId: raced.id };
+                set.status = 409; return 'Todo could not be saved';
             }, { body: t.Object({ content: t.String({ minLength: 1, maxLength: 500 }), type: todoType, clientKey: t.Optional(t.String({ maxLength: 80 })), deadlineAt: optionalTodoDate, completedAt: optionalTodoDate, sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }) })
             .post('/todos/:id', async ({ uid, lifeAccess, set, params, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
@@ -160,8 +163,12 @@ export function LifeService() {
                 }
                 const duplicate = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, body.date), eq(dailyBasics.content, content)) });
                 if (duplicate) return { insertedId: duplicate.id };
-                const result = await db.insert(dailyBasics).values({ ownerId: uid!, date: body.date, content, sortOrder: body.sortOrder, clientKey: body.clientKey }).returning({ insertedId: dailyBasics.id });
-                return result[0];
+                const result = await db.insert(dailyBasics).values({ ownerId: uid!, date: body.date, content, sortOrder: body.sortOrder, clientKey: body.clientKey || null }).onConflictDoNothing().returning({ insertedId: dailyBasics.id });
+                if (result[0]) return result[0];
+                const raced = body.clientKey ? await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.clientKey, body.clientKey)) }) : null;
+                const sameContent = raced ?? await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, body.date), eq(dailyBasics.content, content)) });
+                if (sameContent) return { insertedId: sameContent.id };
+                set.status = 409; return 'Today item could not be saved';
             }, { body: t.Object({ date: t.String({ pattern: dayPattern }), content: t.String({ minLength: 1, maxLength: 240 }), sortOrder: t.Integer({ minimum: 0, maximum: 100 }), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
             .post('/basics/:id', async ({ uid, lifeAccess, set, params, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
