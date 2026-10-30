@@ -10,14 +10,14 @@ export type Backup = {
 
 export type EncryptedBackup = {
   format: 'shjdshy-encrypted-backup';
-  version: 1;
   kdf: 'PBKDF2-SHA256';
-  iterations: 310_000;
   cipher: 'AES-256-GCM';
   salt: string;
   iv: string;
   ciphertext: string;
-};
+} & ({version:1;iterations:310_000}|{version:2;iterations:600_000});
+
+const V2_AAD=new TextEncoder().encode('shjdshy-encrypted-backup:v2:PBKDF2-SHA256:600000:AES-256-GCM');
 
 export const BACKUP_TABLES = [
   'feeds', 'comments', 'hashtags', 'feedHashtags', 'habits', 'habitLogs',
@@ -32,32 +32,33 @@ const toBase64 = (value: Uint8Array) => {
 };
 const fromBase64 = (value: string) => Uint8Array.from(atob(value), char => char.charCodeAt(0));
 
-async function backupKey(passphrase: string, salt: Uint8Array, usage: KeyUsage) {
+async function backupKey(passphrase: string, salt: Uint8Array, usage: KeyUsage, iterations:310_000|600_000) {
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt:new Uint8Array(salt), iterations: 310_000 }, material, { name: 'AES-GCM', length: 256 }, false, [usage]);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt:new Uint8Array(salt), iterations }, material, { name: 'AES-GCM', length: 256 }, false, [usage]);
 }
 
 export async function encryptBackup(backup: Backup, passphrase: string): Promise<EncryptedBackup> {
   if (passphrase.length < 12) throw new Error('备份口令至少需要 12 个字符');
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await backupKey(passphrase, salt, 'encrypt');
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(backup)));
-  return { format: 'shjdshy-encrypted-backup', version: 1, kdf: 'PBKDF2-SHA256', iterations: 310_000, cipher: 'AES-256-GCM', salt: toBase64(salt), iv: toBase64(iv), ciphertext: toBase64(new Uint8Array(ciphertext)) };
+  const key = await backupKey(passphrase, salt, 'encrypt',600_000);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData:V2_AAD }, key, new TextEncoder().encode(JSON.stringify(backup)));
+  return { format: 'shjdshy-encrypted-backup', version: 2, kdf: 'PBKDF2-SHA256', iterations: 600_000, cipher: 'AES-256-GCM', salt: toBase64(salt), iv: toBase64(iv), ciphertext: toBase64(new Uint8Array(ciphertext)) };
 }
 
 export async function decryptBackup(value: unknown, passphrase: string, expectedOwnerId: number): Promise<Backup> {
   if (!value || typeof value !== 'object') throw new Error('备份文件无效');
   const wrapper = value as EncryptedBackup;
-  if (wrapper.format !== 'shjdshy-encrypted-backup' || wrapper.version !== 1 || wrapper.kdf !== 'PBKDF2-SHA256' || wrapper.iterations !== 310_000 || wrapper.cipher !== 'AES-256-GCM') throw new Error('加密备份格式不受支持');
+  const supported=(wrapper.version===1 && wrapper.iterations===310_000)||(wrapper.version===2 && wrapper.iterations===600_000);
+  if (wrapper.format !== 'shjdshy-encrypted-backup' || !supported || wrapper.kdf !== 'PBKDF2-SHA256' || wrapper.cipher !== 'AES-256-GCM') throw new Error('加密备份格式不受支持');
   if (typeof wrapper.salt !== 'string' || typeof wrapper.iv !== 'string' || typeof wrapper.ciphertext !== 'string') throw new Error('备份加密参数无效');
   let salt: Uint8Array; let iv: Uint8Array;
   try { salt = fromBase64(wrapper.salt); iv = fromBase64(wrapper.iv); }
   catch { throw new Error('备份加密参数无效'); }
   if (salt.length !== 16 || iv.length !== 12) throw new Error('备份加密参数无效');
   try {
-    const key = await backupKey(passphrase, salt, 'decrypt');
-    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv:new Uint8Array(iv) }, key, fromBase64(wrapper.ciphertext));
+    const key = await backupKey(passphrase, salt, 'decrypt',wrapper.iterations);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv:new Uint8Array(iv),...(wrapper.version===2?{additionalData:V2_AAD}:{}) }, key, fromBase64(wrapper.ciphertext));
     return validateBackup(JSON.parse(new TextDecoder().decode(plaintext)), expectedOwnerId);
   } catch (error) {
     if (error instanceof Error && error.message.includes('账号不符')) throw error;

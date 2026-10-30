@@ -64,9 +64,12 @@ export function CommentService() {
                         content
                     });
 
-                    const webhookUrl = await ServerConfig().get(Config.webhookUrl) || env.WEBHOOK_URL;
-                    // notify
-                    await notify(webhookUrl, `${env.FRONTEND_URL}/feed/${feedId}\n${user.username} 评论了: ${exist.title}\n${content}`);
+                    // Saving is authoritative. Optional config/network failures
+                    // must not report failure after the row was committed.
+                    try {
+                        const webhookUrl = await ServerConfig().get(Config.webhookUrl) || env.WEBHOOK_URL;
+                        await notify(webhookUrl, `${env.FRONTEND_URL}/feed/${feedId}\n${user.username} 评论了: ${exist.title}\n${content}`);
+                    } catch { /* Preserve the committed save acknowledgement. */ }
                     return 'OK';
                 }, {
                     body: t.Object({

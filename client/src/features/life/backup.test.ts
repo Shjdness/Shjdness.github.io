@@ -36,8 +36,21 @@ describe('personal backup validation', () => {
   it('encrypts the backup locally and detects a wrong password', async () => {
     const backup = await fixture();
     const encrypted = await encryptBackup(backup, 'a-long-test-passphrase');
+    expect(encrypted).toMatchObject({version:2,iterations:600_000});
     expect(JSON.stringify(encrypted)).not.toContain('日记');
     expect((await decryptBackup(encrypted, 'a-long-test-passphrase', 12)).counts.lifeTodos).toBe(1);
     await expect(decryptBackup(encrypted, 'wrong-passphrase', 12)).rejects.toThrow('口令错误');
+  });
+  it('reads original v1 encrypted files and rejects unsupported work factors or modified v2 metadata',async()=>{
+    const backup=await fixture(),salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+    const material=await crypto.subtle.importKey('raw',new TextEncoder().encode('legacy-fixture-passphrase'),'PBKDF2',false,['deriveKey']);
+    const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:310_000},material,{name:'AES-GCM',length:256},false,['encrypt']);
+    const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(backup)));
+    const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes));
+    const legacy={format:'shjdshy-encrypted-backup',version:1,kdf:'PBKDF2-SHA256',iterations:310_000,cipher:'AES-256-GCM',salt:base64(salt),iv:base64(iv),ciphertext:base64(new Uint8Array(ciphertext))};
+    expect((await decryptBackup(legacy,'legacy-fixture-passphrase',12)).counts.feeds).toBe(1);
+    const modern=await encryptBackup(backup,'modern-fixture-passphrase');
+    for(const changed of [{...modern,iterations:1_000_000_000},{...modern,version:1}])await expect(decryptBackup(changed,'modern-fixture-passphrase',12)).rejects.toThrow('不受支持');
+    await expect(decryptBackup({...modern,ciphertext:legacy.ciphertext},'modern-fixture-passphrase',12)).rejects.toThrow('口令错误');
   });
 });

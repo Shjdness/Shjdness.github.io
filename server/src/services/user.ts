@@ -1,18 +1,18 @@
 import { eq } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
-import { info, users } from "../db/schema";
+import { users } from "../db/schema";
 import { setup } from "../setup";
 import { getDB, getEnv } from "../utils/di";
 import { roleForUser } from "../utils/roles";
 import { frontendOrigin } from "../utils/frontend-origin";
 import {GitHub,generateState} from 'arctic';
+import {GuestLimitError,reserveGuestAttempt} from '../utils/guest-guard';
+import {allowBurst} from '../utils/rate-limit';
 
 const GUEST_OPENID = "guest:beiruoxi";
 const GUEST_NAME = "悲若兮";
 const GUEST_AVATAR = "/guest-avatar.jpg";
-const MAX_GUEST_ATTEMPTS = 5;
-const GUEST_LOCK_MS = 15 * 60 * 1000;
 
 async function digest(value: string) {
     const bytes = new TextEncoder().encode(value);
@@ -123,40 +123,29 @@ export function UserService() {
                         return 'Guest access is not configured';
                     }
 
-                    const ip = headers['cf-connecting-ip'] || headers['x-real-ip'] || 'unknown';
-                    const rateKey = `guest_login:${await digest(ip)}`;
-                    const attemptRecord = await db.query.info.findFirst({ where: eq(info.key, rateKey) });
-                    const attempt = attemptRecord ? JSON.parse(attemptRecord.value) as { failures: number; lastAttempt: number } : { failures: 0, lastAttempt: 0 };
-                    const now = Date.now();
-
-                    if (attempt.failures >= MAX_GUEST_ATTEMPTS && now - attempt.lastAttempt < GUEST_LOCK_MS) {
-                        set.status = 429;
-                        return 'Too many attempts. Try again later';
+                    const ip = headers['cf-connecting-ip'] || 'unknown';
+                    try {
+                        if(!allowBurst('guest-login:'+ip,5,15*60*1000))throw new GuestLimitError(Date.now()+15*60*1000);
+                        await reserveGuestAttempt(env.DB,ip);
+                    } catch(error) {
+                        if(!(error instanceof GuestLimitError))throw error;
+                        set.status=429;
+                        set.headers['Retry-After']=String(Math.max(1,Math.ceil((error.retryAt-Date.now())/1000)));
+                        set.headers['Cache-Control']='no-store';
+                        return error.message;
                     }
 
                     if (!await secureEqual(code, configuredCode)) {
-                        const value = JSON.stringify({
-                            failures: now - attempt.lastAttempt >= GUEST_LOCK_MS ? 1 : attempt.failures + 1,
-                            lastAttempt: now,
-                        });
-                        await db.insert(info).values({ key: rateKey, value }).onConflictDoUpdate({
-                            target: info.key,
-                            set: { value },
-                        });
                         set.status = 401;
                         return 'Invalid access code';
                     }
 
-                    await db.delete(info).where(eq(info.key, rateKey));
                     let guest = await db.query.users.findFirst({ where: eq(users.openid, GUEST_OPENID) });
                     if (!guest) {
-                        const inserted = await db.insert(users).values({
-                            openid: GUEST_OPENID,
-                            username: GUEST_NAME,
-                            avatar: GUEST_AVATAR,
-                            permission: 2,
-                        }).returning({ insertedId: users.id });
-                        guest = await db.query.users.findFirst({ where: eq(users.id, inserted[0].insertedId) });
+                        // The legacy table has no unique openid constraint.
+                        // An atomic insert-if-absent avoids split guest identities.
+                        await env.DB.prepare('INSERT INTO users(openid,username,avatar,permission) SELECT ?,?,?,2 WHERE NOT EXISTS(SELECT 1 FROM users WHERE openid=?)').bind(GUEST_OPENID,GUEST_NAME,GUEST_AVATAR,GUEST_OPENID).run();
+                        guest = await db.query.users.findFirst({ where: eq(users.openid, GUEST_OPENID) });
                     } else if (guest.permission !== 2 || guest.username !== GUEST_NAME || guest.avatar !== GUEST_AVATAR || guest.accessExpiresAt !== null) {
                         await db.update(users).set({
                             username: GUEST_NAME,

@@ -10,6 +10,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
 
     steps:
       - name: Check out repository
@@ -18,20 +21,25 @@ jobs:
           path: site
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 21
+          node-version: 22
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
 
-      - name: Set up Puppeteer
+      - name: Install locked dependencies
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/audit-runtime.ts
+
+      - name: Set up locked Puppeteer
         run: |
           sudo apt-get update
           sudo apt-get install -y libgbm-dev
-          npx puppeteer browsers install chrome
+          node node_modules/puppeteer/lib/cjs/puppeteer/node/cli.js browsers install chrome
 
       - name: Run script
         env: # Or as an environment variable
@@ -47,6 +55,4 @@ jobs:
           S3_CACHE_FOLDER: ${{ vars.S3_CACHE_FOLDER }}
           S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
         run: |
-          cd site/
-          bun install --frozen-lockfile
           bun scripts/render.ts
