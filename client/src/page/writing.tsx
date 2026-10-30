@@ -22,6 +22,7 @@ import { readingStats } from '../utils/reading';
 import { getCookie } from 'typescript-cookie';
 import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
+import { loadWritingRecord } from '../utils/writing-load';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
@@ -288,27 +289,29 @@ function WritingEditor({ id }: { id?: number }) {
     )
   }
   useEffect(() => {
+    let live = true;
+    const token = getCookie('token');
+    const isCurrent = () => live && getCookie('token') === token;
     if (id) {
-      client
-        .feed({ id })
-        .get({
-          headers: headersWithAuth(),
-        })
-        .then(({ data }) => {
-          if (data && typeof data !== "string") {
-            setTitle(data.title || '');
-            const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
-            tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
-            setTags(loadedTags);
-            setContent(data.content || '');
-            setSummary(data.summary || '');
-            setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
-            setCreatedAt(new Date(data.createdAt));
-            setLoadedDraft(data.draft === 1);
-            setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
-          }
-        });
+      void loadWritingRecord(
+        () => client.feed({ id }).get({ headers: headersWithAuth() }),
+        isCurrent,
+        (data) => {
+          setTitle(data.title || '');
+          const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
+          tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
+          setTags(loadedTags);
+          setContent(data.content || '');
+          setSummary(data.summary || '');
+          setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
+          setCreatedAt(new Date(data.createdAt));
+          setLoadedDraft(data.draft === 1);
+          setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
+        },
+        () => setSaveState('云端载入失败，本地稿已保留，请稍后重试'),
+      );
     }
+    return () => { live = false; };
   }, []);
   useEffect(() => {
     let live = true;
