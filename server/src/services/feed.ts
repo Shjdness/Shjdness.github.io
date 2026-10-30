@@ -10,7 +10,8 @@ import { allowBurst } from '../utils/rate-limit';
 import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
-import { bindTagToPost, normalizeTagNames, prepareTagBinding } from "./tag";
+import { normalizeTagNames, prepareTagBinding, prepareTagIds } from "./tag";
+import { createPostWithTags } from '../utils/post-create';
 
 export function FeedService() {
   const db: DB = getDB();
@@ -270,7 +271,8 @@ export function FeedService() {
             const date = createdAt ? new Date(createdAt) : new Date();
             const normalizedKind = kind === "diary" || kind === "essay" || kind === "memo" ? kind : "article";
             const privateKind = normalizedKind === "diary" || normalizedKind === "memo";
-            const result = await db
+            const tagIds=await prepareTagIds(db, uid, normalizedKind, normalizedTags);
+            const insert = db
               .insert(feeds)
               .values({
                 title: title || "未命名草稿",
@@ -284,11 +286,10 @@ export function FeedService() {
                 createdAt: date,
                 updatedAt: date,
               })
-              .returning({ insertedId: feeds.id });
-            if (result.length === 0) { set.status = 500; return "Failed to insert"; }
-            await bindTagToPost(db, result[0].insertedId, uid, normalizedKind, normalizedTags);
+              .returning({ id: feeds.id }).toSQL();
+            const result=await createPostWithTags(getEnv().DB,insert,tagIds);
             await PublicCache().deletePrefix("feeds_");
-            return result[0];
+            return result;
           },
           {
             body: t.Object({

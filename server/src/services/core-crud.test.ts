@@ -144,5 +144,22 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect(linkedTags()).toEqual([{name:'atomic replacement tag'}]);
   expect((await api.feed({id:inserted[0]}).post({content:'clear tags together',tags:[]},{headers})).status).toBe(200);
   expect(linkedTags()).toEqual([]);
+  const beforeCreate=sqlite.prepare('SELECT count(*) AS n FROM feeds').get();
+  const beforeRelations=sqlite.prepare('SELECT count(*) AS n FROM feed_hashtags').get();
+  sqlite.exec("CREATE TEMP TRIGGER fail_new_post_binding BEFORE INSERT ON feed_hashtags WHEN NEW.hashtag_id IN (SELECT id FROM hashtags WHERE name='blocked create tag') BEGIN SELECT RAISE(ABORT,'fixture create binding failed'); END;");
+  const createPayload={title:'atomic creation fixture',content:'new post with three tags',summary:'',draft:false,kind:'memo' as const,tags:['first create tag','blocked create tag','last create tag'],createdAt:new Date('2026-10-31T00:00:00Z')};
+  expect((await api.feed.post(createPayload,{headers})).status).toBe(500);
+  expect(sqlite.prepare('SELECT count(*) AS n FROM feeds').get()).toEqual(beforeCreate);
+  expect(sqlite.prepare('SELECT count(*) AS n FROM feed_hashtags').get()).toEqual(beforeRelations);
+  sqlite.exec('DROP TRIGGER fail_new_post_binding');
+  // Keep unrelated relation rowids far from post IDs: every inserted tag must
+  // use the new post ID, never a preceding relation INSERT's last_insert_rowid.
+  sqlite.exec('UPDATE feed_hashtags SET rowid=10000 WHERE rowid=(SELECT min(rowid) FROM feed_hashtags)');
+  const retriedCreate=await api.feed.post(createPayload,{headers});
+  expect(retriedCreate.status,JSON.stringify(retriedCreate.error)).toBe(200);
+  if(!retriedCreate.data||typeof retriedCreate.data==='string')throw Error('Missing atomic create ID');
+  const createdId=retriedCreate.data.insertedId;
+  expect(sqlite.prepare('SELECT content,kind,listed,created_at FROM feeds WHERE id=?').get(createdId)).toMatchObject({content:createPayload.content,kind:'memo',listed:0,created_at:Math.floor(createPayload.createdAt.getTime()/1000)});
+  expect(sqlite.prepare('SELECT h.name FROM feed_hashtags f JOIN hashtags h ON h.id=f.hashtag_id WHERE f.feed_id=? ORDER BY h.name').all(createdId)).toEqual([...createPayload.tags].sort().map(name=>({name})));
   sqlite.close();
 });

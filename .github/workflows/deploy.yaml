@@ -95,7 +95,7 @@ jobs:
           snapshot_ready=0
           for attempt in $(seq 1 12); do
             capabilities="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 15 "$API_URL/reliability/capabilities" || true)"
-            if echo "$capabilities" | grep -Fq '"transactionalBackup":true' && echo "$capabilities" | grep -Fq '"atomicPostUpdates":true'; then snapshot_ready=1; break; fi
+            if echo "$capabilities" | grep -Fq '"transactionalBackup":true' && echo "$capabilities" | grep -Fq '"atomicPostCreates":true'; then snapshot_ready=1; break; fi
             sleep 5
           done
           if [ "$snapshot_ready" != "1" ]; then echo 'Transactional backup API was not ready' >&2; exit 1; fi
