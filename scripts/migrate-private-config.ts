@@ -15,6 +15,15 @@ export async function migratePrivateConfig(database:string) {
     let data:unknown={};
     const legacy=await objectRequest('GET');
     if(legacy.ok)data=await legacy.json();
+    else if(legacy.status===403) {
+      // This is the same owner-controlled HTTPS source used by the old Worker.
+      // No elevated permission or credential is requested; never print values.
+      const host=new URL(env.S3_ACCESS_HOST!);
+      if(host.protocol!=='https:')throw Error('Legacy configuration requires HTTPS');
+      const response=await fetch(new URL(objectKey,host.href.replace(/\/$/,'')+'/'),{signal:AbortSignal.timeout(30000),cache:'no-store'});
+      if(response.ok)data=await response.json();
+      else if(response.status!==404)throw Error('Legacy configuration could not be preserved');
+    }
     else if(legacy.status!==404)throw Error(`Private configuration read failed (HTTP ${legacy.status})`);
     if(!data||Array.isArray(data)||typeof data!=='object')throw Error('Invalid legacy configuration');
     const value=JSON.stringify(data).replace(/'/g,"''");
@@ -28,6 +37,10 @@ export async function migratePrivateConfig(database:string) {
     if(!await check())throw Error('Private configuration verification failed');
   }
   const removed=await objectRequest('DELETE');
+  if(removed.status===403) {
+    console.warn('Private configuration is preserved in D1. Legacy public object cleanup requires owner R2 access; it is NOT confirmed removed.');
+    return;
+  }
   if(!removed.ok&&removed.status!==404)throw Error(`Legacy configuration cleanup failed (HTTP ${removed.status})`);
   console.log('Private configuration durably stored; public legacy object removed.');
 }
