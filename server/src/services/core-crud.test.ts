@@ -21,10 +21,11 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
     if(file==='0002.sql')sqlite.exec('ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0');
   }
   sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'test-owner','test-owner',1)");
+  let staleReceiptRead=false;
   const prepare=(sql:string)=>{
     let values:unknown[]=[];
     const execute=()=>sqlite.prepare(sql).all(...values);
-    return {bind(...args:unknown[]){values=args;return this;},async all(){return {results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
+    return {bind(...args:unknown[]){values=args;return this;},async all(){return {results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){if(staleReceiptRead && sql==='SELECT value FROM info WHERE key=?'){staleReceiptRead=false;return null;}return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
   };
   let afterBatch: (()=>void)|undefined;
   const batch=vi.fn(async(statements:Array<{all:()=>Promise<unknown>}>)=>{
@@ -161,5 +162,23 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const createdId=retriedCreate.data.insertedId;
   expect(sqlite.prepare('SELECT content,kind,listed,created_at FROM feeds WHERE id=?').get(createdId)).toMatchObject({content:createPayload.content,kind:'memo',listed:0,created_at:Math.floor(createPayload.createdAt.getTime()/1000)});
   expect(sqlite.prepare('SELECT h.name FROM feed_hashtags f JOIN hashtags h ON h.id=f.hashtag_id WHERE f.feed_id=? ORDER BY h.name').all(createdId)).toEqual([...createPayload.tags].sort().map(name=>({name})));
+  const stablePayload={...createPayload,title:'stable create receipt',content:'stable create receipt body',clientKey:'fixture-stable-create-0001'};
+  const firstCreate=await api.feed.post(stablePayload,{headers});
+  expect(firstCreate.status).toBe(200);
+  const replay=await api.feed.post({...stablePayload,tags:[...stablePayload.tags].reverse()},{headers});
+  expect(replay.status).toBe(200);expect(replay.data).toEqual(firstCreate.data);
+  // Model another request committing between the initial receipt lookup and
+  // the title/content duplicate query. A second lookup must still acknowledge it.
+  staleReceiptRead=true;
+  const racingReplay=await api.feed.post(stablePayload,{headers});
+  expect(racingReplay.status).toBe(200);expect(racingReplay.data).toEqual(firstCreate.data);
+  expect(sqlite.prepare('SELECT count(*) AS n FROM feeds WHERE title=? AND uid=1').get(stablePayload.title)).toMatchObject({n:1});
+  expect((await api.feed.post({...stablePayload,content:'different content'},{headers})).status).toBe(409);
+  const foreignCreate=await api.feed.post(stablePayload,{headers:guestHeaders});
+  expect(foreignCreate.status).toBe(200);expect(foreignCreate.data).not.toEqual(firstCreate.data);
+  if(!firstCreate.data||typeof firstCreate.data==='string')throw Error('Missing receipt post ID');
+  expect((await api.feed({id:firstCreate.data.insertedId}).delete(null,{headers:guestHeaders})).status).toBe(403);
+  expect((await api.feed({id:firstCreate.data.insertedId}).delete(null,{headers})).status).toBe(200);
+  expect((await api.feed.post(stablePayload,{headers})).status).toBe(409);
   sqlite.close();
 });

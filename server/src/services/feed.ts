@@ -11,7 +11,7 @@ import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
 import { normalizeTagNames, prepareTagBinding, prepareTagIds } from "./tag";
-import { createPostWithTags } from '../utils/post-create';
+import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts } from '../utils/post-create';
 
 export function FeedService() {
   const db: DB = getDB();
@@ -238,6 +238,7 @@ export function FeedService() {
               kind,
               tags,
               createdAt,
+              clientKey,
             },
           }) => {
             if (!writer || !uid) {
@@ -256,6 +257,15 @@ export function FeedService() {
               return "Content is required";
             }
 
+            const normalizedKind = kind === "diary" || kind === "essay" || kind === "memo" ? kind : "article";
+            const operation=clientKey?{ownerId:uid,clientKey,requestHash:await postRequestHash({
+              title:title||'未命名草稿',content:content||'',summary,alias:alias??null,draft,kind:normalizedKind,
+              tags:[...normalizedTags].sort(),createdAt:createdAt?new Date(createdAt).toISOString():null,
+            })}:undefined;
+            if(operation) {
+              try{const saved=await findPostCreate(getEnv().DB,operation);if(saved){await PublicCache().deletePrefix('feeds_');return saved;}}
+              catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}throw error;}
+            }
             // check exist
             const exist = draft
               ? null
@@ -265,11 +275,14 @@ export function FeedService() {
                   where: and(eq(feeds.uid, uid), or(eq(feeds.title, title), eq(feeds.content, content))),
                 });
             if (exist) {
+              if(operation) {
+                try{const saved=await findPostCreate(getEnv().DB,operation);if(saved){await PublicCache().deletePrefix('feeds_');return saved;}}
+                catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}throw error;}
+              }
               set.status = 400;
               return "Content already exists";
             }
             const date = createdAt ? new Date(createdAt) : new Date();
-            const normalizedKind = kind === "diary" || kind === "essay" || kind === "memo" ? kind : "article";
             const privateKind = normalizedKind === "diary" || normalizedKind === "memo";
             const tagIds=await prepareTagIds(db, uid, normalizedKind, normalizedTags);
             const insert = db
@@ -287,7 +300,9 @@ export function FeedService() {
                 updatedAt: date,
               })
               .returning({ id: feeds.id }).toSQL();
-            const result=await createPostWithTags(getEnv().DB,insert,tagIds);
+            let result:{insertedId:number};
+            try{result=await createPostWithTags(getEnv().DB,insert,tagIds,operation);}
+            catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}throw error;}
             await PublicCache().deletePrefix("feeds_");
             return result;
           },
@@ -301,6 +316,7 @@ export function FeedService() {
               listed: t.Optional(t.Boolean()),
               createdAt: t.Optional(t.Date()),
               tags: t.Array(t.String({maxLength:64}),{maxItems:20}),
+              clientKey:t.Optional(t.String({pattern:'^[A-Za-z0-9_-]{16,80}$'})),
               kind: t.Optional(
                 t.Union([t.Literal("article"), t.Literal("essay"), t.Literal("diary"), t.Literal("memo")]),
               ),
@@ -491,7 +507,7 @@ export function FeedService() {
             set.status = 403;
             return "Permission denied";
           }
-          await db.delete(feeds).where(eq(feeds.id, id_num));
+          await deletePostWithReceipts(getEnv().DB,feed.uid,id_num);
           await clearFeedCache(id_num, feed.alias, null);
           return "Deleted";
         }),
