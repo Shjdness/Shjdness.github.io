@@ -61,7 +61,7 @@ export const app = () => new Elysia({ aot: false })
     .use(RssService())
     .use(PomodoroService())
     .use(LifeBackupService())
-    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true}))
+    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true,atomicPostUpdates:true}))
     .get('/', () => `Hi`)
     .onError(({ path, params, code, error, set }) => {
         if(hasBodyLimitError(error))return new Response('Request body is too large',{status:413,headers:{'Cache-Control':'no-store'}});

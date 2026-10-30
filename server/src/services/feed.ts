@@ -10,7 +10,7 @@ import { allowBurst } from '../utils/rate-limit';
 import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
-import { bindTagToPost, normalizeTagNames } from "./tag";
+import { bindTagToPost, normalizeTagNames, prepareTagBinding } from "./tag";
 
 export function FeedService() {
   const db: DB = getDB();
@@ -408,7 +408,7 @@ export function FeedService() {
             if (normalizedTags === null) { set.status = 400; return "Invalid tags"; }
             const nextKind = kind === "diary" || kind === "essay" || kind === "memo" || kind === "article" ? kind : feed.kind;
             const privateKind = nextKind === "diary" || nextKind === "memo";
-            await db
+            const update = db
               .update(feeds)
               .set({
                 title,
@@ -423,9 +423,10 @@ export function FeedService() {
                 updatedAt: new Date(),
               })
               .where(eq(feeds.id, id_num));
-            if (normalizedTags) {
-              await bindTagToPost(db, id_num, feed.uid, nextKind, normalizedTags);
-            }
+            if (normalizedTags !== undefined) {
+              const binding = await prepareTagBinding(db, id_num, feed.uid, nextKind, normalizedTags);
+              await db.batch([update, ...binding]);
+            } else await update;
             await clearFeedCache(id_num, feed.alias, alias || null);
             return "Updated";
           },

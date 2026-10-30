@@ -78,6 +78,12 @@ export function normalizeTagNames(tags: string[]): string[] | null {
 }
 
 export async function bindTagToPost(db: DB, feedId: number, ownerId: number, kind: string, tags: string[]) {
+  await db.batch(await prepareTagBinding(db, feedId, ownerId, kind, tags));
+}
+
+/** Vocabulary can be prepared independently; post contents and their bindings
+ * must be committed together by the caller's D1 batch transaction. */
+export async function prepareTagBinding(db: DB, feedId: number, ownerId: number, kind: string, tags: string[]) {
   const scope = kind === 'diary' || kind === 'memo' ? kind : 'blog';
   const names = normalizeTagNames(tags);
   if (!names) throw new Error('Invalid tags');
@@ -86,10 +92,10 @@ export async function bindTagToPost(db: DB, feedId: number, ownerId: number, kin
   }
   const tagIds: number[] = [];
   for (const name of names) tagIds.push(await getTagIdOrCreate(db, name));
-  await db.batch([
+  return [
     db.delete(feedHashtags).where(eq(feedHashtags.feedId, feedId)),
     ...tagIds.map(hashtagId => db.insert(feedHashtags).values({ feedId, hashtagId })),
-  ]);
+  ] as const;
 }
 
 async function getTagByName(db: DB, name: string) {

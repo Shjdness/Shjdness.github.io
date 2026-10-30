@@ -125,5 +125,24 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const duplicate=await api.feed.post({title:'fixture diary',content:'another content',summary:'',draft:false,kind:'diary',tags:[]},{headers:guestHeaders});
   expect(duplicate.status).toBe(400);
   expect((await api.feed({id:inserted[1]}).get({headers:guestHeaders})).status).toBe(403);
+  // Fail the relation write after content UPDATE and old-tag DELETE. All three
+  // must roll back together, including visibility/kind and timestamps.
+  const originalPost=sqlite.prepare('SELECT * FROM feeds WHERE id=?').get(inserted[0]);
+  const originalBindings=sqlite.prepare('SELECT * FROM feed_hashtags WHERE feed_id=?').all(inserted[0]);
+  sqlite.exec(`CREATE TEMP TRIGGER fail_post_binding BEFORE INSERT ON feed_hashtags WHEN NEW.feed_id=${inserted[0]} BEGIN SELECT RAISE(ABORT,'fixture relation write failed'); END;`);
+  const atomicPayload={title:'atomic update fixture',content:'atomic updated content',kind:'diary' as const,tags:['atomic replacement tag']};
+  const failedSave=await api.feed({id:inserted[0]}).post(atomicPayload,{headers});
+  expect(failedSave.status).toBe(500);
+  expect(sqlite.prepare('SELECT * FROM feeds WHERE id=?').get(inserted[0])).toEqual(originalPost);
+  expect(sqlite.prepare('SELECT * FROM feed_hashtags WHERE feed_id=?').all(inserted[0])).toEqual(originalBindings);
+  sqlite.exec('DROP TRIGGER fail_post_binding');
+  expect((await api.feed({id:inserted[0]}).post(atomicPayload,{headers})).status).toBe(200);
+  expect(sqlite.prepare('SELECT content,kind,listed FROM feeds WHERE id=?').get(inserted[0])).toMatchObject({content:atomicPayload.content,kind:'diary',listed:0});
+  const linkedTags=()=>sqlite.prepare('SELECT h.name FROM hashtags h JOIN feed_hashtags f ON f.hashtag_id=h.id WHERE f.feed_id=?').all(inserted[0]);
+  expect(linkedTags()).toEqual([{name:'atomic replacement tag'}]);
+  expect((await api.feed({id:inserted[0]}).post({content:'content-only retry'},{headers})).status).toBe(200);
+  expect(linkedTags()).toEqual([{name:'atomic replacement tag'}]);
+  expect((await api.feed({id:inserted[0]}).post({content:'clear tags together',tags:[]},{headers})).status).toBe(200);
+  expect(linkedTags()).toEqual([]);
   sqlite.close();
 });
