@@ -172,6 +172,7 @@ export async function resolveSyncConflict(item:SyncItem,useLocal:boolean,send:(p
   if(item.ownerId!==currentAccountId()||item.status!=='conflict'||!item.id)throw Error('请使用原账号处理冲突');
   // Archive first, including discarded versions; never clear the pending store.
   await setCached(`life:conflict-archive:${item.id}`,item);
+  if(item.ownerId!==currentAccountId())throw Error('账号已切换，原始记录已保留');
   if(useLocal) {
     try {await send(item.payload);}
     catch(error) {
