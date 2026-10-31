@@ -331,13 +331,14 @@ function WritingEditor({ id }: { id?: number }) {
   }
   useEffect(() => {
     let live = true;
+    const cancelled = new AbortController();
     const token = getCookie('token');
     const isCurrent = () => live && getCookie('token') === token && writingAccountId(profile, token) !== null;
     if (id !== undefined) {
       setRecordLoadFailed(false);
       setSaveState('正在载入原记录，本地修改会保留');
       void loadWritingRecord(
-        () => client.feed({ id }).get({ headers: headersWithAuth() }),
+        (signal) => client.feed({ id }).get({ headers: headersWithAuth(), fetch: { signal } }),
         isCurrent,
         (data, fieldUnchanged) => {
           if (data.id !== id) throw new Error('Unexpected writing record');
@@ -358,9 +359,10 @@ function WritingEditor({ id }: { id?: number }) {
         },
         () => { setRecordLoadFailed(true); setSaveState('云端载入失败，本地稿已保留，可在本页重试'); },
         { unchanged: loadCheckpoint, onChanged: () => setSaveState('云端已载入；载入期间修改的字段已保留，请核对后保存') },
+        cancelled.signal,
       );
     }
-    return () => { live = false; };
+    return () => { live = false; cancelled.abort(); };
   }, [loadAttempt]);
   useEffect(() => {
     let live = true;

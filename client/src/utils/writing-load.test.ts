@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { treaty } from '@elysiajs/eden';
+import type { App as Server } from 'shjdshy-server/src/server';
 import { Cache } from './cache';
 import { createWritingRevision, loadWritingRecord } from './writing-load';
 
@@ -18,7 +20,72 @@ function draftStorage() {
     if (unchanged('content')) cache.set('content', data.content);
   } };
 }
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+describe('writing load request deadline', () => {
+  function stalledApi() {
+    let signal: AbortSignal | undefined;
+    const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Request aborted', 'AbortError')), { once: true });
+      });
+    });
+    return { api: treaty<Server>('https://local.invalid', { fetcher: Object.assign(fetcher, { preconnect: () => undefined }) as typeof fetch }), fetcher, signal: () => signal };
+  }
+
+  it('forwards the deadline through the installed Eden client and retains the draft on timeout', async () => {
+    vi.useFakeTimers();
+    const transport = stalledApi(), draft = draftStorage();
+    const failure = vi.fn();
+    const result = loadWritingRecord(
+      signal => transport.api.feed({ id: 42 }).get({ fetch: { signal } }),
+      () => true, draft.apply, failure,
+    );
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(failure).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await result;
+    expect(transport.fetcher).toHaveBeenCalledOnce();
+    expect(transport.signal()?.aborted).toBe(true);
+    expect(failure).toHaveBeenCalledOnce();
+    expect(draft.write).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels an obsolete request without a stale error and removes its deadline', async () => {
+    vi.useFakeTimers();
+    const transport = stalledApi(), draft = draftStorage();
+    const cancelled = new AbortController(), failure = vi.fn();
+    const result = loadWritingRecord(
+      signal => transport.api.feed({ id: 42 }).get({ fetch: { signal } }),
+      () => true, draft.apply, failure, undefined, cancelled.signal,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    cancelled.abort();
+    await result;
+    expect(transport.signal()?.aborted).toBe(true);
+    expect(failure).not.toHaveBeenCalled();
+    expect(draft.write).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('removes the timer after success and never starts an already-cancelled request', async () => {
+    vi.useFakeTimers();
+    const draft = draftStorage(), failure = vi.fn();
+    let received: AbortSignal | undefined;
+    await loadWritingRecord(async signal => { received = signal; return { data: { content: 'Cloud' } }; }, () => true, draft.apply, failure);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(received?.aborted).toBe(false);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const request = vi.fn(async () => ({ data: { content: 'Must not request' } }));
+    await loadWritingRecord(request, () => true, draft.apply, failure, undefined, cancelled.signal);
+    expect(request).not.toHaveBeenCalled();
+    expect(failure).not.toHaveBeenCalled();
+  });
+});
 
 describe('writing cloud load lifecycle', () => {
   it('reuses the original edit checkpoint across failed loads and retries', async () => {
