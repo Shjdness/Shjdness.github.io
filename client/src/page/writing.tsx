@@ -23,7 +23,7 @@ import { getCookie } from 'typescript-cookie';
 import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
 import { createWritingRevision, loadWritingRecord } from '../utils/writing-load';
-import { completeWritingSave } from '../utils/writing-save';
+import { completeWritingSave, confirmWritingDraftDeletion } from '../utils/writing-save';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
@@ -254,15 +254,38 @@ function WritingEditor({ id }: { id?: number }) {
   }
 
   function deleteCurrentDraft() {
-    if (currentId === undefined || !loadedDraft) return;
+    if (publishing || currentId === undefined || !loadedDraft) return;
+    const token = getCookie('token');
+    const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
+    const unchanged = revision.checkpoint();
+    const deletingId = currentId;
     showConfirm('删除云端草稿', '这篇草稿将被永久删除，其他设备也无法恢复。确定继续吗？', async () => {
-      const { error } = await client.feed({ id: currentId }).delete(null, { headers: headersWithAuth() });
-      if (error) {
-        showAlert(typeof error.value === 'string' ? error.value : '删除失败，请稍后重试');
-        return;
+      setPublishing(true);
+      let deleteConfirmed = false;
+      try {
+        await confirmWritingDraftDeletion({
+          isCurrent, unchanged,
+          onEdited: () => showAlert('确认期间内容有修改，本地稿已保留，请重新确认是否删除'),
+          remove: async () => {
+            const { error } = await client.feed({ id: deletingId }).delete(null, { headers: headersWithAuth() });
+            if (error) throw new Error(typeof error.value === 'string' ? error.value : '删除失败，本地稿已保留');
+            deleteConfirmed = true;
+          },
+          afterDeleted: () => {
+            setLoadedDraft(false);
+            setCurrentId(undefined);
+            completeWritingSave({
+              isCurrent, unchanged, clear: () => cache.clear(),
+              leave: () => { window.location.href = '/blog/drafts'; },
+              onEdited: () => setSaveState('云端草稿已删除；期间的新输入已保留，可另存为新稿'),
+            });
+          },
+        });
+      } catch (error) {
+        if (isCurrent()) showAlert(deleteConfirmed ? '云端删除已确认，本地整理未完成；请保留当前页面与内容' : error instanceof Error ? error.message : '删除失败，本地稿已保留');
+      } finally {
+        setPublishing(false);
       }
-      Cache.with(currentId).clear();
-      window.location.href = '/blog/drafts';
     });
   }
 
@@ -567,7 +590,7 @@ function WritingEditor({ id }: { id?: number }) {
           {recordLoadFailed && !recordLoaded && <button type="button" className="writing-save-draft mx-8" onClick={() => setLoadAttempt(value => value + 1)}>重试载入原记录（保留本地修改）</button>}
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
-            <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>
+            <button onClick={deleteCurrentDraft} disabled={publishing || !loadedDraft} className="writing-delete-draft">删除草稿</button>
             <button onClick={() => void saveDraftToCloud()} disabled={publishing || !recordLoaded} className="writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}

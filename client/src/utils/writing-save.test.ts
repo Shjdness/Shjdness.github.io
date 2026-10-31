@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cache } from './cache';
 import { createWritingRevision } from './writing-load';
-import { completeWritingSave } from './writing-save';
+import { completeWritingSave, confirmWritingDraftDeletion } from './writing-save';
 
 function storage() {
   const rows = new Map([
@@ -19,6 +19,59 @@ function storage() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('confirmed writing save cleanup', () => {
+  it('does not send a stale delete confirmation after identity or input changes', async () => {
+    for (const current of [false, true]) {
+      const rows = storage(), original = new Map(rows);
+      const remove = vi.fn(async () => undefined), edited = vi.fn(), done = vi.fn();
+      await confirmWritingDraftDeletion({ isCurrent: () => current, unchanged: () => false, remove, onEdited: edited, afterDeleted: done });
+      expect(remove).not.toHaveBeenCalled();
+      expect(done).not.toHaveBeenCalled();
+      expect(edited).toHaveBeenCalledTimes(current ? 1 : 0);
+      expect(rows).toEqual(original);
+    }
+  });
+
+  it('does not act on a delete response after the original editor becomes obsolete', async () => {
+    let resolve!: () => void, current = true;
+    const pending = new Promise<void>(yes => { resolve = yes; });
+    const done = vi.fn();
+    const result = confirmWritingDraftDeletion({ isCurrent: () => current, unchanged: () => true,
+      remove: () => pending, onEdited: vi.fn(), afterDeleted: done });
+    current = false;
+    resolve();
+    await result;
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  it('retains new input during deletion and allows it to be saved as a new record', async () => {
+    const rows = storage(), cache = Cache.with(42), revision = createWritingRevision();
+    const unchanged = revision.checkpoint(), leave = vi.fn(), retained = vi.fn();
+    let resolve!: () => void, recordId: number | undefined = 42;
+    const pending = new Promise<void>(yes => { resolve = yes; });
+    const result = confirmWritingDraftDeletion({ isCurrent: () => true, unchanged, remove: () => pending, onEdited: vi.fn(),
+      afterDeleted: () => {
+        recordId = undefined;
+        completeWritingSave({ isCurrent: () => true, unchanged, clear: () => cache.clear(), leave, onEdited: retained });
+      } });
+    revision.track('content', (value: string) => cache.set('content', value))('New text during delete');
+    resolve();
+    await result;
+    expect(recordId).toBeUndefined();
+    expect(rows.get('42/content')).toBe('New text during delete');
+    expect(rows.get('42/title')).toBe('Submitted draft');
+    expect(rows.get('new/content')).toBe('New draft body');
+    expect(leave).not.toHaveBeenCalled();
+    expect(retained).toHaveBeenCalledOnce();
+  });
+
+  it('does not clean local drafts or navigate when delete fails', async () => {
+    const rows = storage(), original = new Map(rows), done = vi.fn();
+    await expect(confirmWritingDraftDeletion({ isCurrent: () => true, unchanged: () => true,
+      remove: async () => { throw new Error('offline or denied'); }, onEdited: vi.fn(), afterDeleted: done })).rejects.toThrow('offline or denied');
+    expect(rows).toEqual(original);
+    expect(done).not.toHaveBeenCalled();
+  });
+
   it('clears only the submitted existing draft and then navigates', () => {
     const rows = storage();
     const leave = vi.fn(() => { expect(rows.has('42/content')).toBe(false); });
