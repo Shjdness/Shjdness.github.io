@@ -77,4 +77,32 @@ describe('writing page identity boundary', () => {
     expect(write).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
   });
+
+  it('keeps existing-record submit buttons disabled until the cloud record loads, even with cached metadata', () => {
+    vi.stubGlobal('document', { URL: 'https://local.invalid/blog/writing/42' });
+    const values = new Map([
+      ['new/title', 'Synthetic new draft'], ['new/content', 'New body'],
+      ['42/title', 'Synthetic existing draft'], ['42/content', 'Existing body'], ['42/kind', 'diary'],
+    ]);
+    const write = vi.fn(), remove = vi.fn();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: write, removeItem: remove });
+    for (const profile of [owner, trusted]) {
+      cookies.token = tokenFor(profile.id);
+      for (const id of [undefined, 42]) {
+        const html = renderToStaticMarkup(
+          React.createElement(ProfileContext.Provider, { value: profile }, React.createElement(WritingPage, { id })),
+        );
+        const buttons = html.match(/<button\b[^>]*>/g) ?? [];
+        for (const name of ['writing-save-draft', 'writing-publish']) {
+          const button = buttons.find(value => value.includes(name));
+          expect(button).toBeDefined();
+          expect(button!.includes('disabled=""')).toBe(id !== undefined);
+        }
+        expect(html.includes('正在载入原记录，本地修改会保留')).toBe(id !== undefined);
+        expect(html).toContain(id === undefined ? 'Synthetic new draft' : 'Synthetic existing draft');
+      }
+    }
+    expect(write).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
 });

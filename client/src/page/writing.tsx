@@ -91,7 +91,8 @@ function WritingEditor({ id }: { id?: number }) {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
-  const [saveState, setSaveState] = useState('本地已保存');
+  const [recordLoaded, setRecordLoaded] = useState(id === undefined);
+  const [saveState, setSaveState] = useState(id === undefined ? '本地已保存' : '正在载入原记录，本地修改会保留');
   const [content, storeContent] = cache.useCache("content", "");
   const [createdAt, storeCreatedAt] = useState<Date | undefined>(new Date());
   const setContent = revision.track('content', storeContent);
@@ -158,6 +159,7 @@ function WritingEditor({ id }: { id?: number }) {
   }
   async function publishButton() {
     if (publishing) return;
+    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请联网后重新打开页面'); return; }
     const tagsplit =
       tags
         .split("#")
@@ -200,6 +202,7 @@ function WritingEditor({ id }: { id?: number }) {
 
   async function saveDraftToCloud() {
     if (publishing) return;
+    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请联网后重新打开页面'); return; }
     const token = getCookie('token');
     const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
     if (!isCurrent()) return;
@@ -326,13 +329,14 @@ function WritingEditor({ id }: { id?: number }) {
   useEffect(() => {
     let live = true;
     const token = getCookie('token');
-    const isCurrent = () => live && getCookie('token') === token;
+    const isCurrent = () => live && getCookie('token') === token && writingAccountId(profile, token) !== null;
     const unchanged = revision.checkpoint();
     if (id) {
       void loadWritingRecord(
         () => client.feed({ id }).get({ headers: headersWithAuth() }),
         isCurrent,
         (data, fieldUnchanged) => {
+          if (data.id !== id) throw new Error('Unexpected writing record');
           const hadEdits = !fieldUnchanged();
           if (fieldUnchanged('title')) setTitle(data.title || '');
           const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
@@ -345,6 +349,7 @@ function WritingEditor({ id }: { id?: number }) {
           if (fieldUnchanged('kind')) setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
           if (fieldUnchanged('createdAt')) setCreatedAt(new Date(data.createdAt));
           setLoadedDraft(data.draft === 1);
+          setRecordLoaded(true);
           if (!hadEdits) setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
         },
         () => setSaveState('云端载入失败，本地稿已保留，请稍后重试'),
@@ -556,9 +561,10 @@ function WritingEditor({ id }: { id?: number }) {
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
             <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>
-            <button onClick={() => void saveDraftToCloud()} className="writing-save-draft">保存草稿</button>
+            <button onClick={() => void saveDraftToCloud()} disabled={publishing || !recordLoaded} className="writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
+              disabled={publishing || !recordLoaded}
               className="writing-publish bg-theme text-white rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
