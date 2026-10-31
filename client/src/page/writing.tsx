@@ -22,7 +22,7 @@ import { readingStats } from '../utils/reading';
 import { getCookie } from 'typescript-cookie';
 import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
-import { loadWritingRecord } from '../utils/writing-load';
+import { createWritingRevision, loadWritingRecord } from '../utils/writing-load';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
@@ -70,18 +70,25 @@ function WritingEditor({ id }: { id?: number }) {
   const { t } = useTranslation();
   const colorMode = useColorMode();
   const cache = Cache.with(id);
+  const revision = useRef(createWritingRevision()).current;
   const editorRef = useRef<editor.IStandaloneCodeEditor>();
-  const [title, setTitle] = cache.useCache("title", "");
-  const [summary, setSummary] = cache.useCache("summary", "");
-  const [tags, setTags] = cache.useCache("tags", "");
-  const [kind, setKind] = cache.useCache<ContentKind>('kind', 'article');
+  const [title, storeTitle] = cache.useCache("title", "");
+  const [summary, storeSummary] = cache.useCache("summary", "");
+  const [tags, storeTags] = cache.useCache("tags", "");
+  const [kind, storeKind] = cache.useCache<ContentKind>('kind', 'article');
+  const setTitle = revision.track('title', storeTitle);
+  const setSummary = revision.track('summary', storeSummary);
+  const setTags = revision.track('tags', storeTags);
+  const setKind = revision.track('kind', storeKind);
   const tagsByScope = useRef<Record<TagScope, string>>({ blog: tagScope(kind) === 'blog' ? tags : '', diary: kind === 'diary' ? tags : '', memo: kind === 'memo' ? tags : '' });
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
   const [saveState, setSaveState] = useState('本地已保存');
-  const [content, setContent] = cache.useCache("content", "");
-  const [createdAt, setCreatedAt] = useState<Date | undefined>(new Date());
+  const [content, storeContent] = cache.useCache("content", "");
+  const [createdAt, storeCreatedAt] = useState<Date | undefined>(new Date());
+  const setContent = revision.track('content', storeContent);
+  const setCreatedAt = revision.track('createdAt', storeCreatedAt);
   const [preview, setPreview] = useCache<'edit' | 'preview' | 'comparison'>("preview", 'edit');
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -292,23 +299,28 @@ function WritingEditor({ id }: { id?: number }) {
     let live = true;
     const token = getCookie('token');
     const isCurrent = () => live && getCookie('token') === token;
+    const unchanged = revision.checkpoint();
     if (id) {
       void loadWritingRecord(
         () => client.feed({ id }).get({ headers: headersWithAuth() }),
         isCurrent,
-        (data) => {
-          setTitle(data.title || '');
+        (data, fieldUnchanged) => {
+          const hadEdits = !fieldUnchanged();
+          if (fieldUnchanged('title')) setTitle(data.title || '');
           const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
-          tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
-          setTags(loadedTags);
-          setContent(data.content || '');
-          setSummary(data.summary || '');
-          setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
-          setCreatedAt(new Date(data.createdAt));
+          if (fieldUnchanged('tags') && fieldUnchanged('kind')) {
+            tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
+            setTags(loadedTags);
+          }
+          if (fieldUnchanged('content')) setContent(data.content || '');
+          if (fieldUnchanged('summary')) setSummary(data.summary || '');
+          if (fieldUnchanged('kind')) setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
+          if (fieldUnchanged('createdAt')) setCreatedAt(new Date(data.createdAt));
           setLoadedDraft(data.draft === 1);
-          setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
+          if (!hadEdits) setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
         },
         () => setSaveState('云端载入失败，本地稿已保留，请稍后重试'),
+        { unchanged, onChanged: () => setSaveState('云端已载入；载入期间修改的字段已保留，请核对后保存') },
       );
     }
     return () => { live = false; };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cache } from './cache';
-import { loadWritingRecord } from './writing-load';
+import { createWritingRevision, loadWritingRecord } from './writing-load';
 
 type RecordData = { content: string };
 function pendingLoad() {
@@ -14,11 +14,102 @@ function draftStorage() {
   const write = vi.fn((key: string, value: string) => { rows.set(key, value); });
   vi.stubGlobal('localStorage', { getItem: (key: string) => rows.get(key) ?? null, setItem: write, removeItem: vi.fn() });
   const cache = Cache.with(42);
-  return { rows, write, apply: (data: RecordData) => cache.set('content', data.content) };
+  return { rows, write, apply: (data: RecordData, unchanged: (field?: string) => boolean = () => true) => {
+    if (unchanged('content')) cache.set('content', data.content);
+  } };
 }
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('writing cloud load lifecycle', () => {
+  it('loads normally when no edits were made after the request checkpoint', async () => {
+    const revision = createWritingRevision();
+    const draft = draftStorage();
+    const conflict = vi.fn();
+    await loadWritingRecord(async () => ({ data: { content: 'Cloud draft' } }), () => true, draft.apply, vi.fn(), {
+      unchanged: revision.checkpoint(), onChanged: conflict,
+    });
+    expect(draft.rows.get('42/content')).toBe('Cloud draft');
+    expect(conflict).not.toHaveBeenCalled();
+  });
+
+  it('keeps newly typed local content when a delayed cloud response arrives', async () => {
+    const revision = createWritingRevision();
+    const draft = draftStorage();
+    const pending = pendingLoad();
+    const conflict = vi.fn();
+    const failure = vi.fn();
+    const result = loadWritingRecord(() => pending.promise, () => true, draft.apply, failure, {
+      unchanged: revision.checkpoint(), onChanged: conflict,
+    });
+    revision.track('content', (content: string) => draft.apply({ content }))('New local input');
+    pending.resolve({ data: { content: 'Older cloud content' } });
+    await result;
+    expect(draft.rows.get('42/content')).toBe('New local input');
+    expect(draft.write).toHaveBeenCalledTimes(1);
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(failure).not.toHaveBeenCalled();
+  });
+
+  it('also protects title, summary, tags, kind and date changes, including undo to the original value', async () => {
+    for (const field of ['title', 'summary', 'tags', 'kind', 'createdAt']) {
+      const revision = createWritingRevision();
+      const pending = pendingLoad();
+      const draft = draftStorage();
+      const fields = new Map([[field, 'original']]);
+      const apply = vi.fn((data: RecordData, unchanged: (field?: string) => boolean) => {
+        draft.apply(data, unchanged);
+        if (unchanged(field)) fields.set(field, 'cloud metadata');
+      });
+      const conflict = vi.fn();
+      const result = loadWritingRecord(() => pending.promise, () => true, apply, vi.fn(), {
+        unchanged: revision.checkpoint(), onChanged: conflict,
+      });
+      const edit = revision.track(field, (value: string) => fields.set(field, value));
+      edit('changed');
+      edit('original');
+      pending.resolve({ data: { content: 'Old cloud version' } });
+      await result;
+      expect(fields.get(field)).toBe('original');
+      expect(apply).toHaveBeenCalledOnce();
+      expect(draft.rows.get('42/content')).toBe('Old cloud version');
+      expect(conflict).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('silences edit-conflict callbacks after the original editor becomes obsolete', async () => {
+    const revision = createWritingRevision();
+    const pending = pendingLoad();
+    const draft = draftStorage();
+    const conflict = vi.fn();
+    let live = true;
+    const result = loadWritingRecord(() => pending.promise, () => live, draft.apply, vi.fn(), {
+      unchanged: revision.checkpoint(), onChanged: conflict,
+    });
+    revision.track('content', vi.fn())('typing');
+    live = false;
+    pending.resolve({ data: { content: 'Late cloud response' } });
+    await result;
+    expect(conflict).not.toHaveBeenCalled();
+    expect(draft.write).not.toHaveBeenCalled();
+  });
+
+  it('loads untouched private kind and creation date while retaining newly typed content', async () => {
+    const revision = createWritingRevision();
+    const draft = draftStorage();
+    const state = { kind: 'article', createdAt: 'new default date' };
+    const unchanged = revision.checkpoint();
+    revision.track('content', (content: string) => draft.apply({ content }))('New local input');
+    await loadWritingRecord(async () => ({ data: { content: 'Cloud content', kind: 'diary', createdAt: '2020-01-01' } }),
+      () => true,
+      (data, fieldUnchanged) => {
+        draft.apply(data, fieldUnchanged);
+        if (fieldUnchanged('kind')) state.kind = data.kind;
+        if (fieldUnchanged('createdAt')) state.createdAt = data.createdAt;
+      }, vi.fn(), { unchanged, onChanged: vi.fn() });
+    expect(draft.rows.get('42/content')).toBe('New local input');
+    expect(state).toEqual({ kind: 'diary', createdAt: '2020-01-01' });
+  });
+
   it('applies the successful response only while the original editor is current', async () => {
     const draft = draftStorage();
     const failure = vi.fn();
