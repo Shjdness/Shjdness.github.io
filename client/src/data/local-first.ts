@@ -5,7 +5,10 @@ export type SyncItem = { id?: number; ownerId?: number; entity: SyncEntity; acti
 export class SyncConflictError extends Error {constructor(public remote:unknown) {super('云端已有不同版本；本地内容已保留，请展开冲突处理');}}
 export class SyncPauseError extends Error {constructor(message:string,public retryAt:number) {super(message);}}
 export const currentWritePause = () => Number(localStorage.getItem(`account:${currentAccountId()}:write-pause`)||0);
-export function pauseWrites(until:number) {localStorage.setItem(`account:${currentAccountId()}:write-pause`,String(until));}
+export function pauseWrites(until:number, ownerId = currentAccountId()) {
+  if (!Number.isSafeInteger(ownerId) || !ownerId || ownerId <= 0) return;
+  localStorage.setItem(`account:${ownerId}:write-pause`,String(until));
+}
 type CacheValue<T> = { key: string; value: T; updatedAt: number };
 
 const DB_NAME = 'shjdshy-life';

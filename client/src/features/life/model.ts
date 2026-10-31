@@ -1,5 +1,6 @@
 import { endpoint } from '../../main';
-import { currentWritePause, pauseWrites, SyncPauseError } from '../../data/local-first';
+import { accountIdFromToken, currentWritePause, pauseWrites, SyncPauseError } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
 import { headersWithAuth } from '../../utils/auth';
 
 export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
@@ -35,6 +36,7 @@ export const READ_TIMEOUT = 6000;
 export const WRITE_TIMEOUT = 20000;
 
 export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverride?: number): Promise<T> {
+  const requestOwnerId = accountIdFromToken(getCookie('token'));
   const timeout = timeoutOverride ?? ((init?.method || 'GET').toUpperCase() === 'GET' ? READ_TIMEOUT : WRITE_TIMEOUT);
   if((init?.method||'GET')!=='GET' && currentWritePause()>Date.now())throw new SyncPauseError('今日数据库额度已暂停，本地更改已保留',currentWritePause());
   const controller=new AbortController(), timer=window.setTimeout(()=>controller.abort(),timeout);
@@ -45,7 +47,7 @@ export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverri
     const text=await response.text();let detail:any;try{detail=JSON.parse(text);}catch{}
     const hard=detail?.code==='D1_QUOTA_PAUSED'||/exceeded D1.*daily.*limit/i.test(text);
     const retryAt=detail?.retryAt || Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
-    if(hard) {pauseWrites(retryAt);throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留',retryAt);}
+    if(hard) {pauseWrites(retryAt,requestOwnerId);throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留',retryAt);}
     throw new Error(detail?.message || text || `Request failed: ${response.status}`);
   }
   const body = await response.text();
