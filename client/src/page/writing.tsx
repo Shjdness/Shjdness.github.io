@@ -73,6 +73,7 @@ function WritingEditor({ id }: { id?: number }) {
   const colorMode = useColorMode();
   const cache = Cache.with(id);
   const revision = useRef(createWritingRevision()).current;
+  const loadCheckpoint = useRef(revision.checkpoint()).current;
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -92,6 +93,8 @@ function WritingEditor({ id }: { id?: number }) {
   const [tagQuery, setTagQuery] = useState('');
   const [currentId, setCurrentId] = useState<number | undefined>(id);
   const [recordLoaded, setRecordLoaded] = useState(id === undefined);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [recordLoadFailed, setRecordLoadFailed] = useState(false);
   const [saveState, setSaveState] = useState(id === undefined ? '本地已保存' : '正在载入原记录，本地修改会保留');
   const [content, storeContent] = cache.useCache("content", "");
   const [createdAt, storeCreatedAt] = useState<Date | undefined>(new Date());
@@ -159,7 +162,7 @@ function WritingEditor({ id }: { id?: number }) {
   }
   async function publishButton() {
     if (publishing) return;
-    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请联网后重新打开页面'); return; }
+    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请使用原页重试'); return; }
     const tagsplit =
       tags
         .split("#")
@@ -202,7 +205,7 @@ function WritingEditor({ id }: { id?: number }) {
 
   async function saveDraftToCloud() {
     if (publishing) return;
-    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请联网后重新打开页面'); return; }
+    if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请使用原页重试'); return; }
     const token = getCookie('token');
     const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
     if (!isCurrent()) return;
@@ -330,34 +333,35 @@ function WritingEditor({ id }: { id?: number }) {
     let live = true;
     const token = getCookie('token');
     const isCurrent = () => live && getCookie('token') === token && writingAccountId(profile, token) !== null;
-    const unchanged = revision.checkpoint();
-    if (id) {
+    if (id !== undefined) {
+      setRecordLoadFailed(false);
+      setSaveState('正在载入原记录，本地修改会保留');
       void loadWritingRecord(
         () => client.feed({ id }).get({ headers: headersWithAuth() }),
         isCurrent,
         (data, fieldUnchanged) => {
           if (data.id !== id) throw new Error('Unexpected writing record');
           const hadEdits = !fieldUnchanged();
-          if (fieldUnchanged('title')) setTitle(data.title || '');
+          if (fieldUnchanged('title')) storeTitle(data.title || '');
           const loadedTags = data.hashtags?.map(({ name }) => `#${name}`).join(" ") || '';
           if (fieldUnchanged('tags') && fieldUnchanged('kind')) {
             tagsByScope.current[tagScope(data.kind as ContentKind)] = loadedTags;
-            setTags(loadedTags);
+            storeTags(loadedTags);
           }
-          if (fieldUnchanged('content')) setContent(data.content || '');
-          if (fieldUnchanged('summary')) setSummary(data.summary || '');
-          if (fieldUnchanged('kind')) setKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
-          if (fieldUnchanged('createdAt')) setCreatedAt(new Date(data.createdAt));
+          if (fieldUnchanged('content')) storeContent(data.content || '');
+          if (fieldUnchanged('summary')) storeSummary(data.summary || '');
+          if (fieldUnchanged('kind')) storeKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
+          if (fieldUnchanged('createdAt')) storeCreatedAt(new Date(data.createdAt));
           setLoadedDraft(data.draft === 1);
           setRecordLoaded(true);
           if (!hadEdits) setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
         },
-        () => setSaveState('云端载入失败，本地稿已保留，请稍后重试'),
-        { unchanged, onChanged: () => setSaveState('云端已载入；载入期间修改的字段已保留，请核对后保存') },
+        () => { setRecordLoadFailed(true); setSaveState('云端载入失败，本地稿已保留，可在本页重试'); },
+        { unchanged: loadCheckpoint, onChanged: () => setSaveState('云端已载入；载入期间修改的字段已保留，请核对后保存') },
       );
     }
     return () => { live = false; };
-  }, []);
+  }, [loadAttempt]);
   useEffect(() => {
     let live = true;
     setAvailableTags([]);
@@ -558,6 +562,7 @@ function WritingEditor({ id }: { id?: number }) {
         <div className="w-full md:max-w-96 flex flex-col">
           {MetaInput({ className: "hidden md:block glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="writing-save-state">{saveState}</div>
+          {recordLoadFailed && !recordLoaded && <button type="button" className="writing-save-draft mx-8" onClick={() => setLoadAttempt(value => value + 1)}>重试载入原记录（保留本地修改）</button>}
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
             <button onClick={deleteCurrentDraft} disabled={!loadedDraft} className="writing-delete-draft">删除草稿</button>

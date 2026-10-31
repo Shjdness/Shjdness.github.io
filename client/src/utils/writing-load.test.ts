@@ -21,6 +21,58 @@ function draftStorage() {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('writing cloud load lifecycle', () => {
+  it('reuses the original edit checkpoint across failed loads and retries', async () => {
+    for (const editDuringRetry of [false, true]) {
+      const draft = draftStorage();
+      const revision = createWritingRevision();
+      const unchanged = revision.checkpoint();
+      const failure = vi.fn(), conflict = vi.fn();
+      await loadWritingRecord(async () => { throw new Error('offline'); }, () => true, draft.apply, failure,
+        { unchanged, onChanged: conflict });
+      const type = revision.track('content', (content: string) => draft.apply({ content }));
+      type('Typed before retry');
+      const pending = pendingLoad();
+      const retry = loadWritingRecord(() => pending.promise, () => true, draft.apply, failure,
+        { unchanged, onChanged: conflict });
+      if (editDuringRetry) type('Typed during retry');
+      pending.resolve({ data: { content: 'Older cloud text' } });
+      await retry;
+      expect(draft.rows.get('42/content')).toBe(editDuringRetry ? 'Typed during retry' : 'Typed before retry');
+      expect(failure).toHaveBeenCalledOnce();
+      expect(conflict).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('does not mistake partial cloud writes for human edits when storage failure is retried', async () => {
+    const rows = new Map([['42/content', 'Local body'], ['42/kind', 'article']]);
+    let failKind = true, ready = false;
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => rows.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key === '42/kind' && failKind) { failKind = false; throw new Error('storage temporarily unavailable'); }
+        rows.set(key, value);
+      }, removeItem: vi.fn(),
+    });
+    const cache = Cache.with(42), revision = createWritingRevision();
+    const unchanged = revision.checkpoint();
+    const failure = vi.fn(), conflict = vi.fn();
+    const apply = (data: { content: string; kind: string }, fieldUnchanged: (field?: string) => boolean) => {
+      if (fieldUnchanged('content')) cache.set('content', data.content);
+      if (fieldUnchanged('kind')) cache.set('kind', data.kind);
+      ready = true;
+    };
+    const request = async () => ({ data: { content: 'Cloud body', kind: 'diary' } });
+    await loadWritingRecord(request, () => true, apply, failure, { unchanged, onChanged: conflict });
+    expect(ready).toBe(false);
+    expect(unchanged()).toBe(true);
+    await loadWritingRecord(request, () => true, apply, failure, { unchanged, onChanged: conflict });
+    expect(ready).toBe(true);
+    expect(rows.get('42/kind')).toBe('diary');
+    expect(rows.get('42/content')).toBe('Cloud body');
+    expect(failure).toHaveBeenCalledOnce();
+    expect(conflict).not.toHaveBeenCalled();
+  });
+
   it('loads normally when no edits were made after the request checkpoint', async () => {
     const revision = createWritingRevision();
     const draft = draftStorage();
