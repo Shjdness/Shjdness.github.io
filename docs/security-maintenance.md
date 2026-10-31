@@ -177,3 +177,10 @@
 - 使用当前真实 schema/Mermaid 插件和解析库，离线验证一组新增混淆协议/事件属性/活动标签/id-name 隔离及 Mermaid 关闭 pre 的输入；所测 AST 拒绝活动元素，普通 HTTPS 链接/图片保留。没有网络或用户内容读取。
 - 范围与证据见工作区 outputs/security-maintenance-2026-10-31/Markdown解析边界轻量复核.md 和 markdown-boundaries-probe.cjs。未做完整浏览器 SVG/React 自定义组件攻击链，不能称为零 XSS 或已完善私密媒体/CSP。
 - 仅保存本地文档检查点，待下次实质代码发布一并推送；未改生产代码、内容、RSS 预算或用户暂缓事项。
+
+## 2026-10-31 后台预算本地 D1 轻量检查点
+
+- git fetch 确认远端 main 仍为已验收 0930ebd；be8e72b 及此前是本地待推送文档，工作区干净。共享周额度较少，本轮仅验证一个真实本地 D1 边界，不重复扫描/构建/部署。
+- 使用真实 write-budget helper 和隔离 Miniflare D1，验证竞争预留拒绝不增计数、scope 分离、调用上限余量、无效成本不建行、显式 UTC 午夜新窗口与旧计数保留。无生产网络/数据库或负载测试，没有改变每日 RSS 预算。
+- 证据见工作区 outputs/security-maintenance-2026-10-31/后台预算本地D1边界复核.md 和 budget-d1-boundaries-probe.cjs。不将预留单位当实际账号 rows_written，也不声称已解决全部系统时钟/异常响应路径或上传计量。
+- 只保存本地文档提交，待下次实质代码发布一并推送；旧稿恢复、持久回执、会话/媒体/加密及用户暂缓事项继续保留。
