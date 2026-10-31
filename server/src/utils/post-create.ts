@@ -26,12 +26,16 @@ export async function findPostCreate(db:D1Database,operation:PostCreateOperation
 
 /** Keep a tombstone so a reused SQLite rowid cannot turn an old retry into an
  * acknowledgement of an unrelated new record. Called only after route auth. */
-export async function deletePostWithReceipts(db:D1Database,ownerId:number,id:number) {
+export async function deletePostWithReceipts(db:D1Database,ownerId:number,id:number,draftOnly=false) {
   const prefix=`post-create:v1:${ownerId}:`;
-  await db.batch([
-    db.prepare("UPDATE info SET value=json_remove(json_set(value,'$.deleted',json('true')),'$.requestHash') WHERE key>=? AND key<? AND json_extract(value,'$.insertedId')=?").bind(prefix,prefix+'\uffff',id),
-    db.prepare('DELETE FROM feeds WHERE id=? AND uid=?').bind(id,ownerId),
+  const receiptSql="UPDATE info SET value=json_remove(json_set(value,'$.deleted',json('true')),'$.requestHash') WHERE key>=? AND key<? AND json_extract(value,'$.insertedId')=?";
+  const results=await db.batch<{id:number}>([
+    draftOnly
+      ? db.prepare(receiptSql+' AND EXISTS(SELECT 1 FROM feeds WHERE id=? AND uid=? AND draft=1)').bind(prefix,prefix+'\uffff',id,id,ownerId)
+      : db.prepare(receiptSql).bind(prefix,prefix+'\uffff',id),
+    db.prepare('DELETE FROM feeds WHERE id=? AND uid=?'+(draftOnly?' AND draft=1':'')+' RETURNING id').bind(id,ownerId),
   ]);
+  return results[1].results.length===1;
 }
 
 // Capture the immediately preceding post INSERT's rowid once. Materialization

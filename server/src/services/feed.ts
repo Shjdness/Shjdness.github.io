@@ -494,7 +494,7 @@ export function FeedService() {
             }),
           },
         )
-        .delete("/:id", async ({ admin, writer, set, uid, params: { id } }) => {
+        .delete("/:id", async ({ admin, writer, set, uid, params: { id }, query: {draftOnly} }) => {
           const id_num = parseInt(id);
           const feed = await db.query.feeds.findFirst({
             where: eq(feeds.id, id_num),
@@ -507,10 +507,14 @@ export function FeedService() {
             set.status = 403;
             return "Permission denied";
           }
-          await deletePostWithReceipts(getEnv().DB,feed.uid,id_num);
+          const deleted=await deletePostWithReceipts(getEnv().DB,feed.uid,id_num,draftOnly==='1');
+          if(draftOnly==='1'&&!deleted) {
+            set.status=409;
+            return '草稿状态已变化，未执行删除；请保留本地内容并核对云端记录';
+          }
           await clearFeedCache(id_num, feed.alias, null);
           return "Deleted";
-        }),
+        },{query:t.Object({draftOnly:t.Optional(t.Literal('1'))})}),
     );
 }
 

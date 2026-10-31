@@ -267,7 +267,7 @@ function WritingEditor({ id }: { id?: number }) {
           isCurrent, unchanged,
           onEdited: () => showAlert('确认期间内容有修改，本地稿已保留，请重新确认是否删除'),
           remove: async () => {
-            const { error } = await client.feed({ id: deletingId }).delete(null, { headers: headersWithAuth() });
+            const { error } = await client.feed({ id: deletingId }).delete(null, { query: { draftOnly: '1' }, headers: headersWithAuth() });
             if (error) throw new Error(typeof error.value === 'string' ? error.value : '删除失败，本地稿已保留');
             deleteConfirmed = true;
           },

@@ -45,7 +45,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const { showConfirm, ConfirmUI } = useConfirm()
     const deleteDraft = (id: string) => {
         showConfirm('删除草稿', '这篇草稿将从云端永久删除，其他设备也无法再继续编辑。确定删除吗？', async () => {
-            const { error } = await client.feed({ id: Number(id) }).delete(null, { headers: headersWithAuth() })
+            const { error } = await client.feed({ id: Number(id) }).delete(null, { query: { draftOnly: '1' }, headers: headersWithAuth() })
             if (error) {
                 showAlert(typeof error.value === 'string' ? error.value : '删除失败，请稍后重试')
                 return
