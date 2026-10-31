@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
+import { accountIdFromToken, enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
 import { client } from '../../main';
 import { headersWithAuth } from '../../utils/auth';
 import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type CalendarData, type DailyNote, type Habit, type Log } from './model';
-import { mergePendingHabitData, rememberLocalId, resolveHabitId } from './sync';
+import { assertCurrentAccount, createForAccount, mergePendingHabitData, rememberLocalId, resolveHabitId } from './sync';
 import { LifeLayout } from './layout';
 
 export function HabitView() {
@@ -14,7 +15,27 @@ export function HabitView() {
   useEffect(() => { void load(); const handler = () => void load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, [weekStart.getTime()]);
   useEffect(() => { setNoteDraft(notes.find(note => note.date === selectedDate)?.content || ''); }, [selectedDate, notes]);
   const persist = (nextHabits = habits, nextLogs = logs, nextNotes = notes) => setCached(cacheKey, { habits: nextHabits, logs: nextLogs, notes: nextNotes });
-  const create = async () => { if (!name.trim() || busy) return; setBusy(true); const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: Habit = { id: localId, name: name.trim(), description: '', color: '#e11d62', active: 1, clientKey }; const nextHabits = [local, ...habits]; setHabits(nextHabits); void persist(nextHabits); setName(''); const payload = { localId, name: local.name, clientKey }; try { const data = await lifeApi<{ insertedId: number }>('/habit', { method: 'POST', body: JSON.stringify({ name: local.name, clientKey }) }); if (!data?.insertedId) throw new Error('sync failed'); await rememberLocalId('life:habit-id-map', localId, data.insertedId); const mapped = nextHabits.map(item => item.id === localId ? { ...item, id: data.insertedId } : item); setHabits(mapped); await persist(mapped); } catch { await enqueueMutation('habit', 'create', payload); } finally { setBusy(false); } };
+  const create = async () => {
+    const ownerId = accountIdFromToken(getCookie('token'));
+    if (!ownerId || !name.trim() || busy) return;
+    setBusy(true);
+    const localId = -Date.now(), clientKey = crypto.randomUUID();
+    const local: Habit = { id: localId, name: name.trim(), description: '', color: '#e11d62', active: 1, clientKey };
+    const nextHabits = [local, ...habits], payload = { localId, name: local.name, clientKey };
+    setHabits(nextHabits); setName('');
+    try {
+      await createForAccount({ownerId, entity:'habit', payload, persist:()=>persist(nextHabits),
+        send:()=>lifeApi<{insertedId:number}>('/habit',{method:'POST',body:JSON.stringify({name:local.name,clientKey})}),
+        apply:async data=>{
+          if (!data?.insertedId) throw new Error('sync failed');
+          await rememberLocalId('life:habit-id-map',localId,data.insertedId,ownerId);
+          assertCurrentAccount(ownerId);
+          const mapped=nextHabits.map(item=>item.id===localId?{...item,id:data.insertedId}:item);
+          setHabits(mapped); await persist(mapped);
+        }});
+    } catch { if (accountIdFromToken(getCookie('token')) === ownerId) window.alert('本地保存未完成，请保留页面并复制当前新建内容'); }
+    finally { setBusy(false); }
+  };
   const updateHabit = async (habit: Habit, patch: { name?: string; description?: string; active?: boolean }) => { const nextHabits = habits.map(item => item.id === habit.id ? { ...item, ...patch, active: patch.active === undefined ? item.active : patch.active ? 1 : 0 } : item); setHabits(nextHabits); void persist(nextHabits); try { const id = await resolveHabitId(habit.id); await lifeApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('habit', patch.active === false ? 'archive' : 'update', { id: habit.id, patch }); } };
   const removeHabit = async (habit: Habit) => { if (!window.confirm(`永久删除「${habit.name}」及其过往打卡记录？`)) return; const nextHabits = habits.filter(item => item.id !== habit.id); const nextLogs = logs.filter(log => log.habitId !== habit.id); setHabits(nextHabits); setLogs(nextLogs); setEditing(null); await persist(nextHabits, nextLogs); try { const id = await resolveHabitId(habit.id); await lifeApi(`/habit/${id}`, { method: 'DELETE' }); } catch { await enqueueMutation('habit', 'delete', { id: habit.id }); } };
   const toggle = async (habitId: number, date: string) => { setSelectedDate(date); const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); const nextLogs = completed ? logs.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...logs.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]; setLogs(nextLogs); void persist(habits, nextLogs); void patchCalendarCache(date, value => ({ ...value, habits, logs: nextLogs })); const payload = { id: habitId, date, completed: !completed }; try { const id = await resolveHabitId(habitId); await lifeApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date, completed: !completed }) }); } catch { await enqueueMutation('habit', 'toggle', payload); } };
@@ -29,7 +50,10 @@ function HabitEditor({ habit, onClose, onSave, onDelete }: { habit: Habit; onClo
   return <div className="habit-modal" role="dialog" aria-modal="true"><section><p>编辑习惯</p><h2>{habit.name}</h2><label>名称<input value={name} maxLength={80} onChange={event => setName(event.target.value)} /></label><label>说明<input value={description} maxLength={240} onChange={event => setDescription(event.target.value)} /></label><div className="habit-editor-actions"><button className="habit-delete" onClick={onDelete}>删除</button><button className="habit-archive" onClick={() => { if (window.confirm('停用后将不再显示于每周面板，但历史记录会保留。继续吗？')) onSave({ name, description, active: false }); }}>停用</button><span /><button onClick={onClose}>取消</button><button disabled={!name.trim()} onClick={() => onSave({ name: name.trim(), description: description.trim() })}>保存</button></div></section></div>;
 }
 
-export async function patchCalendarCache(date: string, update: (value: CalendarData) => CalendarData) {
+export async function patchCalendarCache(date: string, update: (value: CalendarData) => CalendarData, expectedOwnerId?: number) {
+  assertCurrentAccount(expectedOwnerId);
   const key = `life:calendar:${date.slice(0, 7)}`; const cached = await getCached<CalendarData>(key);
+  assertCurrentAccount(expectedOwnerId);
   if (cached) await setCached(key, update(cached.value));
+  assertCurrentAccount(expectedOwnerId);
 }

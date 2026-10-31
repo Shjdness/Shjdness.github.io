@@ -1,5 +1,5 @@
 import { getCookie } from 'typescript-cookie';
-import { accountIdFromToken, SyncConflictError, getCached, getSyncQueue, setCached } from '../../data/local-first';
+import { accountIdFromToken, SyncConflictError, getCached, getSyncQueue, setCached, enqueueMutation, type SyncEntity } from '../../data/local-first';
 import type { DailyBasic, DailyNote, Habit, Log, TodoType } from './model';
 import { lifeApi } from './model';
 
@@ -120,10 +120,31 @@ export async function resolveTodoId(id: number) {
   return mapping[String(id)];
 }
 
+export function assertCurrentAccount(expectedOwnerId?: number | null) {
+  if (expectedOwnerId !== undefined && accountIdFromToken(getCookie('token')) !== expectedOwnerId) throw Error('账号已切换，离线记录已保留');
+}
+
+export async function createForAccount<T>({ ownerId, entity, payload, persist, send, apply }: {
+  ownerId: number; entity: SyncEntity; payload: unknown;
+  persist: () => Promise<unknown>; send: () => Promise<T>; apply: (value: T) => Promise<unknown>;
+}) {
+  try {
+    assertCurrentAccount(ownerId);
+    await persist();
+    assertCurrentAccount(ownerId);
+    const result = await send();
+    assertCurrentAccount(ownerId);
+    await apply(result);
+    assertCurrentAccount(ownerId);
+    return true;
+  } catch {
+    await enqueueMutation(entity, 'create', payload, ownerId);
+    return false;
+  }
+}
+
 export async function rememberLocalId(cacheKey: string, localId: number, cloudId: number, expectedOwnerId?: number | null) {
-  const assertAccount = () => {
-    if (expectedOwnerId !== undefined && accountIdFromToken(getCookie('token')) !== expectedOwnerId) throw Error('账号已切换，离线记录已保留');
-  };
+  const assertAccount = () => assertCurrentAccount(expectedOwnerId);
   assertAccount();
   const mapping = (await getCached<Record<string, number>>(cacheKey))?.value || {};
   assertAccount();

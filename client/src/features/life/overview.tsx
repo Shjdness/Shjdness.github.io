@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
 import { client } from '../../main';
-import { enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
+import { accountIdFromToken, enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
 import { headersWithAuth } from '../../utils/auth';
 import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type DailyBasic, type LifeOverviewData } from './model';
-import { mergePendingBasics, normalizeBasics, rememberLocalId, resolveBasicId } from './sync';
+import { assertCurrentAccount, createForAccount, mergePendingBasics, normalizeBasics, rememberLocalId, resolveBasicId } from './sync';
 import { LifeLayout } from './layout';
 import { patchCalendarCache } from './habits';
 import { TodoBoard } from "./todos";
@@ -40,20 +41,30 @@ export function LifeOverview() {
 function TodayBasics({ initial }: { initial?: DailyBasic[] }) {
   const date = isoDay(); const cacheKey = `life:basics:${date}`;
   const [items, setItems] = useState<DailyBasic[]>(normalizeBasics(initial || [])); const [draft, setDraft] = useState(''); const [creating, setCreating] = useState(false);
-  const persist = async (next: DailyBasic[]) => { const normalized = normalizeBasics(next); setItems(normalized); await setCached(cacheKey, normalized); await patchCalendarCache(date, value => ({ ...value, basics: normalized })); };
+  const persist = async (next: DailyBasic[], expectedOwnerId?: number) => { assertCurrentAccount(expectedOwnerId); const normalized = normalizeBasics(next); setItems(normalized); await setCached(cacheKey, normalized); await patchCalendarCache(date, value => ({ ...value, basics: normalized }), expectedOwnerId); };
   const load = async () => {
     const cached = await getCached<DailyBasic[]>(cacheKey); if (cached) setItems(cached.value);
     try { const cloud = await lifeApi<DailyBasic[]>(`/life/basics?from=${date}&to=${date}`); if (Array.isArray(cloud)) await persist(await mergePendingBasics(date, cloud, cached?.value || items)); } catch {}
   };
   useEffect(() => { void load(); const handler = () => void load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, []);
   const create = async () => {
+    const ownerId = accountIdFromToken(getCookie('token'));
+    if (!ownerId) return;
     const content = draft.trim(); if (!content || creating || items.length >= 3 || items.some(item => item.content.trim().toLowerCase() === content.toLowerCase())) return;
     setCreating(true);
     const localId = -Date.now(); const clientKey = crypto.randomUUID(); const local: DailyBasic = { id: localId, date, content, completed: 0, sortOrder: items.length, clientKey };
-    const next = [...items, local]; setDraft(''); await persist(next);
+    const next = [...items, local]; setDraft('');
     const payload = { localId, date, content, sortOrder: local.sortOrder, clientKey };
-    try { const data = await lifeApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date, content, sortOrder: local.sortOrder, clientKey }) }); await rememberLocalId('life:basic-id-map', localId, data.insertedId); await persist(next.map(item => item.id === localId ? { ...item, id: data.insertedId } : item)); }
-    catch { await enqueueMutation('basic', 'create', payload); }
+    try {
+      await createForAccount({ownerId,entity:'basic',payload,persist:()=>persist(next,ownerId),
+        send:()=>lifeApi<{insertedId:number}>('/life/basics',{method:'POST',body:JSON.stringify({date,content,sortOrder:local.sortOrder,clientKey})}),
+        apply:async data=>{
+          if (!data?.insertedId) throw new Error('sync failed');
+          await rememberLocalId('life:basic-id-map',localId,data.insertedId,ownerId);
+          await persist(next.map(item=>item.id===localId?{...item,id:data.insertedId}:item),ownerId);
+        }});
+    }
+    catch { if (accountIdFromToken(getCookie('token')) === ownerId) window.alert('本地保存未完成，请保留页面并复制当前新建内容'); }
     finally { setCreating(false); }
   };
   const update = async (item: DailyBasic, patch: { content?: string; completed?: boolean }) => {

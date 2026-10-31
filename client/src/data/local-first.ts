@@ -88,9 +88,8 @@ export async function clearLegacyRssCaches() {
   }
 }
 
-export async function enqueueMutation(entity: SyncEntity, action: string, payload: unknown) {
-  const ownerId = currentAccountId();
-  if (!ownerId) throw new Error('Authenticated account required for offline write');
+export async function enqueueMutation(entity: SyncEntity, action: string, payload: unknown, ownerId = currentAccountId()) {
+  if (!Number.isSafeInteger(ownerId) || !ownerId || ownerId <= 0) throw new Error('Authenticated account required for offline write');
   await storeRequest('sync_queue', 'readwrite', store => store.add({ ownerId, entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
