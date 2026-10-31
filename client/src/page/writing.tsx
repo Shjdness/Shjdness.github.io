@@ -23,6 +23,7 @@ import { getCookie } from 'typescript-cookie';
 import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
 import { createWritingRevision, loadWritingRecord } from '../utils/writing-load';
+import { completeWritingSave } from '../utils/writing-save';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
@@ -68,9 +69,15 @@ export function WritingPage({ id }: { id?: number }) {
 
 function WritingEditor({ id }: { id?: number }) {
   const { t } = useTranslation();
+  const profile = React.useContext(ProfileContext);
   const colorMode = useColorMode();
   const cache = Cache.with(id);
   const revision = useRef(createWritingRevision()).current;
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
   const editorRef = useRef<editor.IStandaloneCodeEditor>();
   const [title, storeTitle] = cache.useCache("title", "");
   const [summary, storeSummary] = cache.useCache("summary", "");
@@ -158,6 +165,11 @@ function WritingEditor({ id }: { id?: number }) {
         .map((tag) => tag.trim()) || [];
     if (!title.trim()) { showAlert(t("title_empty")); return; }
     if (!content.trim()) { showAlert(t("content.empty")); return; }
+    const token = getCookie('token');
+    const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
+    if (!isCurrent()) return;
+    const unchanged = revision.checkpoint();
+    const keepEdited = () => setSaveState('本次提交已保存，后续修改仍在本地，请继续保存');
     setPublishing(true);
     try {
       const payload = { title: title.trim(), content, summary, tags: tagsplit, draft: false, kind, listed: !privateMode, createdAt };
@@ -170,12 +182,17 @@ function WritingEditor({ id }: { id?: number }) {
         if (error || !data || typeof data === 'string') throw new Error(error ? JSON.stringify(error.value) : '发布失败');
         publishedId = data.insertedId;
       }
-      Cache.with().clear();
-      if (publishedId !== undefined) Cache.with(publishedId).clear();
+      if (!isCurrent()) return;
+      setCurrentId(publishedId);
+      setLoadedDraft(false);
+      if (!unchanged()) { keepEdited(); return; }
       const destination = kind === 'memo' ? '/blog/memos' : kind === 'diary' ? '/blog/diary' : `/blog/feed/${publishedId}`;
-      showAlert(currentId === undefined ? t('publish.success') : t('update.success'), () => { window.location.href = destination; });
+      showAlert(currentId === undefined ? t('publish.success') : t('update.success'), () => completeWritingSave({
+        isCurrent, unchanged, clear: () => cache.clear(),
+        leave: () => { window.location.href = destination; }, onEdited: keepEdited,
+      }));
     } catch (error) {
-      showAlert(error instanceof Error ? error.message : '发布失败，请稍后重试');
+      if (isCurrent()) showAlert(error instanceof Error ? error.message : '发布失败，请稍后重试');
     } finally {
       setPublishing(false);
     }
@@ -183,21 +200,32 @@ function WritingEditor({ id }: { id?: number }) {
 
   async function saveDraftToCloud() {
     if (publishing) return;
+    const token = getCookie('token');
+    const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
+    if (!isCurrent()) return;
+    const unchanged = revision.checkpoint();
     setPublishing(true); setSaveState('正在上传草稿…');
     const payload = { title: title.trim() || '未命名草稿', content, summary, tags: selectedTagNames, draft: true, kind, listed: false, createdAt };
     try {
+      let savedId = currentId;
       if (currentId !== undefined) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
         if (error) throw new Error(String(error.value));
       } else {
         const { data, error } = await client.feed.post(payload, { headers: headersWithAuth() });
         if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
-        setCurrentId(data.insertedId); setLoadedDraft(true);
+        savedId = data.insertedId;
       }
-      Cache.with().clear();
-      if (currentId !== undefined) Cache.with(currentId).clear();
-      window.location.href = '/blog/writing';
+      if (!isCurrent()) return;
+      setCurrentId(savedId);
+      setLoadedDraft(true);
+      completeWritingSave({
+        isCurrent, unchanged, clear: () => cache.clear(),
+        leave: () => { window.location.href = '/blog/writing'; },
+        onEdited: () => setSaveState('本次草稿已保存，后续修改仍在本地，请继续保存'),
+      });
     } catch (error) {
+      if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : '云端备份失败，本地稿仍保留';
       setSaveState(message);
       showAlert(message);
