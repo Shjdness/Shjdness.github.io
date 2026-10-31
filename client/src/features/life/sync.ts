@@ -16,9 +16,7 @@ export async function sendQueuedMutation(item: { ownerId?:number; entity: string
     const payload = item.payload as { localId: number; name: string; description?: string; color?: string; clientKey: string };
     const data = await sendApi<{ insertedId: number }>('/habit', { method: 'POST', body: JSON.stringify({ name: payload.name, description: payload.description, color: payload.color, clientKey: payload.clientKey }) });
     if (!data?.insertedId) return false;
-    const mapping = (await getCached<Record<string, number>>('life:habit-id-map'))?.value || {};
-    mapping[String(payload.localId)] = data.insertedId;
-    await setCached('life:habit-id-map', mapping);
+    await rememberLocalId('life:habit-id-map', payload.localId, data.insertedId, account);
     return true;
   }
   if (item.entity === 'habit' && (item.action === 'update' || item.action === 'archive')) {
@@ -55,9 +53,7 @@ export async function sendQueuedMutation(item: { ownerId?:number; entity: string
     if (item.action === 'create') {
       const result = await sendApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey }) });
       if (!result.insertedId || payload.localId === undefined) return false;
-      const mapping = (await getCached<Record<string, number>>('life:basic-id-map'))?.value || {};
-      mapping[String(payload.localId)] = result.insertedId;
-      await setCached('life:basic-id-map', mapping);
+      await rememberLocalId('life:basic-id-map', payload.localId, result.insertedId, account);
       return true;
     }
     const id = await resolveBasicId(payload.id || 0);
@@ -71,7 +67,7 @@ export async function sendQueuedMutation(item: { ownerId?:number; entity: string
       const { localId: _localId, id: _id, ...body } = payload;
       const result = await sendApi<{ insertedId: number }>('/life/todos', { method: 'POST', body: JSON.stringify(body) });
       if (!result.insertedId || payload.localId === undefined) return false;
-      await rememberLocalId('life:todo-id-map', payload.localId, result.insertedId);
+      await rememberLocalId('life:todo-id-map', payload.localId, result.insertedId, account);
       return true;
     }
     const id = await resolveTodoId(payload.id || 0);
@@ -124,10 +120,16 @@ export async function resolveTodoId(id: number) {
   return mapping[String(id)];
 }
 
-export async function rememberLocalId(cacheKey: string, localId: number, cloudId: number) {
+export async function rememberLocalId(cacheKey: string, localId: number, cloudId: number, expectedOwnerId?: number | null) {
+  const assertAccount = () => {
+    if (expectedOwnerId !== undefined && accountIdFromToken(getCookie('token')) !== expectedOwnerId) throw Error('账号已切换，离线记录已保留');
+  };
+  assertAccount();
   const mapping = (await getCached<Record<string, number>>(cacheKey))?.value || {};
+  assertAccount();
   mapping[String(localId)] = cloudId;
   await setCached(cacheKey, mapping);
+  assertAccount();
 }
 
 export function normalizeBasics(values: DailyBasic[]) {
