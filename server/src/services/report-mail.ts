@@ -3,7 +3,7 @@ import {setup} from '../setup';
 import {getEnv} from '../utils/di';
 import {allowBurst} from '../utils/rate-limit';
 import {reportMailConfiguration} from '../utils/report-mail-config';
-import {reportMailContactState,saveReportRecipient,setReportEmailEnabled,verifyReportRecipient} from '../utils/report-mail-contacts';
+import {reportMailContactState,readMailContact,saveReportRecipient,setReportEmailEnabled,verifyReportRecipient} from '../utils/report-mail-contacts';
 import {requestReportVerification} from '../utils/report-mail-delivery';
 import {reportRecipient} from '../utils/report-mail-vault';
 
@@ -21,7 +21,13 @@ export function ReportMailService(){
     .get('/life/reports/mail',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
       const config=await reportMailConfiguration(env);
-      return {storageConfigured:config.storageConfigured,deliveryConfigured:config.deliveryConfigured,...(config.vault?await reportMailContactState(db,owner,config.vault):{ownerId:owner,maskedRecipient:null,verified:false,enabled:false})};
+      if(config.vault){
+        try{return {storageConfigured:true,deliveryConfigured:config.deliveryConfigured,...await reportMailContactState(db,owner,config.vault)};}
+        catch{/* A damaged cipher or wrong vault key must not hide the pause control. */}
+      }
+      const contact=await readMailContact(db,owner),prefs=await db.prepare('SELECT revision,email_enabled FROM life_report_preferences WHERE owner_id=?').bind(owner).all<{revision:number;email_enabled:number}>();
+      if(!prefs.success)throw Error();
+      return {storageConfigured:false,deliveryConfigured:false,ownerId:owner,maskedRecipient:null,contactRevision:contact?.revision??0,preferencesRevision:prefs.results[0]?.revision??0,verified:Boolean(contact?.verified_at),enabled:Boolean(prefs.results[0]?.email_enabled&&contact?.enabled_at!==null&&contact?.verified_at&&!contact.paused_reason),pausedReason:contact?.paused_reason??null};
     })
     .post('/life/reports/mail/recipient',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
@@ -35,20 +41,20 @@ export function ReportMailService(){
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
       if(!limited(owner)){context.set.status=429;return {code:'MAIL_RATE_LIMIT'};}
       const config=await reportMailConfiguration(env);if(!config.vault||!config.provider){context.set.status=503;return {code:'MAIL_NOT_CONFIGURED'};}
-      return requestReportVerification({db,ownerId:owner,vault:config.vault,provider:config.provider});
+      return {ownerId:owner,...await requestReportVerification({db,ownerId:owner,vault:config.vault,provider:config.provider})};
     },{body:t.Object({},{additionalProperties:false})})
     .post('/life/reports/mail/verify',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
       if(!limited(owner)){context.set.status=429;return {code:'MAIL_RATE_LIMIT'};}
       const config=await reportMailConfiguration(env);if(!config.vault){context.set.status=503;return {code:'MAIL_NOT_CONFIGURED'};}
-      const result=await verifyReportRecipient({db,ownerId:owner,vault:config.vault,token:context.body.token});if(!result.verified)context.set.status=409;return result;
+      const result=await verifyReportRecipient({db,ownerId:owner,vault:config.vault,token:context.body.token});if(!result.verified)context.set.status=409;return {ownerId:owner,...result};
     },{body:t.Object({token:t.String({pattern:'^[A-Za-z0-9_-]{43}$'})},{additionalProperties:false})})
     .post('/life/reports/mail/enabled',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
       if(context.body.enabled&&!limited(owner)){context.set.status=429;return {code:'MAIL_RATE_LIMIT'};}
       // Emergency pause does not require a decryptable vault or available sender.
       if(context.body.enabled&&!(await reportMailConfiguration(env)).provider){context.set.status=503;return {code:'MAIL_NOT_CONFIGURED'};}
-      const result=await setReportEmailEnabled({db,ownerId:owner,...context.body});if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;return result;
+      const result=await setReportEmailEnabled({db,ownerId:owner,...context.body});if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;return {ownerId:owner,...result};
     },{body:t.Object({enabled:t.Boolean(),contactRevision:revision,baseRevision:revision},{additionalProperties:false})})
     .get('/life/reports/mail/deliveries',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};

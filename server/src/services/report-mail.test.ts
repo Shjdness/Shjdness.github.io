@@ -58,11 +58,14 @@ it('stores only encrypted recipient, verifies owner-bound proof and permits emer
     const saved=await f.request(1,'/recipient',{email:'fixture@example.invalid',baseRevision:0});expect(saved.status).toBe(200);
     const token=await f.issueFixture();
     expect((await f.request(2,'/verify',{token})).status).toBe(409);
-    const verified=await f.request(1,'/verify',{token});expect(await verified.json()).toEqual({verified:true});
+    const verified=await f.request(1,'/verify',{token});expect(await verified.json()).toEqual({ownerId:1,verified:true});
     expect((await f.request(1,'/enabled',{enabled:true,contactRevision:1,baseRevision:1})).status).toBe(503);
     Object.assign(f.env,sender);
     expect(await (await f.request(1,'/enabled',{enabled:true,contactRevision:1,baseRevision:1})).json()).toMatchObject({saved:true});
+    f.env.REPORT_MAIL_VAULT_KEY=btoa(String.fromCharCode(...Array.from({length:32},(_,i)=>i+40)));
+    expect(await (await f.request(1)).json()).toMatchObject({storageConfigured:false,maskedRecipient:null,preferencesRevision:2,enabled:true});
     delete f.env.REPORT_MAIL_VAULT_KEY;delete f.env.REPORT_MAIL_API_KEY;
+    expect(await (await f.request(1)).json()).toMatchObject({storageConfigured:false,maskedRecipient:null,contactRevision:1,preferencesRevision:2,enabled:true});
     f.sqlite.exec("UPDATE rss_write_budget SET reserved=2000 WHERE day LIKE 'reports:%'");
     expect(await (await f.request(1,'/enabled',{enabled:false,contactRevision:1,baseRevision:2})).json()).toMatchObject({saved:true});
     expect(f.sqlite.prepare('SELECT email_enabled FROM life_report_preferences WHERE owner_id=1').get().email_enabled).toBe(0);

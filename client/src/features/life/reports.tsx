@@ -8,6 +8,7 @@ import {endpoint} from '../../main';
 import {LifeDenied,LifeLayout} from './layout';
 import './reports.css';
 import {ReportWorkspace} from './report-workspace';
+import {ReportMailSettings} from './report-mail';
 
 export function LifeReportsEntry(){
   const profile=useContext(ProfileContext);
@@ -55,7 +56,7 @@ export function LifeReportsView(){
   return <LifeLayout section="reports" title="复盘与提醒" intro="回看已记录的进展，让下一步更容易开始。">
     <div className="life-reports">
       <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
-      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 仅在保存报告后明确选择时分析统计数字；邮件提醒尚未启用。</p>
+      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 仅在保存报告后明确选择时分析统计数字；邮件提醒需在下方验证并单独启用。</p>
       {loading&&!historical&&<p role="status">正在读取已同步记录…</p>}
       {error&&!historical&&<p role="alert">{error}</p>}
       {report&&<>
@@ -70,6 +71,7 @@ export function LifeReportsView(){
         <section className="life-report-explanation"><h2>给下一步留一点空间</h2><p>{report.achievementsRecorded>0?'已经记录的每一件小成果，都值得留下。可以回看其中一件，再选择接下来最容易开始的一步。':'这个周期没有新增的已记录成果。这不代表你没有行动，可以先记下一件最近做成的小事。'}</p><div><Link href="/life/todos">回到四栏工作台</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
       </>}
       <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
+      <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token!}/>
       <details className="life-report-explanation"><summary>统计范围</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p></details>
     </div>
   </LifeLayout>;

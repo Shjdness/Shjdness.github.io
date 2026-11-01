@@ -1,6 +1,7 @@
 import {expect,it,vi} from 'vitest';
 import {mailFixture} from './report-mail-fixture';
 import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH} from './report-mail-callback';
+import worker from '../_worker';
 
 const secret='whsec_'+btoa('isolated-webhook-key-not-a-real-secret');
 async function signed(body:string){
@@ -13,7 +14,6 @@ async function signed(body:string){
 it('rejects forged callbacks in the Worker before any D1/config initialization',async()=>{
   const db={prepare:vi.fn(()=>{throw Error('Unexpected D1 access');})};
   const env={DB:db,REPORT_MAIL_PROVIDER:'resend',REPORT_MAIL_PROVIDER_ID:'mock-v1',REPORT_MAIL_WEBHOOK_SECRET:secret} as any;
-  const worker=(await import('../_worker')).default;
   const response=await worker.fetch(new Request('https://api.example.invalid'+REPORT_MAIL_WEBHOOK_PATH,{method:'POST',body:'PRIVATE_FORGED'}),env);
   expect(response.status).toBe(400);expect(await response.text()).toBe('');expect(db.prepare).not.toHaveBeenCalled();
   expect((await reportMailCallback(new Request('https://api.example.invalid'+REPORT_MAIL_WEBHOOK_PATH),env)).status).toBe(405);

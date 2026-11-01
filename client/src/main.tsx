@@ -1,6 +1,7 @@
 import { treaty } from '@elysiajs/eden'
 import i18n from "i18next"
 import React from 'react'
+import {captureReportVerification} from './features/life/report-verification'
 import ReactDOM from 'react-dom/client'
 import { Helmet } from 'react-helmet'
 import Backend from 'i18next-http-backend';
@@ -21,6 +22,8 @@ import { listenSystemMode } from './utils/darkModeUtils'
 export const endpoint = process.env.API_URL || 'http://localhost:3001'
 export const oauth_url = process.env.API_URL + '/user/github'
 export const client = treaty<Server>(endpoint)
+captureReportVerification()
+window.addEventListener('hashchange',captureReportVerification)
 listenSystemMode()
 i18n
   .use(Backend)
