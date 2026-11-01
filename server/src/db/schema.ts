@@ -92,6 +92,34 @@ export const lifeDailyNotes = sqliteTable("life_daily_notes", {
     updatedAt: updated_at,
 }, table => ({ ownerDate: uniqueIndex("life_daily_notes_owner_date").on(table.ownerId, table.date) }));
 
+/** Optional private reports; no provider credentials or diary bodies belong here. */
+export const lifeReportPreferences = sqliteTable('life_report_preferences', {
+    ownerId: integer('owner_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+    timezone: text('timezone').notNull().default('Asia/Shanghai'),
+    dailyTime: text('daily_time').notNull().default('08:00'),
+    weeklyTime: text('weekly_time').notNull().default('08:00'),
+    weeklyDay: integer('weekly_day').notNull().default(1),
+    dailyEnabled: integer('daily_enabled').notNull().default(0),
+    weeklyEnabled: integer('weekly_enabled').notNull().default(0),
+    emailEnabled: integer('email_enabled').notNull().default(0),
+    aiEnabled: integer('ai_enabled').notNull().default(0),
+    aiScope: text('ai_scope').notNull().default('statistics'),
+    updatedAt: updated_at,
+});
+
+export const lifeReports = sqliteTable('life_reports', {
+    id: integer('id').primaryKey(),
+    ownerId: integer('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    periodStart: integer('period_start', {mode:'timestamp'}).notNull(),
+    periodEnd: integer('period_end', {mode:'timestamp'}).notNull(),
+    timezone: text('timezone').notNull().default('Asia/Shanghai'),
+    templateVersion: integer('template_version').notNull().default(1),
+    snapshotJson: text('snapshot_json').notNull(),
+    snapshotSha256: text('snapshot_sha256').notNull(),
+    createdAt: created_at,
+}, table=>({ownerPeriod:uniqueIndex('life_reports_owner_period_version').on(table.ownerId,table.kind,table.periodStart,table.periodEnd,table.templateVersion)}));
+
 export const dailyBasics = sqliteTable("daily_basics", {
     id: integer("id").primaryKey(),
     ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
