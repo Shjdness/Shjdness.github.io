@@ -14,6 +14,7 @@ import { RssService } from './services/rss';
 import { PomodoroService } from './services/pomodoro';
 import { LifeBackupService } from './services/life-backup';
 import { LifeReportsService } from './services/life-reports';
+import { ReportMailService } from './services/report-mail';
 import { getEnv } from './utils/di';
 import { frontendOrigin } from './utils/frontend-origin';
 import { quotaResponse } from './utils/write-budget';
@@ -63,6 +64,7 @@ export const app = () => new Elysia({ aot: false })
     .use(PomodoroService())
     .use(LifeBackupService())
     .use(LifeReportsService())
+    .use(ReportMailService())
     .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true,atomicPostUpdates:true,atomicPostCreates:true,idempotentPostCreates:true,atomicTagCreation:true,conditionalDraftDelete:true,lifeReportsPreview:true,lifeReportsHistory:true,reportBackupV3:true,reportAIResults:true,reportBackupV4:true,reportSchedule:true}))
     .get('/', () => `Hi`)
     .onError(({ path, params, code, error, set }) => {

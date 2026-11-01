@@ -79,7 +79,9 @@ export async function setReportEmailEnabled(options:{db:D1Database;ownerId:numbe
   if(!flags.success)throw Error('Mail settings unavailable');
   if((flags.results[0]?.email_enabled===1)===options.enabled&&(!options.enabled||contact?.enabled_at!==null))return {saved:true,reason:'unchanged'};
   if(prefs.revision!==options.baseRevision)return {saved:false,reason:'conflict'};
-  if(!await reserveReportWrite(db))return {saved:false,reason:'write-budget'};
+  // Withdrawal must not depend on the application's activity budget. The
+  // database itself can still be unavailable; that must remain an error.
+  if(options.enabled&&!await reserveReportWrite(db))return {saved:false,reason:'write-budget'};
   const result=await db.batch([db.prepare(`INSERT INTO life_report_preferences(owner_id,email_enabled,revision)
     SELECT ?,?,1 WHERE (?=0 OR EXISTS(SELECT 1 FROM life_report_preferences WHERE owner_id=?)) AND (?=0 OR EXISTS(SELECT 1 FROM life_report_mail_contacts WHERE owner_id=? AND revision=? AND verified_at IS NOT NULL AND paused_reason IS NULL))
     ON CONFLICT(owner_id) DO UPDATE SET email_enabled=excluded.email_enabled,revision=revision+1,updated_at=? WHERE revision=?

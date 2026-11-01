@@ -15,7 +15,7 @@ export async function mailFixture(){
   }
   sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'owner','owner',1),(2,'other','other',1),(3,'trusted','trusted',2); INSERT INTO life_report_preferences(owner_id,daily_time,daily_enabled,weekly_enabled) VALUES(1,'09:15',1,1)");
   let tail=Promise.resolve();
-  const raw={prepare(sql:string){let values:unknown[]=[];return {bind(...args:unknown[]){values=args;return this;},async all(){return {success:true,results:sqlite.prepare(sql).all(...values),meta:{}};}};},batch(statements:Array<{all:()=>Promise<unknown>}>){
+  const raw={prepare(sql:string){let values:unknown[]=[];return {bind(...args:unknown[]){values=args;return this;},async all(){return {success:true,results:sqlite.prepare(sql).all(...values),meta:{}};},async raw(){return sqlite.prepare(sql).all(...values).map((row:Record<string,unknown>)=>Object.values(row));}};},batch(statements:Array<{all:()=>Promise<unknown>}>){
     const next=tail.then(async()=>{sqlite.exec('BEGIN');try{const rows=[];for(const statement of statements)rows.push(await statement.all());sqlite.exec('COMMIT');return rows;}catch(error){sqlite.exec('ROLLBACK');throw error;}});tail=next.then(()=>{},()=>{});return next;
   }} as any;
   const vault=await reportMailVault(secret);

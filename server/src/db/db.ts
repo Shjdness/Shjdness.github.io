@@ -26,6 +26,14 @@ export interface Env {
     RSS_SYNC_TOKEN: string,
     /** Server-only. Never include this value in client configuration or logs. */
     DEEPSEEK_API_KEY?: string,
+    /** Optional server-only mail configuration. Missing/invalid values fail closed. */
+    REPORT_MAIL_ENABLED?: string,
+    REPORT_MAIL_VAULT_KEY?: string,
+    REPORT_MAIL_PROVIDER?: string,
+    REPORT_MAIL_PROVIDER_ID?: string,
+    REPORT_MAIL_API_KEY?: string,
+    REPORT_MAIL_FROM?: string,
+    REPORT_MAIL_WEBHOOK_SECRET?: string,
 }
 
 export function db(env: Env) {
