@@ -1,5 +1,7 @@
 import type {ScheduledController,ExecutionContext} from '@cloudflare/workers-types';
 import {runReportSchedule} from './utils/report-jobs';
+import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH} from './utils/report-mail-callback';
+import {runConfiguredReportMail} from './utils/report-mail-schedule';
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { Elysia } from "elysia";
 import "reflect-metadata";
@@ -15,9 +17,13 @@ export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
 export default {
   async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
-    try{await runReportSchedule(env.DB);}catch{throw Error('Life report schedule unavailable');}
+    let failed=false;
+    try{await runReportSchedule(env.DB);}catch{failed=true;}
+    try{const mail=await runConfiguredReportMail(env);if(mail.failures)failed=true;}catch{failed=true;}
+    if(failed)throw Error('Life report schedule unavailable');
   },
   async fetch(request: Request, env: Env): Promise<Response> {
+    if(new URL(request.url).pathname===REPORT_MAIL_WEBHOOK_PATH)return reportMailCallback(request,env);
     const db = drizzle(env.DB, { schema: schema });
     return runRequestContext(env,db,async()=>{
     try { await ServerConfig().all(); }

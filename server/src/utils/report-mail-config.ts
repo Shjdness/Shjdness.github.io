@@ -22,3 +22,15 @@ export async function reportMailConfiguration(env:Env){
   }
   return {vault,provider,storageConfigured:Boolean(vault),deliveryConfigured:Boolean(provider)};
 }
+
+/** Signed outcomes must still be accepted after delivery is switched off or
+ * the vault/API key becomes unavailable, so suppression can finish safely. */
+export function reportMailReceiverConfiguration(env:Env){
+  const secret=env.REPORT_MAIL_WEBHOOK_SECRET??'',identity=env.REPORT_MAIL_PROVIDER_ID??'';
+  try{
+    if(env.REPORT_MAIL_PROVIDER!=='resend'||!/^[A-Za-z0-9_-]{1,64}$/.test(identity)||secret.length>128||!secret.startsWith('whsec_'))return null;
+    const key=atob(secret.slice(6));if(key.length<16||key.length>64)return null;
+    if([env.JWT_SECRET,env.DEEPSEEK_API_KEY,env.RSS_SYNC_TOKEN,env.GUEST_ACCESS_CODE,env.S3_SECRET_ACCESS_KEY,env.S3_ACCESS_KEY_ID,env.RIN_GITHUB_CLIENT_SECRET,env.GITHUB_CLIENT_SECRET,env.REPORT_MAIL_API_KEY,env.REPORT_MAIL_VAULT_KEY].some(s=>s&&s===secret))return null;
+    return {secret,providerIdentity:identity};
+  }catch{return null;}
+}

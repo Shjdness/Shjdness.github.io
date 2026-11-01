@@ -31,6 +31,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS life_report_mail_purpose ON life_report_mail_d
 CREATE UNIQUE INDEX IF NOT EXISTS life_report_mail_provider_id ON life_report_mail_deliveries(provider_identity,provider_id) WHERE provider_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS life_report_mail_owner_created ON life_report_mail_deliveries(owner_id,created_at DESC,delivery_key);
 CREATE INDEX IF NOT EXISTS life_report_mail_pending ON life_report_mail_deliveries(state,created_at);
+CREATE INDEX IF NOT EXISTS life_report_jobs_mail_ready ON life_report_jobs(state,anchor_at,job_key);
+CREATE TABLE IF NOT EXISTS life_report_mail_scheduler_state (
+  id integer PRIMARY KEY CHECK(id=1),
+  after_anchor integer NOT NULL,
+  after_key text NOT NULL CHECK(length(after_key)=64)
+);
 -- A crash after the single-owner slot claim must not create a second verification send.
 CREATE TABLE IF NOT EXISTS life_report_mail_verification_slots (
   owner_id integer PRIMARY KEY NOT NULL REFERENCES users(id) ON DELETE CASCADE,
