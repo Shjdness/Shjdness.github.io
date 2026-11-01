@@ -10,6 +10,7 @@ import * as schema from '../db/schema';
 import {runRequestContext} from '../utils/di';
 import {ServerConfig} from '../utils/cache';
 import {validateBackup,encryptBackup,decryptBackup} from '../../../client/src/features/life/backup-format';
+import {reportWindow,reportSnapshot} from '../utils/life-report';
 vi.mock('../utils/s3',()=>({createS3Client:()=>({send:vi.fn(async()=>({}))})}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
@@ -82,6 +83,29 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect(sqlite.prepare('SELECT content,listed FROM feeds WHERE id=?').get(inserted[1])).toMatchObject({content:'new edit after snapshot',listed:0});
   const encrypted=await encryptBackup(validated,'isolated-fixture-recovery-passphrase');
   expect((await decryptBackup(JSON.parse(JSON.stringify(encrypted)),'isolated-fixture-recovery-passphrase',1)).data).toEqual(JSON.parse(JSON.stringify(validated.data)));
+
+  // Older clients keep the v2 manifest; v3 explicitly includes private report tables.
+  sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(21,'other-owner','other-owner',1); INSERT INTO life_report_preferences(owner_id) VALUES(1),(21); INSERT INTO life_report_ai_budget(month,reserved_fen) VALUES('2026-11',5)");
+  const period=reportWindow('daily',new Date('2026-11-02T00:00:00Z'));
+  for(const ownerId of [1,21]){
+    const snapshot=reportSnapshot(ownerId,{version:1,ownerId,generatedAt:'2026-11-02T00:00:00Z',period,coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:1,tasksCompleted:1,ideasCreated:0,habitCompletions:0,daysWithNotes:0,focus:{completedSessions:0,recordedMinutes:0,earlySessions:0},aiEnabled:false,emailEnabled:false});
+    const json=JSON.stringify(snapshot),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(json));
+    const digest=Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
+    sqlite.prepare('INSERT INTO life_reports(owner_id,kind,period_start,period_end,snapshot_json,snapshot_sha256) VALUES(?,?,?,?,?,?)').run(ownerId,'daily',Date.parse(period.start)/1000,Date.parse(period.end)/1000,json,digest);
+  }
+  const legacyAgain=await api.life.backup.get({headers});
+  expect(legacyAgain.data).toMatchObject({version:2});
+  expect((legacyAgain.data as any).data).not.toHaveProperty('lifeReportPreferences');
+  batch.mockClear();
+  const v3Response=await fetcher('http://localhost/life/backup?version=3',{headers});
+  expect(v3Response.status).toBe(200);const v3=await validateBackup(await v3Response.json(),1);
+  expect(v3.version).toBe(3);expect(v3.counts).toMatchObject({lifeReports:1,lifeReportPreferences:1});
+  expect(v3.data.lifeReports).toEqual([expect.objectContaining({ownerId:1})]);
+  expect(v3.data.lifeReportPreferences).toEqual([expect.objectContaining({ownerId:1,emailEnabled:0,aiEnabled:0})]);
+  expect(Object.keys(v3.data)).not.toContain('lifeReportAIBudget');
+  expect(batch).toHaveBeenCalledOnce();expect(batch.mock.calls[0][0]).toHaveLength(17);
+  const v3Encrypted=await encryptBackup(v3,'synthetic-v3-application-passphrase');
+  expect((await decryptBackup(v3Encrypted,'synthetic-v3-application-passphrase',1)).counts.lifeReportPreferences).toBe(1);
 
   for(const [url,body,table] of [
     ['/life/todos',{content:'concurrent task',type:'task',clientKey:'parallel-todo'},'life_todos'],

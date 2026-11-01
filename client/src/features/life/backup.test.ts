@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BACKUP_TABLES, decryptBackup, encryptBackup, validateBackup } from './backup-format';
+import { BACKUP_TABLES, REPORT_BACKUP_TABLES, decryptBackup, encryptBackup, validateBackup, type Backup } from './backup-format';
+import {reportWindow} from '../../../../server/src/utils/life-report';
+
+async function rehash(backup:Backup){
+  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(backup.data)));
+  backup.sha256=Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
+}
 
 async function fixture() {
   const data = Object.fromEntries(BACKUP_TABLES.map(name => [name, [] as Array<{ id: number; content: string }>])) as Record<(typeof BACKUP_TABLES)[number], Array<{ id: number; content: string }>>;
@@ -12,6 +18,29 @@ async function fixture() {
 }
 
 describe('personal backup validation', () => {
+  it('keeps v2 readable without reports and requires explicit report tables only for v3',async()=>{
+    const backup:Backup={...await fixture(),version:2};
+    expect((await validateBackup(backup,12)).version).toBe(2);
+    backup.version=3;await expect(validateBackup(backup,12)).rejects.toThrow('清单不完整');
+    for(const table of REPORT_BACKUP_TABLES){backup.data[table]=[];backup.counts[table]=0;}
+    await rehash(backup);expect((await validateBackup(backup,12)).version).toBe(3);
+  });
+  it('round-trips encrypted report snapshots and rejects cross-owner, damaged or inconsistent report data',async()=>{
+    const period=reportWindow('daily',new Date('2026-11-02T00:00:00Z'));
+    const snapshot={version:1,ownerId:12,generatedAt:'2026-11-02T00:00:00Z',period,coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:1,tasksCompleted:1,ideasCreated:0,habitCompletions:0,daysWithNotes:0,focus:{completedSessions:0,recordedMinutes:0,earlySessions:0},aiEnabled:false,emailEnabled:false};
+    const json=JSON.stringify(snapshot),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(json));
+    const row={id:1,ownerId:12,kind:'daily',periodStart:period.start,periodEnd:period.end,timezone:period.timezone,templateVersion:1,snapshotJson:json,snapshotSha256:Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('')};
+    const prefs={ownerId:12,timezone:'Asia/Shanghai',dailyTime:'08:00',weeklyTime:'08:00',weeklyDay:1,dailyEnabled:0,weeklyEnabled:0,emailEnabled:0,aiEnabled:0,aiScope:'statistics'};
+    const backup:Backup={...await fixture(),version:3};
+    backup.data.lifeReports=[row];backup.data.lifeReportPreferences=[prefs];backup.counts.lifeReports=1;backup.counts.lifeReportPreferences=1;await rehash(backup);
+    const encrypted=await encryptBackup(backup,'synthetic-v3-report-passphrase');
+    expect((await decryptBackup(encrypted,'synthetic-v3-report-passphrase',12)).data.lifeReports).toEqual([row]);
+    for(const mutate of [(v:any)=>{v.data.lifeReports[0].ownerId=13;},(v:any)=>{v.data.lifeReports[0].snapshotJson='{}';},(v:any)=>{v.data.lifeReports[0].periodStart='2026-10-01T00:00:00Z';},(v:any)=>{v.data.lifeReportPreferences[0].aiScope='named';}]){
+      const invalid=structuredClone(backup);mutate(invalid);await rehash(invalid);
+      await expect(validateBackup(invalid,12)).rejects.toThrow();
+    }
+    expect(backup.data.lifeReports).toEqual([row]);
+  });
   it('continues to validate legacy v1 backups without the new tag-options table',async()=>{
     const backup=await fixture();delete (backup.data as any).writingTagOptions;delete (backup.counts as any).writingTagOptions;
     const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(backup.data)));

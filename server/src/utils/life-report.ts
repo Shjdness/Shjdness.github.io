@@ -79,3 +79,21 @@ export function summarizeLifeReport(ownerId: number, period: ReportWindow, input
     limitations: ['unsynced-local-records-excluded', 'current-record-state-not-event-history', 'daily-checklist-is-not-a-habit-rate'],
   };
 }
+
+/** Strict projection prevents new caller fields (e.g. diary text) entering history. */
+export function reportSnapshot(ownerId:number,value:LifeReportPreview):LifeReportPreview {
+  if(!Number.isSafeInteger(ownerId)||ownerId<=0||value?.ownerId!==ownerId)throw Error('Report owner mismatch');
+  const p=value.period;
+  const start=Date.parse(p?.start),end=Date.parse(p?.end),generated=Date.parse(value.generatedAt);
+  const duration=p?.kind==='daily'?DAY:p?.kind==='weekly'?7*DAY:NaN;
+  if(value.version!==1||p?.timezone!=='Asia/Shanghai'||!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(generated)||end-start!==duration||generated<end||(start+SHANGHAI_OFFSET)%DAY!==0||
+    (p.kind==='weekly'&&new Date(start+SHANGHAI_OFFSET).getUTCDay()!==1)||
+    p.fromDate!==new Date(start+SHANGHAI_OFFSET).toISOString().slice(0,10)||p.toDateExclusive!==new Date(end+SHANGHAI_OFFSET).toISOString().slice(0,10))throw Error('Invalid report period');
+  const counts=[value.achievementsRecorded,value.tasksCompleted,value.ideasCreated,value.habitCompletions,value.daysWithNotes,value.focus?.completedSessions,value.focus?.recordedMinutes,value.focus?.earlySessions];
+  if(value.coverage!=='server-synced-only'||value.mode!=='statistics-preview'||value.aiEnabled!==false||value.emailEnabled!==false||counts.some(n=>!Number.isSafeInteger(n)||n<0)||value.tasksCompleted>value.achievementsRecorded||value.focus.earlySessions>value.focus.completedSessions)throw Error('Invalid report facts');
+  return {version:1,ownerId,generatedAt:value.generatedAt,
+    period:{kind:p.kind,timezone:'Asia/Shanghai',fromDate:p.fromDate,toDateExclusive:p.toDateExclusive,start:p.start,end:p.end},
+    coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:value.achievementsRecorded,tasksCompleted:value.tasksCompleted,ideasCreated:value.ideasCreated,
+    focus:{completedSessions:value.focus.completedSessions,recordedMinutes:value.focus.recordedMinutes,earlySessions:value.focus.earlySessions},
+    habitCompletions:value.habitCompletions,daysWithNotes:value.daysWithNotes,aiEnabled:false,emailEnabled:false};
+}

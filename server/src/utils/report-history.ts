@@ -1,25 +1,8 @@
 import type {D1Database} from '@cloudflare/workers-types';
 import type {LifeReportPreview} from './life-report';
 
-const DAY=86400000,OFFSET=8*3600000;
-/** Strict projection prevents new caller fields (e.g. diary text) entering history. */
-export function reportSnapshot(ownerId:number,value:LifeReportPreview):LifeReportPreview {
-  if(!Number.isSafeInteger(ownerId)||ownerId<=0||value?.ownerId!==ownerId)throw Error('Report owner mismatch');
-  const p=value.period;
-  const start=Date.parse(p?.start),end=Date.parse(p?.end),generated=Date.parse(value.generatedAt);
-  const duration=p?.kind==='daily'?DAY:p?.kind==='weekly'?7*DAY:NaN;
-  if(value.version!==1||p?.timezone!=='Asia/Shanghai'||!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(generated)||end-start!==duration||generated<end||(start+OFFSET)%DAY!==0||
-    (p.kind==='weekly'&&new Date(start+OFFSET).getUTCDay()!==1)||
-    p.fromDate!==new Date(start+OFFSET).toISOString().slice(0,10)||p.toDateExclusive!==new Date(end+OFFSET).toISOString().slice(0,10))throw Error('Invalid report period');
-  const counts=[value.achievementsRecorded,value.tasksCompleted,value.ideasCreated,value.habitCompletions,value.daysWithNotes,value.focus?.completedSessions,value.focus?.recordedMinutes,value.focus?.earlySessions];
-  if(value.coverage!=='server-synced-only'||value.mode!=='statistics-preview'||value.aiEnabled!==false||value.emailEnabled!==false||counts.some(n=>!Number.isSafeInteger(n)||n<0)||value.tasksCompleted>value.achievementsRecorded||value.focus.earlySessions>value.focus.completedSessions)throw Error('Invalid report facts');
-  return {version:1,ownerId,generatedAt:value.generatedAt,
-    period:{kind:p.kind,timezone:'Asia/Shanghai',fromDate:p.fromDate,toDateExclusive:p.toDateExclusive,start:p.start,end:p.end},
-    coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:value.achievementsRecorded,tasksCompleted:value.tasksCompleted,ideasCreated:value.ideasCreated,
-    focus:{completedSessions:value.focus.completedSessions,recordedMinutes:value.focus.recordedMinutes,earlySessions:value.focus.earlySessions},
-    habitCompletions:value.habitCompletions,daysWithNotes:value.daysWithNotes,aiEnabled:false,emailEnabled:false};
-}
-
+import {reportSnapshot} from './life-report';
+export {reportSnapshot} from './life-report';
 async function hash(text:string){
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
   return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
