@@ -8,6 +8,7 @@ import {decodeReportRow,findReportForPeriod,saveReportSnapshot} from '../utils/r
 import {readReportPreferences,reserveReportWrite,updateReportPreferences,updateReportAutomation} from '../utils/report-settings';
 import {REPORT_AI_MODEL,REPORT_AI_MONTHLY_FEN,REPORT_AI_PRICE_REVIEW_BEFORE} from '../utils/report-ai';
 import {generateReportAnalysis,readReportAnalysis} from '../utils/report-analysis';
+import {readReportAIConsent,setReportAIConsent} from '../utils/report-ai-consent';
 
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
@@ -39,13 +40,33 @@ export function LifeReportsService() {
       if(!rows.success)throw Error('AI budget read unavailable');
       const reservedMonthlyFen=rows.results[0]?.reserved_fen??0;
       const preferences=await readReportPreferences(db,owner);
-      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:false,emailEnabled:false,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled,schedulerAvailable:true,manualAIAvailable:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
+      const ai=await readReportAIConsent(db,owner),mail=await db.prepare(`SELECT p.email_enabled,c.verified_at,c.enabled_at,c.paused_reason FROM life_report_preferences p LEFT JOIN life_report_mail_contacts c ON c.owner_id=p.owner_id WHERE p.owner_id=?`).bind(owner).all<{email_enabled:number;verified_at:number|null;enabled_at:number|null;paused_reason:string|null}>();
+      if(!mail.success)throw Error('Mail status unavailable');const recipient=mail.results[0];
+      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:ai.enabled,emailEnabled:Boolean(recipient?.email_enabled===1&&recipient.verified_at!==null&&recipient.enabled_at!==null&&!recipient.paused_reason),automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled,schedulerAvailable:true,manualAIAvailable:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
     })
     .get('/life/reports/settings',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       const preferences=await readReportPreferences(db,owner);
       return {ownerId:owner,preferences,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled};
     })
+    .get('/life/reports/ai-automation',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      const consent=await readReportAIConsent(db,owner);
+      const month=new Date(Date.now()+8*3600000).toISOString().slice(0,7);
+      const rows=await db.prepare('SELECT reserved_fen FROM life_report_ai_budget WHERE month=?').bind(month).all<{reserved_fen:number}>();if(!rows.success)throw Error('AI budget unavailable');
+      return {ownerId:owner,enabled:consent.enabled,revision:consent.revision,enabledAt:consent.enabledAt,scope:'statistics',model:REPORT_AI_MODEL,configured:Boolean(env.DEEPSEEK_API_KEY?.trim()),pricingValid:Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen:rows.results[0]?.reserved_fen??0};
+    })
+    .post('/life/reports/ai-automation',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      if(context.body.enabled){
+        if(!allowBurst(`life-report-ai-setting:${owner}`,8)){context.set.status=429;return {ownerId:owner,code:'AI_SETTING_RATE_LIMIT'};}
+        if(!env.DEEPSEEK_API_KEY?.trim()||Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE){context.set.status=503;return {ownerId:owner,code:'AI_NOT_AVAILABLE'};}
+      }
+      const result=await setReportAIConsent({db,ownerId:owner,...context.body});
+      if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;
+      const next=await readReportAIConsent(db,owner);
+      return {ownerId:owner,saved:result.saved,enabled:next.enabled,revision:next.revision,enabledAt:next.enabledAt};
+    },{body:t.Object({enabled:t.Boolean(),baseRevision:t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER}),allowNumericAnalysis:t.Optional(t.Literal(true))},{additionalProperties:false})})
     .post('/life/reports/settings',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       if(!allowBurst(`life-report-write:${owner}`,10)){context.set.status=429;return 'Report write limit reached';}

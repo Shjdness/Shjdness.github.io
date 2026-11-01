@@ -43,7 +43,7 @@ function fixture(){
 it('protects all report history/settings/status routes and discloses only secret presence to the owner',async()=>{
   const f=fixture();try{
     const patch={dailyTime:'09:00',weeklyTime:'09:30',weeklyDay:1,baseRevision:0};
-    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/jobs',undefined],['/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:0}],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined],['/history/1/analysis',undefined],['/history/1/analysis',{allowNumericAnalysis:true}]] as const){
+    for(const owner of [undefined,3,4])for(const [path,body] of [['/ai-automation',undefined],['/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0}],['/status',undefined],['/jobs',undefined],['/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:0}],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined],['/history/1/analysis',undefined],['/history/1/analysis',{allowNumericAnalysis:true}]] as const){
       const result=await f.request(owner,path,body);expect(result.status).toBe(403);expect(result.headers.get('cache-control')).toContain('no-store');
     }
     expect(f.batch).not.toHaveBeenCalled();
@@ -190,4 +190,23 @@ it('isolates automation settings and job lists, rejects stale changes and never 
     expect(f.sqlite.prepare('SELECT ai_enabled,email_enabled FROM life_report_preferences WHERE owner_id=1').get()).toMatchObject({ai_enabled:0,email_enabled:0});
     expect((await f.request(1,'/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:2,emailEnabled:true})).status).toBe(422);
   }finally{f.sqlite.close();}
+});
+
+it('requires explicit numeric automation consent, scopes settings, never calls AI on save, and allows pause without keys or activity budget',async()=>{
+  const f=fixture(),network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('No provider requests in settings tests'));
+  try{
+    expect((await f.request(1,'/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0})).status).toBe(503);
+    f.env.DEEPSEEK_API_KEY='private-fixture-ai-key-not-returned';
+    expect((await f.request(1,'/ai-automation',{enabled:true,baseRevision:0})).status).toBe(409);
+    const enabled=await f.request(1,'/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0});
+    expect(enabled.status).toBe(200);expect(await enabled.json()).toMatchObject({ownerId:1,saved:true,enabled:true,revision:1});
+    expect(await (await f.request(1,'/status')).json()).toMatchObject({aiEnabled:true});
+    const status=await (await f.request(1,'/ai-automation')).text();expect(status).not.toContain(f.env.DEEPSEEK_API_KEY);
+    expect(JSON.parse(status)).toMatchObject({ownerId:1,enabled:true,configured:true,scope:'statistics',monthlyBudgetFen:1000,reservedMonthlyFen:0,revision:1});
+    expect(await (await f.request(2,'/ai-automation')).json()).toMatchObject({ownerId:2,enabled:false,revision:0});
+    expect((await f.request(1,'/ai-automation',{enabled:false,baseRevision:0})).status).toBe(409);
+    delete f.env.DEEPSEEK_API_KEY;f.sqlite.exec("UPDATE rss_write_budget SET reserved=2000 WHERE day LIKE 'reports:%'");
+    expect(await (await f.request(1,'/ai-automation',{enabled:false,baseRevision:1})).json()).toMatchObject({ownerId:1,saved:true,enabled:false,revision:2,enabledAt:null});
+    expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_report_ai_reservations').get()).toMatchObject({n:0});expect(network).not.toHaveBeenCalled();
+  }finally{f.sqlite.close();network.mockRestore();}
 });

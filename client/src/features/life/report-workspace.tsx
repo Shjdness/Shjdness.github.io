@@ -107,7 +107,7 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
       setPreferences(old=>old?{...old,revision:result.preferences.revision,dailyEnabled:result.preferences.dailyEnabled,weeklyEnabled:result.preferences.weeklyEnabled}:result.preferences);
       setAutomationDraft({dailyEnabled:result.preferences.dailyEnabled,weeklyEnabled:result.preferences.weeklyEnabled});
       setStatus(old=>old?{...old,automationEnabled:result.preferences.dailyEnabled||result.preferences.weeklyEnabled}:old);
-      setMessage('自动生成设置已保存；不会自动调用 AI 或发送邮件。已暂停的当期任务不补发。');
+      setMessage('自动生成设置已保存；AI 和邮件由各自的设置控制。已暂停的当期任务不补发。');
     }
     await loadJobs();
   };
@@ -145,10 +145,10 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
       <label><input type="checkbox" checked={automationDraft.dailyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,dailyEnabled:checked}));}}/>自动保存日报</label>
       <label><input type="checkbox" checked={automationDraft.weeklyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,weeklyEnabled:checked}));}}/>自动保存周报</label>
       <p>云端每 5 分钟检查一次，在设置时刻之后保存已同步统计；首次开启时若当天时刻已过，会在下次检查保存。周报当天的日报在周报时间一并保存；已暂停的当期任务不重放，重新开启从下一周期继续。</p>
-      <p>这里只生成站内统计，不自动调用 AI，也不发送邮件。</p>
+      <p>本开关只控制站内统计保存；AI 分析与邮件提醒需要分别明确启用。</p>
       <button type="button" onClick={()=>void run(saveAutomation)}>保存自动生成设置</button>
     </fieldset>}
     <section className="life-report-job-list"><h3>最近自动任务</h3>{jobs.length?<ul>{jobs.map((job,i)=><li key={i}>{job.kind==='weekly'?'周报':'日报'} · {new Date(job.period_start*1000).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})} · {({queued:'等待生成',generating:'正在生成',ready:'统计已保存',paused:'已暂停',failed:'生成失败'} as Record<string,string>)[job.state]??'状态待确认'}{job.attempts>0?`（${job.attempts} 次尝试）`:''}</li>)}</ul>:<p>暂无自动任务；开启后按设置时刻检查生成。</p>}</section>
-    {status&&<p className="life-reports-notice">DeepSeek 密钥：{status.deepseekConfigured?'已配置（配置状态不代表当前 API 有效）':'未配置'}。网站月预算 {status.monthlyBudgetFen/100} 元，本月预留 {(status.reservedMonthlyFen/100).toFixed(2)} 元（预留额不等于实际账单）。AI 仅在勾选数字范围并点击分析时调用；自动统计保存{status.automationEnabled?'已开启':'未开启'}，自动 AI 与邮件发送尚未启用。</p>}
+    {status&&<p className="life-reports-notice">DeepSeek 密钥：{status.deepseekConfigured?'已配置（配置状态不代表当前 API 有效）':'未配置'}。网站月预算 {status.monthlyBudgetFen/100} 元，本月预留 {(status.reservedMonthlyFen/100).toFixed(2)} 元（预留额不等于实际账单）。手动 AI 需逐份勾选确认；自动统计保存{status.automationEnabled?'已开启':'未开启'}。自动 AI 和邮件状态请查看下方各自设置。</p>}
   </section>;
 }

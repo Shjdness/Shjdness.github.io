@@ -9,6 +9,7 @@ import {LifeDenied,LifeLayout} from './layout';
 import './reports.css';
 import {ReportWorkspace} from './report-workspace';
 import {ReportMailSettings} from './report-mail';
+import {ReportAISettings} from './report-ai-settings';
 
 export function LifeReportsEntry(){
   const profile=useContext(ProfileContext);
@@ -72,6 +73,7 @@ export function LifeReportsView(){
       </>}
       <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
       <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token!}/>
+      <ReportAISettings key={'auto-ai-'+token} ownerId={owner} token={token!}/>
       <details className="life-report-explanation"><summary>统计范围</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p></details>
     </div>
   </LifeLayout>;
