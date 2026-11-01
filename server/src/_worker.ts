@@ -2,6 +2,7 @@ import type {ScheduledController,ExecutionContext} from '@cloudflare/workers-typ
 import {runReportSchedule} from './utils/report-jobs';
 import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH} from './utils/report-mail-callback';
 import {runConfiguredReportMail} from './utils/report-mail-schedule';
+import {runConfiguredReportAI} from './utils/report-ai-schedule';
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { Elysia } from "elysia";
 import "reflect-metadata";
@@ -19,6 +20,7 @@ export default {
   async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
     let failed=false;
     try{await runReportSchedule(env.DB);}catch{failed=true;}
+    try{const ai=await runConfiguredReportAI(env);if(ai.failures)failed=true;}catch{failed=true;}
     try{const mail=await runConfiguredReportMail(env);if(mail.failures)failed=true;}catch{failed=true;}
     if(failed)throw Error('Life report schedule unavailable');
   },

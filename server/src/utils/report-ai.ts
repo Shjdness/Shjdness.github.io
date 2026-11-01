@@ -1,6 +1,7 @@
 import type {D1Database} from '@cloudflare/workers-types';
 import type {LifeReportPreview} from './life-report';
 import {reportSnapshot} from './report-history';
+import {reportAIJobGuardSQL,reportAIJobGuardValues,type ReportAIJobGuard} from './report-ai-guard';
 
 import {analysisValue,REPORT_AI_MODEL,type ReportAnalysis} from './report-analysis-format';
 export {REPORT_AI_MODEL,reportAIRequestKey} from './report-analysis-format';
@@ -18,14 +19,14 @@ export function reportAIInput(value:LifeReportPreview){
 
 /** Account-wide site budget, not a limit on other applications using the key.
  * No refunds: failures/timeouts may still have incurred provider charges. */
-export async function reserveReportAI(db:D1Database,key:string,now=new Date()){
+export async function reserveReportAI(db:D1Database,key:string,now=new Date(),guard?:ReportAIJobGuard){
   if(!/^[a-f0-9]{64}$/.test(key)||!Number.isFinite(now.getTime()))throw Error('Invalid AI reservation');
   const month=new Date(now.getTime()+8*3600000).toISOString().slice(0,7);
   const results=await db.batch<Record<string,unknown>>([
     db.prepare('INSERT INTO life_report_ai_budget(month,reserved_fen) VALUES(?,0) ON CONFLICT(month) DO NOTHING').bind(month),
     db.prepare(`INSERT INTO life_report_ai_reservations(request_key,month,reserved_fen)
-      SELECT ?,month,? FROM life_report_ai_budget WHERE month=? AND reserved_fen+?<=?
-      ON CONFLICT(request_key) DO NOTHING RETURNING request_key`).bind(key,REPORT_AI_RESERVE_FEN,month,REPORT_AI_RESERVE_FEN,REPORT_AI_MONTHLY_FEN),
+      SELECT ?,month,? FROM life_report_ai_budget WHERE month=? AND reserved_fen+?<=? ${guard?'AND '+reportAIJobGuardSQL:''}
+      ON CONFLICT(request_key) DO NOTHING RETURNING request_key`).bind(key,REPORT_AI_RESERVE_FEN,month,REPORT_AI_RESERVE_FEN,REPORT_AI_MONTHLY_FEN,...(guard?reportAIJobGuardValues(guard):[])),
     // changes() refers to the immediately preceding INSERT in this transaction.
     db.prepare('UPDATE life_report_ai_budget SET reserved_fen=reserved_fen+? WHERE month=? AND changes()>0').bind(REPORT_AI_RESERVE_FEN,month),
   ]);

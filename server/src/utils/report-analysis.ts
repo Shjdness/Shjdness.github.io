@@ -3,6 +3,7 @@ import {reportSnapshot,type LifeReportPreview} from './life-report';
 import {reserveReportWrite} from './report-settings';
 import {analyzeReport,REPORT_AI_PRICE_REVIEW_BEFORE,reserveReportAI} from './report-ai';
 import {REPORT_AI_MODEL,reportAIRequestKey,reportDigest,validateStoredAnalysis,type StoredReportAnalysis,type ReportAnalysis} from './report-analysis-format';
+import {reportAIJobGuardSQL,reportAIJobGuardValues,type ReportAIJobGuard} from './report-ai-guard';
 
 type Saved={id:number;sha256:string;report:LifeReportPreview};
 export type AnalysisView={state:'none'|'pending'|'succeeded'|'statistics'|'unknown';analysis:ReportAnalysis|null;reason:string|null;model:typeof REPORT_AI_MODEL};
@@ -26,7 +27,7 @@ export async function readReportAnalysis(db:D1Database,ownerId:number,saved:Save
 
 /** Internal orchestrator, not a background retry worker. Durable claim precedes
  * admission and provider submission; only the winning invocation may call AI. */
-export async function generateReportAnalysis(options:{db:D1Database;ownerId:number;saved:Saved;enabled:boolean;apiKey?:string;now?:Date;fetcher?:(url:string,init:RequestInit)=>Promise<Response>;timeoutMs?:number}):Promise<AnalysisView>{
+export async function generateReportAnalysis(options:{db:D1Database;ownerId:number;saved:Saved;enabled:boolean;apiKey?:string;now?:Date;fetcher?:(url:string,init:RequestInit)=>Promise<Response>;timeoutMs?:number;scheduled?:{jobKey:string;consentedAt:number}}):Promise<AnalysisView>{
   const {db,ownerId,saved}=options,now=options.now??new Date();
   const existing=await readReportAnalysis(db,ownerId,saved,now);
   if(existing.state!=='none')return existing;
@@ -35,14 +36,19 @@ export async function generateReportAnalysis(options:{db:D1Database;ownerId:numb
   if(await reportDigest(JSON.stringify(reportSnapshot(ownerId,saved.report)))!==saved.sha256)throw Error('Report digest mismatch');
   if(!await reserveReportWrite(db))return {...empty,reason:'write-budget'};
   const key=await reportAIRequestKey({id:saved.id,ownerId,sha256:saved.sha256}),seconds=Math.floor(now.getTime()/1000);
+  const guard:ReportAIJobGuard|undefined=options.scheduled?{...options.scheduled,ownerId,reportId:saved.id,seconds}:undefined;
   const claim=await db.prepare(`INSERT INTO life_report_analyses(request_key,owner_id,report_id,snapshot_sha256,model,state,created_at,updated_at)
-    SELECT ?,?,?,?,?,'pending',?,? WHERE EXISTS(SELECT 1 FROM life_reports WHERE id=? AND owner_id=? AND snapshot_sha256=?)
-    ON CONFLICT DO NOTHING RETURNING request_key`).bind(key,ownerId,saved.id,saved.sha256,REPORT_AI_MODEL,seconds,seconds,saved.id,ownerId,saved.sha256).all();
+    SELECT ?,?,?,?,?,'pending',?,? WHERE EXISTS(SELECT 1 FROM life_reports WHERE id=? AND owner_id=? AND snapshot_sha256=?) ${guard?'AND '+reportAIJobGuardSQL:''}
+    ON CONFLICT DO NOTHING RETURNING request_key`).bind(key,ownerId,saved.id,saved.sha256,REPORT_AI_MODEL,seconds,seconds,saved.id,ownerId,saved.sha256,...(guard?reportAIJobGuardValues(guard):[])).all();
   if(!claim.success)throw Error('Analysis claim unconfirmed');
   if(!claim.results.length)return readReportAnalysis(db,ownerId,saved,now);
   // Key and raw provider diagnostics are never persisted. The adapter strips
   // all owner/date/free-text fields and retains reservations on unknown errors.
-  const result=await analyzeReport({report:saved.report,apiKey:options.apiKey,enabled:true,now,timeoutMs:options.timeoutMs,fetcher:options.fetcher,reserve:()=>reserveReportAI(db,key,now)});
+  const result=await analyzeReport({report:saved.report,apiKey:options.apiKey,enabled:true,now,timeoutMs:options.timeoutMs,fetcher:options.fetcher,reserve:()=>{
+    const admissionTime=guard?new Date(Math.max(now.getTime(),Date.now())):now;
+    if(admissionTime.getTime()>=REPORT_AI_PRICE_REVIEW_BEFORE)return Promise.resolve(false);
+    return reserveReportAI(db,key,admissionTime,guard?{...guard,seconds:Math.floor(admissionTime.getTime()/1000)}:undefined);
+  }});
   const json=result.mode==='ai'?JSON.stringify(result.analysis):null;
   const digest=json?await reportDigest(json):null;
   const state=result.mode==='ai'?'succeeded':result.reason==='unavailable'?'unknown':'statistics';

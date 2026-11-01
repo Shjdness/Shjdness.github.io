@@ -10,7 +10,7 @@ import {reportWindow} from './life-report';
 
 /** Freeze one report message per scheduled occurrence. Recipient changes or
  * retries never replace its original message, purpose, admission or outcome. */
-export async function prepareReportMail(options:{db:D1Database;ownerId:number;jobKey:string;providerIdentity:string;includeAnalysis?:boolean;now?:Date}){
+export async function prepareReportMail(options:{db:D1Database;ownerId:number;jobKey:string;providerIdentity:string;includeAnalysis?:boolean;awaitAutomaticAnalysis?:boolean;now?:Date}){
   const {db,ownerId,jobKey,providerIdentity}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000);
   if(!/^[a-f0-9]{64}$/.test(jobKey)||!/^[A-Za-z0-9_-]{1,64}$/.test(providerIdentity))throw Error('Invalid mail preparation');
   if(!await reportMailOwner(db,ownerId,seconds))throw Error('Owner access required');
@@ -21,7 +21,7 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
   const contact=await readMailContact(db,ownerId);
   if(!contact?.verified_at||contact.enabled_at===null||contact.paused_reason||job.anchor_at<contact.enabled_at)return {state:'disabled'};
   if(job.anchor_at<seconds-86400||job.anchor_at>seconds)return {state:'stale'};
-  const flags=await db.prepare('SELECT email_enabled,daily_enabled,weekly_enabled FROM life_report_preferences WHERE owner_id=?').bind(ownerId).all<{email_enabled:number;daily_enabled:number;weekly_enabled:number}>();
+  const flags=await db.prepare('SELECT email_enabled,daily_enabled,weekly_enabled,ai_enabled FROM life_report_preferences WHERE owner_id=?').bind(ownerId).all<{email_enabled:number;daily_enabled:number;weekly_enabled:number;ai_enabled:number}>();
   if(!flags.success)throw Error('Mail settings unavailable');const p=flags.results[0];
   if(!p||p.email_enabled!==1||(job.kind==='weekly'?p.weekly_enabled!==1:p.daily_enabled!==1)||(job.include_daily&&p.daily_enabled!==1))return {state:'disabled'};
   const load=async(id:number)=>{
@@ -32,6 +32,13 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
   const expected=reportWindow(job.kind,new Date(job.anchor_at*1000));
   if(primary.report.period.kind!==job.kind||primary.report.period.start!==expected.start||primary.report.period.end!==expected.end||job.period_start*1000!==Date.parse(expected.start)||job.period_end*1000!==Date.parse(expected.end))throw Error('Mail report binding mismatch');
   const analysis=options.includeAnalysis?await readReportAnalysis(db,ownerId,primary,now):null;
+  if(analysis?.state==='pending')return {state:'analysis-pending'};
+  // Give an opted-in automatic analysis two cron intervals to complete. Missing
+  // config, terminal failures/unknown results or a longer delay use statistics.
+  if(analysis?.state==='none'&&options.awaitAutomaticAnalysis&&p.ai_enabled===1&&seconds-job.anchor_at<600){
+    const consent=await db.prepare('SELECT owner_id FROM life_report_ai_consent WHERE owner_id=? AND scope_version=1 AND enabled_at IS NOT NULL AND enabled_at<=?').bind(ownerId,job.anchor_at).all();
+    if(!consent.success)throw Error('AI consent unavailable');if(consent.results.length)return {state:'analysis-pending'};
+  }
   const message=reportMailMessage(reportMailContent({report:primary.report,daily:daily?.report,scheduledFor:new Date(job.anchor_at*1000).toISOString(),analysis:analysis?.state==='succeeded'?analysis.analysis??undefined:undefined}));
   const json=JSON.stringify(message),digest=await reportDigest(json);
   if(!await reserveReportWrite(db))return {state:'write-budget'};
