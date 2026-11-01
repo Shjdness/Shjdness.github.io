@@ -6,6 +6,14 @@ export type ReportWindow = {
   kind: ReportKind; timezone: 'Asia/Shanghai';
   fromDate: string; toDateExclusive: string; start: string; end: string;
 };
+export type LifeReportPreview = {
+  version: 1; ownerId: number; generatedAt: string; period: ReportWindow;
+  coverage: 'server-synced-only'; mode: 'statistics-preview';
+  achievementsRecorded: number; tasksCompleted: number; ideasCreated: number;
+  focus: { completedSessions: number; recordedMinutes: number; earlySessions: number };
+  habitCompletions: number; daysWithNotes: number;
+  aiEnabled: false; emailEnabled: false;
+};
 
 /** Most recent COMPLETE day/week in modern Asia/Shanghai (UTC+8). */
 export function reportWindow(kind: ReportKind, now = new Date()): ReportWindow {

@@ -3,7 +3,7 @@ import { accountIdFromToken, currentWritePause, pauseWrites, SyncPauseError } fr
 import { getCookie } from 'typescript-cookie';
 import { headersWithAuth } from '../../utils/auth';
 
-export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss';
+export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss' | 'reports';
 export type Habit = { id: number; name: string; description: string; color: string; active: number; clientKey?: string | null };
 export type Log = { habitId: number; date: string; completed: number };
 export type DailyNote = { id?: number; date: string; content: string; updatedAt: Date | string };
