@@ -21,7 +21,7 @@ export async function findReportForPeriod(db:D1Database,ownerId:number,period:Li
   return result.results[0]?decodeReportRow(ownerId,result.results[0]):null;
 }
 
-/** Server-internal only. No HTTP write route until backup/recovery is integrated. */
+/** Immutable owner-scoped snapshots; the first committed period always wins. */
 export async function saveReportSnapshot(db:D1Database,ownerId:number,input:LifeReportPreview){
   const snapshot=reportSnapshot(ownerId,input),json=JSON.stringify(snapshot),digest=await hash(json);
   const {period}=snapshot,start=Date.parse(period.start)/1000,end=Date.parse(period.end)/1000;

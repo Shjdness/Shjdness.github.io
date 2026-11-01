@@ -43,7 +43,7 @@ function fixture(){
 it('protects all report history/settings/status routes and discloses only secret presence to the owner',async()=>{
   const f=fixture();try{
     const patch={dailyTime:'09:00',weeklyTime:'09:30',weeklyDay:1,baseRevision:0};
-    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined],['/history/1/analysis',undefined],['/history/1/analysis',{allowNumericAnalysis:true}]] as const){
+    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/jobs',undefined],['/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:0}],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined],['/history/1/analysis',undefined],['/history/1/analysis',{allowNumericAnalysis:true}]] as const){
       const result=await f.request(owner,path,body);expect(result.status).toBe(403);expect(result.headers.get('cache-control')).toContain('no-store');
     }
     expect(f.batch).not.toHaveBeenCalled();
@@ -174,4 +174,20 @@ it('requires explicit numeric consent, scopes analysis to saved owner reports an
     expect(Object.values(JSON.parse(body.messages[1].content)).every(Number.isSafeInteger)).toBe(true);
     const status=await (await f.request(1,'/status')).json();expect(status).toMatchObject({reservedMonthlyFen:5,aiEnabled:false,emailEnabled:false});
   }finally{vi.unstubAllGlobals();f.sqlite.close();}
+});
+
+
+it('isolates automation settings and job lists, rejects stale changes and never enables paid AI or mail',async()=>{
+  const f=fixture();try{
+    const first=await f.request(1,'/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:0});
+    expect(first.status).toBe(200);expect(await first.json()).toMatchObject({saved:true,automationEnabled:true,preferences:{dailyEnabled:true,weeklyEnabled:true,revision:1}});
+    const stale=await f.request(1,'/automation',{dailyEnabled:false,weeklyEnabled:false,baseRevision:0});expect(stale.status).toBe(409);
+    expect(await (await f.request(2,'/settings')).json()).toMatchObject({preferences:{dailyEnabled:false,weeklyEnabled:false}});
+    expect(await (await f.request(1,'/status')).json()).toMatchObject({schedulerAvailable:true,automationEnabled:true,aiEnabled:false,emailEnabled:false});
+    expect(await (await f.request(2,'/jobs')).json()).toMatchObject({ownerId:2,items:[]});
+    const paused=await f.request(1,'/automation',{dailyEnabled:false,weeklyEnabled:false,baseRevision:1});expect(paused.status).toBe(200);
+    expect(await paused.json()).toMatchObject({preferences:{revision:2,dailyEnabled:false,weeklyEnabled:false}});
+    expect(f.sqlite.prepare('SELECT ai_enabled,email_enabled FROM life_report_preferences WHERE owner_id=1').get()).toMatchObject({ai_enabled:0,email_enabled:0});
+    expect((await f.request(1,'/automation',{dailyEnabled:true,weeklyEnabled:true,baseRevision:2,emailEnabled:true})).status).toBe(422);
+  }finally{f.sqlite.close();}
 });

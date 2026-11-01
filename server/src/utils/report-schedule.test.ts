@@ -27,7 +27,8 @@ it('renders numeric-only mail with login-only links and clear weekly/daily overl
   const input={report:{...sample('weekly'),privateName:'secret fixture'},daily:{...sample('daily'),diaryBody:'private fixture'},analysis:{summary:'记录很少 & 仍然值得保留。',observations:['继续用“小步”记录。'],actions:[]}};
   const mail=reportMailContent(input);
   expect(mail.subject).toContain('生活周报');
-  const wednesday=new Date('2026-11-04T00:00:00Z');expect(reportMailContent({report:sample('weekly',wednesday),daily:sample('daily',wednesday)}).text).toContain('与上周统计分别展示');expect(mail.text).toContain('包含在上周统计中，不重复相加');
+  const wednesday=new Date('2026-11-04T00:00:00Z');expect(reportMailContent({report:sample('weekly',wednesday),daily:sample('daily',wednesday)}).text).toContain('与上周统计分别展示');
+  expect(reportMailContent({report:sample('weekly'),daily:sample('daily',wednesday),scheduledFor:wednesday.toISOString()}).text).toContain('与上周统计分别展示');expect(mail.text).toContain('包含在上周统计中，不重复相加');
   expect(mail.html).toContain('&amp;');expect(mail.html).not.toContain('private fixture');expect(mail.html).not.toContain('secret fixture');
   expect(mail.html).not.toMatch(/token=|ownerId|mailto:/);expect(mail.html).toContain('https://shjdness.github.io/life/reports');
   expect(()=>reportMailContent({...input,daily:{...input.daily,ownerId:2}})).toThrow();

@@ -4,14 +4,16 @@ import {getCookie} from 'typescript-cookie';
 import {endpoint} from '../../main';
 import {reportSnapshot,type LifeReportPreview} from '../../../../server/src/utils/life-report';
 
-type Preferences={dailyTime:string;weeklyTime:string;weeklyDay:number;revision:number};
+type Preferences={dailyTime:string;weeklyTime:string;weeklyDay:number;revision:number;dailyEnabled:boolean;weeklyEnabled:boolean};
 type Item={id:number;kind:'daily'|'weekly';period_start:number;period_end:number;created_at:number};
-type Status={deepseekConfigured:boolean;apiVerified:boolean;aiEnabled:boolean;emailEnabled:boolean;automationEnabled:boolean;monthlyBudgetFen:number;reservedMonthlyFen:number;manualAIAvailable:boolean};
+type Status={deepseekConfigured:boolean;apiVerified:boolean;aiEnabled:boolean;emailEnabled:boolean;automationEnabled:boolean;monthlyBudgetFen:number;reservedMonthlyFen:number;manualAIAvailable:boolean;schedulerAvailable:boolean};
 type AnalysisState={state:'none'|'pending'|'succeeded'|'statistics'|'unknown';analysis:ReportAnalysis|null;reason:string|null};
 
 export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerId:number;token:string;kind:'daily'|'weekly';historical:boolean;onSelect:(report:LifeReportPreview)=>void}){
   const [activeSaved,setActiveSaved]=useState<number|null>(null),[analysis,setAnalysis]=useState<AnalysisState|null>(null),[numericConsent,setNumericConsent]=useState(false);
   useEffect(()=>{if(!historical){setActiveSaved(null);setAnalysis(null);setNumericConsent(false);}},[historical,kind]);
+  const [automationDraft,setAutomationDraft]=useState({dailyEnabled:false,weeklyEnabled:false});
+  const [jobs,setJobs]=useState<Array<{kind:string;period_start:number;state:string;attempts:number}>>([]);
   const [preferences,setPreferences]=useState<Preferences|null>(null);
   const [status,setStatus]=useState<Status|null>(null);
   const [items,setItems]=useState<Item[]>([]),[next,setNext]=useState<string|null>(null);
@@ -39,9 +41,14 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     if(!Array.isArray(result.items)||result.items.some(item=>!Number.isSafeInteger(item.id)||item.id<1))throw Error('历史列表格式错误');
     if(current()){setItems(old=>before?[...old,...result.items.filter(item=>!old.some(value=>value.id===item.id))]:result.items);setNext(result.nextBefore);}
   };
+  const loadJobs=async()=>{
+    const result=await request<{items:Array<{kind:string;period_start:number;state:string;attempts:number}>}>('/jobs');
+    if(!Array.isArray(result.items))throw Error('任务列表格式错误');
+    if(current())setJobs(result.items);
+  };
   const load=async()=>{
-    const [settings,state]=await Promise.all([request<{preferences:Preferences}>('/settings'),request<Status>('/status'),history()]);
-    if(current()){setPreferences(settings.preferences);setStatus(state);}
+    const [settings,state]=await Promise.all([request<{preferences:Preferences}>('/settings'),request<Status>('/status'),history(),loadJobs()]);
+    if(current()){setPreferences(settings.preferences);setAutomationDraft({dailyEnabled:settings.preferences.dailyEnabled,weeklyEnabled:settings.preferences.weeklyEnabled});setStatus(state);}
   };
   useEffect(()=>{
     mounted.current=true;let active=true;
@@ -90,7 +97,19 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(preferences.dailyTime)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(preferences.weeklyTime))throw Error('请填写完整的小时和分钟后再保存');
     const result=await request<{saved:boolean;preferences:Preferences}>('/settings',{dailyTime:preferences.dailyTime,weeklyTime:preferences.weeklyTime,weeklyDay:preferences.weeklyDay,baseRevision:preferences.revision});
     if(result.saved!==true)throw Error('设置未保存');
-    if(current()){setPreferences(result.preferences);setMessage('时间设置已保存；定时生成与邮件尚未启用，保存时间不会调用 AI。');}
+    if(current()){setPreferences(result.preferences);setMessage('时间设置已保存；自动生成按已保存开关执行，保存时间不会调用 AI 或发送邮件。');}
+  };
+  const saveAutomation=async()=>{
+    if(!preferences)return;
+    const result=await request<{saved:boolean;preferences:Preferences}>('/automation',{...automationDraft,baseRevision:preferences.revision});
+    if(!result.saved)throw Error('自动生成设置未保存');
+    if(current()){
+      setPreferences(old=>old?{...old,revision:result.preferences.revision,dailyEnabled:result.preferences.dailyEnabled,weeklyEnabled:result.preferences.weeklyEnabled}:result.preferences);
+      setAutomationDraft({dailyEnabled:result.preferences.dailyEnabled,weeklyEnabled:result.preferences.weeklyEnabled});
+      setStatus(old=>old?{...old,automationEnabled:result.preferences.dailyEnabled||result.preferences.weeklyEnabled}:old);
+      setMessage('自动生成设置已保存；不会自动调用 AI 或发送邮件。已暂停的当期任务不补发。');
+    }
+    await loadJobs();
   };
   const setTime=(field:'dailyTime'|'weeklyTime',value:string)=>setPreferences(current=>current?{...current,[field]:value}:current);
   return <section className="life-report-explanation life-report-workspace">
@@ -122,6 +141,14 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
       <label>周报日期<select value={preferences.weeklyDay} onChange={event=>{const value=Number(event.target.value);setPreferences(current=>current?{...current,weeklyDay:value}:current);}}>{['一','二','三','四','五','六','日'].map((day,index)=><option key={day} value={index+1}>星期{day}</option>)}</select></label>
       <button type="button" onClick={()=>void run(saveSettings)}>保存时间设置</button>
     </fieldset>}
-    {status&&<p className="life-reports-notice">DeepSeek 密钥：{status.deepseekConfigured?'已配置（配置状态不代表当前 API 有效）':'未配置'}。网站月预算 {status.monthlyBudgetFen/100} 元，本月预留 {(status.reservedMonthlyFen/100).toFixed(2)} 元（预留额不等于实际账单）。AI 仅在勾选数字范围并点击分析时调用；定时生成与邮件发送尚未启用。</p>}
+    {preferences&&<fieldset disabled={busy||loading||!status?.schedulerAvailable} className="life-report-automation"><legend>自动保存统计报告</legend>
+      <label><input type="checkbox" checked={automationDraft.dailyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,dailyEnabled:checked}));}}/>自动保存日报</label>
+      <label><input type="checkbox" checked={automationDraft.weeklyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,weeklyEnabled:checked}));}}/>自动保存周报</label>
+      <p>云端每 5 分钟检查一次，在设置时刻之后保存已同步统计；首次开启时若当天时刻已过，会在下次检查保存。周报当天的日报在周报时间一并保存；已暂停的当期任务不重放，重新开启从下一周期继续。</p>
+      <p>这里只生成站内统计，不自动调用 AI，也不发送邮件。</p>
+      <button type="button" onClick={()=>void run(saveAutomation)}>保存自动生成设置</button>
+    </fieldset>}
+    <section className="life-report-job-list"><h3>最近自动任务</h3>{jobs.length?<ul>{jobs.map((job,i)=><li key={i}>{job.kind==='weekly'?'周报':'日报'} · {new Date(job.period_start*1000).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})} · {({queued:'等待生成',generating:'正在生成',ready:'统计已保存',paused:'已暂停',failed:'生成失败'} as Record<string,string>)[job.state]??'状态待确认'}{job.attempts>0?`（${job.attempts} 次尝试）`:''}</li>)}</ul>:<p>暂无自动任务；开启后按设置时刻检查生成。</p>}</section>
+    {status&&<p className="life-reports-notice">DeepSeek 密钥：{status.deepseekConfigured?'已配置（配置状态不代表当前 API 有效）':'未配置'}。网站月预算 {status.monthlyBudgetFen/100} 元，本月预留 {(status.reservedMonthlyFen/100).toFixed(2)} 元（预留额不等于实际账单）。AI 仅在勾选数字范围并点击分析时调用；自动统计保存{status.automationEnabled?'已开启':'未开启'}，自动 AI 与邮件发送尚未启用。</p>}
   </section>;
 }

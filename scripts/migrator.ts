@@ -62,7 +62,7 @@ WEBHOOK_URL = "${WEBHOOK_URL}"
 mode = "smart"
 
 [triggers]
-crons = []
+crons = ["*/5 * * * *"]
 `))
 
 type D1Item = {

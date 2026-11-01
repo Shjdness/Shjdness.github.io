@@ -1,49 +1,16 @@
+import {listReportJobs} from '../utils/report-jobs';
 import Elysia, { t } from 'elysia';
-import type {D1Database} from '@cloudflare/workers-types';
 import { setup } from '../setup';
 import { getEnv } from '../utils/di';
-import { reportWindow, type ReportKind, type ReportWindow, type LifeReportPreview } from '../utils/life-report';
+import { reportWindow } from '../utils/life-report';
 import {allowBurst} from '../utils/rate-limit';
 import {decodeReportRow,findReportForPeriod,saveReportSnapshot} from '../utils/report-history';
-import {readReportPreferences,reserveReportWrite,updateReportPreferences} from '../utils/report-settings';
+import {readReportPreferences,reserveReportWrite,updateReportPreferences,updateReportAutomation} from '../utils/report-settings';
 import {REPORT_AI_MODEL,REPORT_AI_MONTHLY_FEN,REPORT_AI_PRICE_REVIEW_BEFORE} from '../utils/report-ai';
 import {generateReportAnalysis,readReportAnalysis} from '../utils/report-analysis';
 
-// Parameters are only the authenticated uid and server-computed complete period.
-// Each statement returns a single aggregate row; no task or diary body leaves D1.
-export function reportQueries(ownerId: number, period: ReportWindow) {
-  const start = Date.parse(period.start) / 1000, end = Date.parse(period.end) / 1000;
-  return [
-    { sql: `SELECT
-        COALESCE(SUM(CASE WHEN type <> 'daily' AND completed=1 AND completed_at>=? AND completed_at<? THEN 1 ELSE 0 END),0) AS achievements,
-        COALESCE(SUM(CASE WHEN type='task' AND completed=1 AND completed_at>=? AND completed_at<? THEN 1 ELSE 0 END),0) AS tasks,
-        COALESCE(SUM(CASE WHEN type='learn' AND created_at>=? AND created_at<? THEN 1 ELSE 0 END),0) AS ideas
-      FROM life_todos WHERE owner_id=? AND ((completed_at>=? AND completed_at<?) OR (created_at>=? AND created_at<?))`,
-      args: [start,end,start,end,start,end,ownerId,start,end,start,end] },
-    { sql: `SELECT COUNT(*) AS sessions, COALESCE(SUM(CASE WHEN focus_minutes>=0 THEN focus_minutes ELSE 0 END),0) AS minutes,
-        COALESCE(SUM(CASE WHEN completed_early=1 THEN 1 ELSE 0 END),0) AS early
-      FROM pomodoro_sessions WHERE owner_id=? AND completed=1 AND ended_at>=? AND ended_at<?`, args: [ownerId,start,end] },
-    { sql: 'SELECT COUNT(*) AS habits FROM habit_logs WHERE owner_id=? AND completed=1 AND date>=? AND date<?', args: [ownerId,period.fromDate,period.toDateExclusive] },
-    // Match JS String.trim whitespace, not only SQLite's default ASCII space.
-    { sql: `SELECT COUNT(*) AS notes FROM life_daily_notes WHERE owner_id=? AND date>=? AND date<?
-      AND length(trim(content, char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)))>0`, args: [ownerId,period.fromDate,period.toDateExclusive] },
-  ];
-}
-
-export async function previewLifeReport(db: D1Database, ownerId: number, kind: ReportKind, now = new Date()): Promise<LifeReportPreview> {
-  if (!Number.isSafeInteger(ownerId) || ownerId <= 0) throw Error('Report owner required');
-  const period = reportWindow(kind, now);
-  const rows = await db.batch<Record<string,number>>(reportQueries(ownerId,period).map(query=>db.prepare(query.sql).bind(...query.args)));
-  if(rows.some(row=>!row.success)) throw Error('Report snapshot unavailable');
-  const [todos,focus,habits,notes]=rows.map(row=>row.results[0]);
-  if(!todos||!focus||!habits||!notes)throw Error('Incomplete report snapshot');
-  return {
-    version:1, ownerId, generatedAt:now.toISOString(), period, coverage:'server-synced-only', mode:'statistics-preview',
-    achievementsRecorded:todos.achievements, tasksCompleted:todos.tasks, ideasCreated:todos.ideas,
-    focus:{completedSessions:focus.sessions,recordedMinutes:focus.minutes,earlySessions:focus.early},
-    habitCompletions:habits.habits,daysWithNotes:notes.notes,aiEnabled:false,emailEnabled:false,
-  };
-}
+import {previewLifeReport} from '../utils/report-data';
+export {previewLifeReport,reportQueries} from '../utils/report-data';
 
 export function LifeReportsService() {
   const env=getEnv(),db=env.DB;
@@ -71,19 +38,32 @@ export function LifeReportsService() {
       const rows=await db.prepare('SELECT reserved_fen FROM life_report_ai_budget WHERE month=?').bind(month).all<{reserved_fen:number}>();
       if(!rows.success)throw Error('AI budget read unavailable');
       const reservedMonthlyFen=rows.results[0]?.reserved_fen??0;
-      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:false,emailEnabled:false,automationEnabled:false,manualAIAvailable:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
+      const preferences=await readReportPreferences(db,owner);
+      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:false,emailEnabled:false,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled,schedulerAvailable:true,manualAIAvailable:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
     })
     .get('/life/reports/settings',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
-      return {ownerId:owner,preferences:await readReportPreferences(db,owner),automationEnabled:false};
+      const preferences=await readReportPreferences(db,owner);
+      return {ownerId:owner,preferences,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled};
     })
     .post('/life/reports/settings',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       if(!allowBurst(`life-report-write:${owner}`,10)){context.set.status=429;return 'Report write limit reached';}
       const result=await updateReportPreferences(db,owner,context.body);
       if(!result.saved)context.set.status=result.paused?503:409;
-      return {ownerId:owner,...result,automationEnabled:false};
+      return {ownerId:owner,...result,automationEnabled:result.preferences.dailyEnabled||result.preferences.weeklyEnabled};
     },{body:t.Object({dailyTime:t.String({pattern:'^([01]\\d|2[0-3]):[0-5]\\d$'}),weeklyTime:t.String({pattern:'^([01]\\d|2[0-3]):[0-5]\\d$'}),weeklyDay:t.Integer({minimum:1,maximum:7}),baseRevision:t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER})},{additionalProperties:false})})
+    .post('/life/reports/automation',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      if(!allowBurst(`life-report-automation:${owner}`,10)){context.set.status=429;return 'Report setting limit reached';}
+      const result=await updateReportAutomation(db,owner,context.body);
+      if(!result.saved)context.set.status=result.paused?503:409;
+      return {ownerId:owner,...result,automationEnabled:result.preferences.dailyEnabled||result.preferences.weeklyEnabled};
+    },{body:t.Object({dailyEnabled:t.Boolean(),weeklyEnabled:t.Boolean(),baseRevision:t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER})},{additionalProperties:false})})
+    .get('/life/reports/jobs',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      return {ownerId:owner,items:await listReportJobs(db,owner)};
+    })
     .post('/life/reports/history',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       if(!allowBurst(`life-report-save:${owner}`,6)){context.set.status=429;return 'Report save limit reached';}

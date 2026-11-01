@@ -1,3 +1,5 @@
+import type {ScheduledController,ExecutionContext} from '@cloudflare/workers-types';
+import {runReportSchedule} from './utils/report-jobs';
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
 import { Elysia } from "elysia";
 import "reflect-metadata";
@@ -12,6 +14,9 @@ import {limitRequestBody} from './utils/request-body';
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
 export default {
+  async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
+    try{await runReportSchedule(env.DB);}catch{throw Error('Life report schedule unavailable');}
+  },
   async fetch(request: Request, env: Env): Promise<Response> {
     const db = drizzle(env.DB, { schema: schema });
     return runRequestContext(env,db,async()=>{

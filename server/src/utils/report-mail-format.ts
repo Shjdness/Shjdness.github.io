@@ -6,10 +6,12 @@ const escape=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 
 /** Pure numeric summary renderer; no recipient/credentials/free-text source
  * fields. Links carry no token, email, owner ID or private report identifier. */
-export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeReportPreview;analysis?:ReportAnalysis}){
+export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeReportPreview;analysis?:ReportAnalysis;scheduledFor?:string}){
   const report=reportSnapshot(input.report.ownerId,input.report);
   const daily=input.daily?reportSnapshot(report.ownerId,input.daily):undefined;
-  const yesterday=reportWindow('daily',new Date(report.generatedAt));
+  const reference=new Date(input.scheduledFor??report.generatedAt),expected=reportWindow(report.period.kind,reference);
+  if(expected.start!==report.period.start||expected.end!==report.period.end)throw Error('Scheduled report period mismatch');
+  const yesterday=reportWindow('daily',reference);
   if(daily&&(report.period.kind!=='weekly'||daily.period.kind!=='daily'||daily.period.start!==yesterday.start||daily.period.end!==yesterday.end))throw Error('Combined report period mismatch');
   const dailyOverlaps=Boolean(daily&&Date.parse(daily.period.start)>=Date.parse(report.period.start)&&Date.parse(daily.period.end)<=Date.parse(report.period.end));
   const analysis=input.analysis?analysisValue(input.analysis):undefined;

@@ -34,3 +34,5 @@
 .life-report-analysis input[type="checkbox"] { flex:0 0 auto; width:1rem; height:1rem; margin-top:.2rem; }
 .life-report-analysis button { margin:.5rem .5rem .25rem 0; max-width:100%; white-space:normal; }
 .life-report-analysis>div{display:block;margin-top:1rem}.life-report-analysis h3{margin:0 0 .6rem}.life-report-analysis h4{margin:1rem 0 .3rem}.life-report-analysis ul{display:block;margin:.3rem 0;padding-left:1.25rem}.life-report-analysis small{display:block;color:var(--ink-muted);margin-top:.8rem}
+
+.life-report-automation{min-width:0;margin-top:1rem;border:0;padding:0}.life-report-automation legend,.life-report-job-list h3{font-weight:700;margin:.7rem 0}.life-report-automation label{display:flex;gap:.5rem;align-items:center;margin:.5rem 0}.life-report-automation input[type="checkbox"]{width:1rem;height:1rem;flex:0 0 auto}.life-report-job-list ul{padding-left:1.25rem;overflow-wrap:anywhere}
