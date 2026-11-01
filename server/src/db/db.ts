@@ -24,6 +24,8 @@ export interface Env {
     GUEST_ACCESS_CODE: string,
     /** Shared secret for the lightweight GitHub YouTube feed reconciler. */
     RSS_SYNC_TOKEN: string,
+    /** Server-only. Never include this value in client configuration or logs. */
+    DEEPSEEK_API_KEY?: string,
 }
 
 export function db(env: Env) {

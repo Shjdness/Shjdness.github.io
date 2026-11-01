@@ -30,5 +30,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS life_reports_owner_period_version
 ON life_reports(owner_id,kind,period_start,period_end,template_version);
 CREATE INDEX IF NOT EXISTS life_reports_owner_created ON life_reports(owner_id,created_at DESC,id DESC);
 
+-- Site-wide monthly admission budget. Failed/unknown calls retain reservations.
+CREATE TABLE IF NOT EXISTS life_report_ai_budget (
+  month text PRIMARY KEY NOT NULL,
+  reserved_fen integer NOT NULL DEFAULT 0 CHECK(reserved_fen BETWEEN 0 AND 1000)
+);
+CREATE TABLE IF NOT EXISTS life_report_ai_reservations (
+  request_key text PRIMARY KEY NOT NULL CHECK(length(request_key)=64),
+  month text NOT NULL REFERENCES life_report_ai_budget(month),
+  reserved_fen integer NOT NULL CHECK(reserved_fen=5),
+  created_at integer NOT NULL DEFAULT (unixepoch())
+);
+
 INSERT INTO info(key,value) VALUES('migration_version','27')
 ON CONFLICT(key) DO UPDATE SET value='27';
