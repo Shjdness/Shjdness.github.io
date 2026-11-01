@@ -95,11 +95,11 @@ jobs:
           snapshot_ready=0
           for attempt in $(seq 1 12); do
             capabilities="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 15 "$API_URL/reliability/capabilities" || true)"
-            if echo "$capabilities" | grep -Fq '"transactionalBackup":true' && echo "$capabilities" | grep -Fq '"atomicTagCreation":true' && echo "$capabilities" | grep -Fq '"conditionalDraftDelete":true' && echo "$capabilities" | grep -Fq '"lifeReportsPreview":true'; then snapshot_ready=1; break; fi
+            if echo "$capabilities" | grep -Fq '"transactionalBackup":true' && echo "$capabilities" | grep -Fq '"atomicTagCreation":true' && echo "$capabilities" | grep -Fq '"conditionalDraftDelete":true' && echo "$capabilities" | grep -Fq '"lifeReportsHistory":true'; then snapshot_ready=1; break; fi
             sleep 5
           done
           if [ "$snapshot_ready" != "1" ]; then echo 'Transactional backup API was not ready' >&2; exit 1; fi
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"lifeReportsPreview":true'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"lifeReportsHistory":true'
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/preview")" = "403"
           test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$API_URL/life/todos")" = "403"
           curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "$API_URL/life/todo-capabilities" | grep -Fq '"version":2'

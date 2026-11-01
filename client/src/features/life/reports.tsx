@@ -7,6 +7,7 @@ import {accountIdFromToken} from '../../data/local-first';
 import {endpoint} from '../../main';
 import {LifeDenied,LifeLayout} from './layout';
 import './reports.css';
+import {ReportWorkspace} from './report-workspace';
 
 export function LifeReportsEntry(){
   const profile=useContext(ProfileContext);
@@ -21,6 +22,7 @@ export function LifeReportsView(){
   const [result,setResult]=useState<{token:string;kind:string;report:LifeReportPreview}|null>(null);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(false);
+  const [selected,setSelected]=useState<{token:string;report:LifeReportPreview}|null>(null);
   const token=getCookie('token');
   const owner=profile?.role==='owner'&&accountIdFromToken(token)===profile.id ? profile.id : null;
 
@@ -48,15 +50,16 @@ export function LifeReportsView(){
   },[owner,token,kind,reload]);
 
   if(!owner)return <LifeDenied/>;
-  const report=result&&result.token===token&&result.kind===kind?result.report:null;
+  const historical=Boolean(selected&&selected.token===token);
+  const report=selected&&selected.token===token?selected.report:result&&result.token===token&&result.kind===kind?result.report:null;
   return <LifeLayout section="reports" title="复盘与提醒" intro="回看已记录的进展，让下一步更容易开始。">
     <div className="life-reports">
-      <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'} onClick={()=>setKind('daily')}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'} onClick={()=>setKind('weekly')}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>setReload(value=>value+1)}>刷新统计</button><Link href="/life">返回 Life</Link></header>
-      <p className="life-reports-notice">当前为统计预览，尚未保存为历史报告。AI 分析与邮件提醒尚未启用，不会向外部服务提交生活记录。</p>
-      {loading&&<p role="status">正在读取已同步记录…</p>}
-      {error&&<p role="alert">{error}</p>}
+      <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
+      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 分析与邮件提醒尚未启用，不会向外部服务提交生活记录。</p>
+      {loading&&!historical&&<p role="status">正在读取已同步记录…</p>}
+      {error&&!historical&&<p role="alert">{error}</p>}
       {report&&<>
-        <section className="life-report-period"><h2>{kind==='daily'?'昨日的生活记录':'上一个完整周的生活记录'}</h2><p>{report.period.fromDate} 起，至 {report.period.toDateExclusive} 前 · 北京时间</p><small>数据截至 {new Date(report.generatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}</small></section>
+        <section className="life-report-period"><h2>{historical?'已保存的'+(report.period.kind==='daily'?'日报':'周报'):kind==='daily'?'昨日的生活记录':'上一个完整周的生活记录'}</h2><p>{report.period.fromDate} 起，至 {report.period.toDateExclusive} 前 · 北京时间</p><small>数据截至 {new Date(report.generatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}</small></section>
         <div className="life-report-metrics">
           <Metric value={report.achievementsRecorded} label="记录的成果" detail={`其中 ${report.tasksCompleted} 项为完成的待办；两者不重复相加`}/>
           <Metric value={`${report.focus.recordedMinutes} 分钟`} label="已记录专注" detail={`${report.focus.completedSessions} 轮完成记录，其中 ${report.focus.earlySessions} 轮提前结束`}/>
@@ -66,7 +69,8 @@ export function LifeReportsView(){
         </div>
         <section className="life-report-explanation"><h2>给下一步留一点空间</h2><p>{report.achievementsRecorded>0?'已经记录的每一件小成果，都值得留下。可以回看其中一件，再选择接下来最容易开始的一步。':'这个周期没有新增的已记录成果。这不代表你没有行动，可以先记下一件最近做成的小事。'}</p><div><Link href="/life/todos">回到四栏工作台</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
       </>}
-      <details className="life-report-explanation"><summary>统计范围与后续提醒设置</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p><p>后续默认计划：北京时间每日 08:00 日报、周一 08:00 周报并合并当日日报。邮箱、发信通道与 AI 数据范围和预算配置完成前，实际发送保持关闭。</p></details>
+      <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
+      <details className="life-report-explanation"><summary>统计范围</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p></details>
     </div>
   </LifeLayout>;
 }

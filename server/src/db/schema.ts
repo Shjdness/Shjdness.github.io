@@ -104,6 +104,7 @@ export const lifeReportPreferences = sqliteTable('life_report_preferences', {
     emailEnabled: integer('email_enabled').notNull().default(0),
     aiEnabled: integer('ai_enabled').notNull().default(0),
     aiScope: text('ai_scope').notNull().default('statistics'),
+    revision: integer('revision').notNull().default(0),
     updatedAt: updated_at,
 });
 

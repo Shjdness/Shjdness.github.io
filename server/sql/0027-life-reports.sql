@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS life_report_preferences (
   email_enabled integer NOT NULL DEFAULT 0 CHECK(email_enabled IN (0,1)),
   ai_enabled integer NOT NULL DEFAULT 0 CHECK(ai_enabled IN (0,1)),
   ai_scope text NOT NULL DEFAULT 'statistics' CHECK(ai_scope='statistics'),
+  revision integer NOT NULL DEFAULT 0 CHECK(revision>=0),
   updated_at integer NOT NULL DEFAULT (unixepoch())
 );
 
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS life_reports (
 CREATE UNIQUE INDEX IF NOT EXISTS life_reports_owner_period_version
 ON life_reports(owner_id,kind,period_start,period_end,template_version);
 CREATE INDEX IF NOT EXISTS life_reports_owner_created ON life_reports(owner_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS life_reports_owner_id ON life_reports(owner_id,id DESC);
 
 -- Site-wide monthly admission budget. Failed/unknown calls retain reservations.
 CREATE TABLE IF NOT EXISTS life_report_ai_budget (

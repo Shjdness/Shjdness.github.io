@@ -8,6 +8,7 @@ import * as schema from '../db/schema';
 import {runRequestContext} from '../utils/di';
 import {LifeReportsService,previewLifeReport,reportQueries} from './life-reports';
 import {reportWindow} from '../utils/life-report';
+import {saveReportSnapshot} from '../utils/report-history';
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
 function fixture(){
@@ -29,8 +30,88 @@ function fixture(){
   });
   const raw={prepare,batch} as any,db=drizzle(raw,{schema});
   const env={DB:raw,JWT_SECRET:'fixture-report-signing-key-with-32-characters',RIN_GITHUB_CLIENT_ID:'fixture',RIN_GITHUB_CLIENT_SECRET:'fixture'} as any;
-  return {sqlite,raw,db,env,batch};
+  const service=runRequestContext(env,db,()=>LifeReportsService());
+  const request=async(id:number|undefined,path:string,body?:unknown)=>{
+    const headers:Record<string,string>={};
+    if(id)headers.Authorization='Bearer '+await new SignJWT({id}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
+    if(body!==undefined)headers['Content-Type']='application/json';
+    return await runRequestContext(env,db,()=>service.handle(new Request('http://localhost/life/reports'+path,{method:body===undefined?'GET':'POST',headers,body:body===undefined?undefined:JSON.stringify(body)}))) as Omit<Response,'json'>&{json:()=>Promise<any>};
+  };
+  return {sqlite,raw,db,env,batch,request};
 }
+
+it('protects all report history/settings/status routes and discloses only secret presence to the owner',async()=>{
+  const f=fixture();try{
+    const patch={dailyTime:'09:00',weeklyTime:'09:30',weeklyDay:1,baseRevision:0};
+    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined]] as const){
+      const result=await f.request(owner,path,body);expect(result.status).toBe(403);expect(result.headers.get('cache-control')).toContain('no-store');
+    }
+    expect(f.batch).not.toHaveBeenCalled();
+    f.env.DEEPSEEK_API_KEY='synthetic-private-key-never-disclosed';
+    const status=await f.request(1,'/status');expect(status.status).toBe(200);
+    const text=await status.text();expect(text).not.toContain(f.env.DEEPSEEK_API_KEY);
+    expect(JSON.parse(text)).toMatchObject({ownerId:1,deepseekConfigured:true,apiVerified:false,aiEnabled:false,emailEnabled:false,monthlyBudgetFen:1000});
+  }finally{f.sqlite.close();}
+});
+
+it('saves only server-generated facts once per complete period and keeps history owner-scoped',async()=>{
+  const f=fixture();try{
+    const first=await (await f.request(1,'/history',{kind:'daily'})).json();
+    expect(first).toMatchObject({saved:true,created:true,ownerId:1});
+    f.sqlite.exec("INSERT INTO life_todos(owner_id,content,type,completed,completed_at) VALUES(1,'new later fixture','success',1,unixepoch()-86400)");
+    const retry=await (await f.request(1,'/history',{kind:'daily'})).json();
+    expect(retry).toMatchObject({saved:true,created:false,id:first.id,sha256:first.sha256,report:first.report});
+    expect((await f.request(2,'/history/'+first.id)).status).toBe(404);
+    expect(await (await f.request(2,'/history')).json()).toMatchObject({ownerId:2,items:[]});
+    expect(await (await f.request(1,'/history/'+first.id)).json()).toMatchObject({ownerId:1,id:first.id,report:first.report});
+    const list=await (await f.request(1,'/history')).json();expect(list.items).toHaveLength(1);expect(list.items[0]).not.toHaveProperty('snapshot_json');
+    const query=f.sqlite.prepare('EXPLAIN QUERY PLAN SELECT id FROM life_reports WHERE owner_id=? AND id<? ORDER BY id DESC LIMIT 21').all(1,Number.MAX_SAFE_INTEGER).map((r:any)=>r.detail).join(' ');
+    expect(query).toContain('life_reports_owner_id');
+    expect(f.sqlite.prepare("SELECT reserved FROM rss_write_budget WHERE day LIKE 'reports:%'").get()).toMatchObject({reserved:8});
+  }finally{f.sqlite.close();}
+});
+
+it('uses revision-aware preferences, does not rewrite retries or enable external activity, and pauses writes on budget exhaustion',async()=>{
+  const f=fixture();try{
+    const original=await (await f.request(1,'/settings')).json();expect(original.preferences.revision).toBe(0);
+    const patch={dailyTime:'09:00',weeklyTime:'10:00',weeklyDay:2,baseRevision:0};
+    const changed=await (await f.request(1,'/settings',patch)).json();expect(changed).toMatchObject({saved:true,preferences:{revision:1,dailyTime:'09:00'}});
+    const retry=await (await f.request(1,'/settings',patch)).json();expect(retry.preferences.revision).toBe(1);
+    const stale=await f.request(1,'/settings',{...patch,dailyTime:'11:00'});expect(stale.status).toBe(409);
+    expect((await stale.json()).preferences.dailyTime).toBe('09:00');
+    expect((await f.request(1,'/settings',{...patch,dailyTime:'29:00',baseRevision:1})).status).toBe(422);
+    expect(f.sqlite.prepare('SELECT email_enabled,ai_enabled,daily_enabled,weekly_enabled FROM life_report_preferences WHERE owner_id=1').get()).toMatchObject({email_enabled:0,ai_enabled:0,daily_enabled:0,weekly_enabled:0});
+    expect((await (await f.request(2,'/settings')).json()).preferences.revision).toBe(0);
+    f.sqlite.exec("UPDATE rss_write_budget SET reserved=2000 WHERE day LIKE 'reports:%'");
+    const paused=await f.request(1,'/settings',{...patch,dailyTime:'11:00',baseRevision:1});expect(paused.status).toBe(503);expect((await paused.json()).paused).toBe(true);
+    expect((await f.request(2,'/history',{kind:'daily'})).status).toBe(503);
+    expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get()).toMatchObject({n:0});
+  }finally{f.sqlite.close();}
+});
+
+it('paginates history with an owner index and no duplicate or other-owner rows',async()=>{
+  const f=fixture();try{
+    for(let day=0;day<22;day++){
+      const now=new Date(Date.UTC(2026,10,1-day));
+      await saveReportSnapshot(f.raw,1,await previewLifeReport(f.raw,1,'daily',now));
+    }
+    await saveReportSnapshot(f.raw,2,await previewLifeReport(f.raw,2,'daily',new Date('2026-11-01T00:00:00Z')));
+    const first=await (await f.request(1,'/history')).json();expect(first.items).toHaveLength(20);expect(first.nextBefore).not.toBeNull();
+    const second=await (await f.request(1,'/history?before='+first.nextBefore)).json();expect(second.items).toHaveLength(2);expect(second.nextBefore).toBeNull();
+    expect(new Set([...first.items,...second.items].map((r:any)=>r.id)).size).toBe(22);
+    expect((await f.request(1,'/history?before=9999999999999999')).status).toBe(400);
+  }finally{f.sqlite.close();}
+});
+
+it('allows one of two competing settings changes and rejects the stale one without silently replacing it',async()=>{
+  const f=fixture();try{
+    const patch={dailyTime:'12:00',weeklyTime:'10:00',weeklyDay:3,baseRevision:0};
+    const replies=await Promise.all([f.request(1,'/settings',patch),f.request(1,'/settings',{...patch,dailyTime:'13:00'})]);
+    expect(replies.map(r=>r.status).sort()).toEqual([200,409]);
+    const current=await (await f.request(1,'/settings')).json();expect(current.preferences.revision).toBe(1);
+    const successful=await replies.find(r=>r.status===200)!.json();expect(current.preferences).toEqual(successful.preferences);
+  }finally{f.sqlite.close();}
+});
 
 it('aggregates a transaction snapshot with owner/date boundaries and indexed owner searches',async()=>{
   const f=fixture();

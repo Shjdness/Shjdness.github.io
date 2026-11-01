@@ -8,6 +8,19 @@ async function hash(text:string){
   return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+export async function decodeReportRow(ownerId:number,stored:Record<string,unknown>){
+  if(!Number.isSafeInteger(stored.id)||Number(stored.id)<=0||typeof stored.snapshot_json!=='string'||stored.snapshot_json.length>16384||typeof stored.snapshot_sha256!=='string'||await hash(stored.snapshot_json)!==stored.snapshot_sha256)throw Error('Stored report is missing or damaged');
+  const report=reportSnapshot(ownerId,JSON.parse(stored.snapshot_json));
+  if(('kind' in stored&&stored.kind!==report.period.kind)||('period_start' in stored&&Number(stored.period_start)*1000!==Date.parse(report.period.start))||('period_end' in stored&&Number(stored.period_end)*1000!==Date.parse(report.period.end)))throw Error('Stored report period mismatch');
+  return {id:Number(stored.id),sha256:stored.snapshot_sha256,report};
+}
+
+export async function findReportForPeriod(db:D1Database,ownerId:number,period:LifeReportPreview['period']){
+  const result=await db.prepare('SELECT id,kind,period_start,period_end,snapshot_json,snapshot_sha256 FROM life_reports WHERE owner_id=? AND kind=? AND period_start=? AND period_end=? AND template_version=1').bind(ownerId,period.kind,Date.parse(period.start)/1000,Date.parse(period.end)/1000).all<Record<string,unknown>>();
+  if(!result.success)throw Error('Report read failed');
+  return result.results[0]?decodeReportRow(ownerId,result.results[0]):null;
+}
+
 /** Server-internal only. No HTTP write route until backup/recovery is integrated. */
 export async function saveReportSnapshot(db:D1Database,ownerId:number,input:LifeReportPreview){
   const snapshot=reportSnapshot(ownerId,input),json=JSON.stringify(snapshot),digest=await hash(json);
