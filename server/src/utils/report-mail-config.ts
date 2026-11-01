@@ -11,7 +11,7 @@ export async function reportMailConfiguration(env:Env){
   const protectedSecrets=[env.JWT_SECRET,env.DEEPSEEK_API_KEY,env.RSS_SYNC_TOKEN,env.GUEST_ACCESS_CODE,env.S3_SECRET_ACCESS_KEY,env.S3_ACCESS_KEY_ID,env.RIN_GITHUB_CLIENT_SECRET,env.GITHUB_CLIENT_SECRET].filter((s):s is string=>Boolean(s));
   let vault:MailVault|null=null,provider:ReportMailProvider|null=null;
   try{if(env.REPORT_MAIL_VAULT_KEY)vault=await reportMailVault(env.REPORT_MAIL_VAULT_KEY,[...protectedSecrets,env.REPORT_MAIL_API_KEY??'',env.REPORT_MAIL_WEBHOOK_SECRET??'']);}catch{/* fail closed without returning Secret/error values */}
-  if(vault&&env.REPORT_MAIL_ENABLED==='true'&&env.REPORT_MAIL_PROVIDER==='resend'){
+  if(vault&&env.REPORT_OUTBOUND_PAUSED!=='true'&&env.REPORT_MAIL_ENABLED==='true'&&env.REPORT_MAIL_PROVIDER==='resend'){
     try{
       const webhook=env.REPORT_MAIL_WEBHOOK_SECRET??'';
       if(webhook.length>128)throw Error();

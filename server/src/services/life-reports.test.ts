@@ -197,6 +197,12 @@ it('requires explicit numeric automation consent, scopes settings, never calls A
   try{
     expect((await f.request(1,'/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0})).status).toBe(503);
     f.env.DEEPSEEK_API_KEY='private-fixture-ai-key-not-returned';
+    f.env.REPORT_OUTBOUND_PAUSED='true';
+    expect((await f.request(1,'/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0})).status).toBe(503);
+    expect((await f.request(1,'/history/1/analysis',{allowNumericAnalysis:true})).status).toBe(503);
+    expect(await (await f.request(1,'/status')).json()).toMatchObject({manualAIAvailable:false});
+    expect(await (await f.request(1,'/ai-automation')).json()).toMatchObject({paused:true});
+    delete f.env.REPORT_OUTBOUND_PAUSED;
     expect((await f.request(1,'/ai-automation',{enabled:true,baseRevision:0})).status).toBe(409);
     const enabled=await f.request(1,'/ai-automation',{enabled:true,allowNumericAnalysis:true,baseRevision:0});
     expect(enabled.status).toBe(200);expect(await enabled.json()).toMatchObject({ownerId:1,saved:true,enabled:true,revision:1});

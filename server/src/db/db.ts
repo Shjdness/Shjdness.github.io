@@ -26,6 +26,8 @@ export interface Env {
     RSS_SYNC_TOKEN: string,
     /** Server-only. Never include this value in client configuration or logs. */
     DEEPSEEK_API_KEY?: string,
+    /** Emergency external-side-effect kill switch. Signed outcomes still apply. */
+    REPORT_OUTBOUND_PAUSED?: string,
     /** Optional server-only mail configuration. Missing/invalid values fail closed. */
     REPORT_MAIL_ENABLED?: string,
     REPORT_MAIL_VAULT_KEY?: string,

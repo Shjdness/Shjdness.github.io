@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {getCookie} from 'typescript-cookie';
 import {endpoint} from '../../main';
-type AISettings={ownerId:number;enabled:boolean;revision:number;enabledAt:number|null;scope:'statistics';configured:boolean;pricingValid:boolean;monthlyBudgetFen:number;reservedMonthlyFen:number};
+type AISettings={ownerId:number;enabled:boolean;revision:number;enabledAt:number|null;scope:'statistics';configured:boolean;paused?:boolean;pricingValid:boolean;monthlyBudgetFen:number;reservedMonthlyFen:number};
 export function ReportAISettings({ownerId,token}:{ownerId:number;token:string}){
   const [state,setState]=useState<AISettings|null>(null),[consent,setConsent]=useState(false),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
   const alive=useRef(true),lock=useRef(false),controllers=useRef(new Set<AbortController>());
@@ -31,8 +31,9 @@ export function ReportAISettings({ownerId,token}:{ownerId:number;token:string}){
     <p>单独允许后，已开启的日报/周报会自动分析统计数字。不会发送正文、名称、日期、邮箱或账号；周报合并的日报附录只保留统计，不另作一次 AI 调用。</p>
     {state&&<><p>当前：{state.enabled?'已允许自动分析':'自动分析已关闭'}。网站共享月预算 {state.monthlyBudgetFen/100} 元，本月已预留 {(state.reservedMonthlyFen/100).toFixed(2)} 元；预留不等于供应商账单。预算不足、失败或配置不可用时保留统计版，不加预算或自动重试。</p>
       {!state.configured&&<p>DeepSeek 密钥尚未配置；可以暂停，暂不能启用。</p>}{!state.pricingValid&&<p>价格需要复核，自动调用已停止；统计报告仍可使用。</p>}
-      {!state.enabled&&<label><input type="checkbox" checked={consent} disabled={busy||!state.configured||!state.pricingValid} onChange={event=>setConsent(event.target.checked)}/>我持续允许后续日/周报仅向 DeepSeek 提交统计数字，费用受网站每月10元上限控制，可随时暂停</label>}
-      <button type="button" disabled={busy||state.enabled||!consent||!state.configured||!state.pricingValid} onClick={()=>void run(()=>save(true))}>允许自动数字分析</button><button type="button" disabled={busy} onClick={()=>void run(()=>save(false))}>暂停自动数字分析</button>
+      {state.paused&&<p>维护期间外部调用已暂停。统计和历史仍可查看，也可以撤回自动分析同意。</p>}
+      {!state.enabled&&<label><input type="checkbox" checked={consent} disabled={busy||state.paused||!state.configured||!state.pricingValid} onChange={event=>setConsent(event.target.checked)}/>我持续允许后续日/周报仅向 DeepSeek 提交统计数字，费用受网站每月10元上限控制，可随时暂停</label>}
+      <button type="button" disabled={busy||state.paused||state.enabled||!consent||!state.configured||!state.pricingValid} onClick={()=>void run(()=>save(true))}>允许自动数字分析</button><button type="button" disabled={busy} onClick={()=>void run(()=>save(false))}>暂停自动数字分析</button>
       <p>本设置不会开启日报/周报计划或邮件提醒。暂停只影响新的自动调用，手动分析仍需逐份确认；恢复后从新同意时刻起处理，不追补旧任务。</p></>}
     {message&&<p role="status">{message}</p>}
   </section>;

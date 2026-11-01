@@ -25,7 +25,7 @@ async function fixture(){
 it('fails closed on absent, reused, incomplete or unsupported provider secrets without external calls',async()=>{
   const network=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('No real provider calls'));
   const f=await fixture();try{
-    for(const patch of [{},{...sender,REPORT_MAIL_ENABLED:'false'},{...sender,REPORT_MAIL_WEBHOOK_SECRET:''},{...sender,REPORT_MAIL_PROVIDER:'brevo'},{...sender,REPORT_MAIL_API_KEY:f.env.JWT_SECRET},{...sender,REPORT_MAIL_VAULT_KEY:f.env.JWT_SECRET}]){
+    for(const patch of [{},{...sender,REPORT_OUTBOUND_PAUSED:'true'},{...sender,REPORT_MAIL_ENABLED:'false'},{...sender,REPORT_MAIL_WEBHOOK_SECRET:''},{...sender,REPORT_MAIL_PROVIDER:'brevo'},{...sender,REPORT_MAIL_API_KEY:f.env.JWT_SECRET},{...sender,REPORT_MAIL_VAULT_KEY:f.env.JWT_SECRET}]){
       const config=await reportMailConfiguration({...f.env,...patch});expect(config.deliveryConfigured).toBe(false);
     }
     const valid=await reportMailConfiguration({...f.env,...sender});expect(valid.storageConfigured).toBe(true);expect(valid.deliveryConfigured).toBe(true);

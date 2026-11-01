@@ -42,4 +42,4 @@ export async function runReportAISchedule(options:{db:D1Database;apiKey?:string;
   }
   return {processed:1,failures};
 }
-export const runConfiguredReportAI=(env:Env)=>runReportAISchedule({db:env.DB,apiKey:env.DEEPSEEK_API_KEY});
+export const runConfiguredReportAI=(env:Env)=>env.REPORT_OUTBOUND_PAUSED==='true'?Promise.resolve({processed:0,failures:0}):runReportAISchedule({db:env.DB,apiKey:env.DEEPSEEK_API_KEY});

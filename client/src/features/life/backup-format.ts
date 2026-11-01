@@ -1,5 +1,7 @@
 import {validateStoredAnalysis,type StoredReportAnalysis} from '../../../../server/src/utils/report-analysis-format';
 import {reportSnapshot,type LifeReportPreview} from '../../../../server/src/utils/life-report';
+import {validBackupManifest} from '../../../../server/src/utils/backup-manifest';
+export {BACKUP_TABLES,REPORT_BACKUP_TABLES} from '../../../../server/src/utils/backup-manifest';
 
 export type Backup = {
   format: string;
@@ -22,13 +24,6 @@ export type EncryptedBackup = {
 
 const V2_AAD=new TextEncoder().encode('shjdshy-encrypted-backup:v2:PBKDF2-SHA256:600000:AES-256-GCM');
 
-export const BACKUP_TABLES = [
-  'feeds', 'comments', 'hashtags', 'feedHashtags', 'habits', 'habitLogs',
-  'lifeDailyNotes', 'dailyBasics', 'lifeTodos', 'pomodoroSessions',
-  'rssSubscriptions', 'rssSourceGroups', 'rssItems', 'appearancePreferences', 'writingTagOptions',
-] as const;
-// Keep the legacy table list unchanged: older v1/v2 files remain readable.
-export const REPORT_BACKUP_TABLES=['lifeReports','lifeReportPreferences'] as const;
 
 const toBase64 = (value: Uint8Array) => {
   const chunks: string[] = [];
@@ -78,8 +73,7 @@ export async function validateBackup(value: unknown, expectedOwnerId: number): P
   if (backup.ownerId !== expectedOwnerId) throw new Error('备份所属账号不符');
   if (!Number.isSafeInteger(backup.ownerId) || backup.ownerId <= 0 || !Number.isFinite(Date.parse(backup.exportedAt))) throw new Error('备份元数据无效');
   if (!backup.data || typeof backup.data !== 'object' || !backup.counts || typeof backup.counts !== 'object') throw new Error('备份数据不完整');
-  const required=backup.version===1?BACKUP_TABLES.filter(name=>name!=='writingTagOptions'):backup.version===4?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES,'lifeReportAnalyses']:backup.version===3?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES]:BACKUP_TABLES;
-  if (required.some(name => !(name in backup.data) || !(name in backup.counts)) || Object.keys(backup.data).length !== Object.keys(backup.counts).length) throw new Error('备份清单不完整');
+  if (!validBackupManifest(backup.data,backup.version)||!validBackupManifest(backup.counts,backup.version)||Object.keys(backup.data).length !== Object.keys(backup.counts).length) throw new Error('备份清单不完整或包含未知数据表');
   for (const [name, count] of Object.entries(backup.counts)) {
     if (!Number.isSafeInteger(count) || count < 0 || !Array.isArray(backup.data[name]) || backup.data[name].length !== count) throw new Error(`备份清单不符：${name}`);
   }

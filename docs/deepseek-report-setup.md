@@ -40,4 +40,4 @@
 在任务结果持久化/查询接口接好前，不直接把这个内部函数挂到页面按钮，防止浏览器重复调用。首份AI结果应保存后再确认；预留后进程中断导致未知结果时默认不再次收费调用，后续提供明确恢复策略。
 
 
-手动入口：POST /life/reports/history/:id/analysis，仅owner、body必须为allowNumericAnalysis=true；GET同路径只读结果。不会读取原文。结果保存失败保留pending，过期按unknown展示并停止重发；请对账后人工决定，而非清表。源码中的aiEnabled=false表示自动开关仍关闭，manualAIAvailable是配置/日期/预算准入状态，不代表供应商已验证。
+手动入口：POST /life/reports/history/:id/analysis，仅owner、body必须为allowNumericAnalysis=true；GET同路径只读结果。不会读取原文。结果保存失败保留pending，过期按unknown展示并停止重发；请对账后人工决定，而非清表。自动开关默认关闭；owner可在/life/reports明确选择持续数字同意并暂停。manualAIAvailable是配置/日期/预算准入状态，不代表供应商已验证。REPORT_OUTBOUND_PAUSED=true会暂停新的手动/自动付费请求和邮件；恢复步骤参见life-reports-operations.md。

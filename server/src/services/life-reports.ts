@@ -42,7 +42,7 @@ export function LifeReportsService() {
       const preferences=await readReportPreferences(db,owner);
       const ai=await readReportAIConsent(db,owner),mail=await db.prepare(`SELECT p.email_enabled,c.verified_at,c.enabled_at,c.paused_reason FROM life_report_preferences p LEFT JOIN life_report_mail_contacts c ON c.owner_id=p.owner_id WHERE p.owner_id=?`).bind(owner).all<{email_enabled:number;verified_at:number|null;enabled_at:number|null;paused_reason:string|null}>();
       if(!mail.success)throw Error('Mail status unavailable');const recipient=mail.results[0];
-      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:ai.enabled,emailEnabled:Boolean(recipient?.email_enabled===1&&recipient.verified_at!==null&&recipient.enabled_at!==null&&!recipient.paused_reason),automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled,schedulerAvailable:true,manualAIAvailable:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
+      return {ownerId:owner,deepseekConfigured:Boolean(env.DEEPSEEK_API_KEY?.trim()),apiVerified:false,aiEnabled:ai.enabled,emailEnabled:Boolean(recipient?.email_enabled===1&&recipient.verified_at!==null&&recipient.enabled_at!==null&&!recipient.paused_reason),automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled,schedulerAvailable:true,manualAIAvailable:env.REPORT_OUTBOUND_PAUSED!=='true'&&Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE&&reservedMonthlyFen+5<=REPORT_AI_MONTHLY_FEN,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen,aiScope:'statistics'};
     })
     .get('/life/reports/settings',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
@@ -54,13 +54,13 @@ export function LifeReportsService() {
       const consent=await readReportAIConsent(db,owner);
       const month=new Date(Date.now()+8*3600000).toISOString().slice(0,7);
       const rows=await db.prepare('SELECT reserved_fen FROM life_report_ai_budget WHERE month=?').bind(month).all<{reserved_fen:number}>();if(!rows.success)throw Error('AI budget unavailable');
-      return {ownerId:owner,enabled:consent.enabled,revision:consent.revision,enabledAt:consent.enabledAt,scope:'statistics',model:REPORT_AI_MODEL,configured:Boolean(env.DEEPSEEK_API_KEY?.trim()),pricingValid:Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen:rows.results[0]?.reserved_fen??0};
+      return {ownerId:owner,enabled:consent.enabled,revision:consent.revision,enabledAt:consent.enabledAt,scope:'statistics',model:REPORT_AI_MODEL,configured:Boolean(env.DEEPSEEK_API_KEY?.trim()),paused:env.REPORT_OUTBOUND_PAUSED==='true',pricingValid:Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen:rows.results[0]?.reserved_fen??0};
     })
     .post('/life/reports/ai-automation',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       if(context.body.enabled){
         if(!allowBurst(`life-report-ai-setting:${owner}`,8)){context.set.status=429;return {ownerId:owner,code:'AI_SETTING_RATE_LIMIT'};}
-        if(!env.DEEPSEEK_API_KEY?.trim()||Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE){context.set.status=503;return {ownerId:owner,code:'AI_NOT_AVAILABLE'};}
+        if(env.REPORT_OUTBOUND_PAUSED==='true'||!env.DEEPSEEK_API_KEY?.trim()||Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE){context.set.status=503;return {ownerId:owner,code:'AI_NOT_AVAILABLE'};}
       }
       const result=await setReportAIConsent({db,ownerId:owner,...context.body});
       if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;
@@ -112,6 +112,7 @@ export function LifeReportsService() {
     })
     .post('/life/reports/history/:id/analysis',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
+      if(env.REPORT_OUTBOUND_PAUSED==='true'){context.set.status=503;return {ownerId:owner,code:'OUTBOUND_PAUSED'};}
       const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
       if(!allowBurst(`life-report-analyze:${owner}`,6)){context.set.status=429;return 'Analysis limit reached';}
       const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}

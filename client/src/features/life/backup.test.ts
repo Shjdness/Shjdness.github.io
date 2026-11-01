@@ -51,6 +51,12 @@ describe('personal backup validation', () => {
   it('accepts a matching owner and complete snapshot', async () => {
     expect((await validateBackup(await fixture(), 12)).counts.feeds).toBe(1);
   });
+  it('rejects rehashed operational or unknown tables instead of allowing proof/consent import under an old version',async()=>{
+    for(const name of ['lifeReportMailContacts','life_report_mail_contacts','lifeReportAIConsent','lifeReportMailDeliveries','lifeReportAIReservations','futureUnversionedModule','__proto__']){
+      const backup=await fixture();Object.defineProperty(backup.data,name,{value:[{proof:'not-personal-data'}],enumerable:true});Object.defineProperty(backup.counts,name,{value:1,enumerable:true});await rehash(backup);
+      await expect(validateBackup(backup,12)).rejects.toThrow('清单');
+    }
+  });
   it('rejects a different owner or modified content', async () => {
     const backup = await fixture();
     await expect(validateBackup(backup, 13)).rejects.toThrow('账号不符');

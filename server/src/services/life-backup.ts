@@ -7,11 +7,13 @@ import {
 } from '../db/schema';
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
+import {validBackupManifest} from '../utils/backup-manifest';
 
 export const BACKUP_FORMAT = 'shjdshy-personal-data';
 export const BACKUP_VERSION = 2;
 
 export async function buildBackupEnvelope(ownerId: number, data: Record<string, unknown[]>, version:2|3|4=BACKUP_VERSION) {
+  if(!validBackupManifest(data,version))throw Error('Personal backup manifest invalid');
   const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
   const bytes = new TextEncoder().encode(JSON.stringify(data));
   const digest = await crypto.subtle.digest('SHA-256', bytes);

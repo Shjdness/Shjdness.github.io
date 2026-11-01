@@ -47,7 +47,7 @@ export async function runReportMailSchedule(options:{db:D1Database;vault:MailVau
 }
 
 export async function runConfiguredReportMail(env:Env){
-  if(env.REPORT_MAIL_ENABLED!=='true')return {processed:0,failures:0};
+  if(env.REPORT_OUTBOUND_PAUSED==='true'||env.REPORT_MAIL_ENABLED!=='true')return {processed:0,failures:0};
   const config=await reportMailConfiguration(env);
   if(!config.vault||!config.provider)return {processed:0,failures:0};
   return runReportMailSchedule({db:env.DB,vault:config.vault,provider:config.provider,awaitAutomaticAnalysis:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE});

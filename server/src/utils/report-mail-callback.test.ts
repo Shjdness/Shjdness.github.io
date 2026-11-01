@@ -25,7 +25,7 @@ it('applies authenticated bounce suppression even with delivery globally off and
     const row=f.sqlite.prepare('SELECT delivery_key FROM life_report_mail_deliveries').get();
     f.sqlite.prepare("INSERT INTO life_report_mail_budget(bucket,reserved) VALUES('fixture',1)").run();
     f.sqlite.prepare("INSERT INTO life_report_mail_admissions(request_key,owner_bucket,global_bucket,created_at) VALUES(?,'fixture','fixture',?)").run(row.delivery_key,Math.floor(Date.now()/1000));
-    const env={DB:f.raw,REPORT_MAIL_PROVIDER:'resend',REPORT_MAIL_PROVIDER_ID:'mock-v1',REPORT_MAIL_WEBHOOK_SECRET:secret,REPORT_MAIL_ENABLED:'false'} as any;
+    const env={DB:f.raw,REPORT_MAIL_PROVIDER:'resend',REPORT_MAIL_PROVIDER_ID:'mock-v1',REPORT_MAIL_WEBHOOK_SECRET:secret,REPORT_MAIL_ENABLED:'false',REPORT_OUTBOUND_PAUSED:'true'} as any;
     const body=JSON.stringify({type:'email.bounced',data:{email_id:'fixture-provider-id',tags:{report_delivery:row.delivery_key},to:['PRIVATE_RECIPIENT'],subject:'PRIVATE_SUBJECT'}});
     expect((await reportMailCallback(await signed(body),env)).status).toBe(204);
     expect(f.sqlite.prepare('SELECT paused_reason FROM life_report_mail_contacts').get().paused_reason).toBe('bounced');
