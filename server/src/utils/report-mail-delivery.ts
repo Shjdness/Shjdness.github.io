@@ -93,7 +93,7 @@ export async function submitReportDelivery(options:{db:D1Database;ownerId:number
 /** Internal injected-provider flow only. The inbox token exists only in memory
  * and the outbound message, never in the database, HTTP response or a log. */
 export async function requestReportVerification(options:{db:D1Database;ownerId:number;vault:MailVault;provider?:ReportMailProvider;now?:Date;timeoutMs?:number}){
-  const {db,ownerId,vault,provider}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000);
+  const {db,ownerId,provider}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000);
   if(!provider||!/^[A-Za-z0-9_-]{1,64}$/.test(provider.identity))return {state:'not-configured'};
   if(!await reportMailOwner(db,ownerId,seconds))throw Error('Owner access required');
   const contact=await readMailContact(db,ownerId);if(!contact||contact.paused_reason)return {state:'verification-required'};
