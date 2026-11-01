@@ -2,7 +2,7 @@ import type {D1Database} from '@cloudflare/workers-types';
 import {maskedReportRecipient,reportVerificationHash,type reportMailVault} from './report-mail-vault';
 import {readReportPreferences,reserveReportWrite} from './report-settings';
 export type MailVault=Awaited<ReturnType<typeof reportMailVault>>;
-export type MailContact={owner_id:number;email_sealed:string;fingerprint:string;revision:number;verified_at:number|null;paused_reason:string|null};
+export type MailContact={owner_id:number;email_sealed:string;fingerprint:string;revision:number;verified_at:number|null;enabled_at:number|null;paused_reason:string|null};
 
 export async function reportMailOwner(db:D1Database,ownerId:number,seconds:number){
   if(!Number.isSafeInteger(ownerId)||ownerId<1||!Number.isSafeInteger(seconds)||seconds<0)throw Error('Mail owner required');
@@ -11,7 +11,7 @@ export async function reportMailOwner(db:D1Database,ownerId:number,seconds:numbe
 }
 
 export async function readMailContact(db:D1Database,ownerId:number){
-  const rows=await db.prepare('SELECT owner_id,email_sealed,fingerprint,revision,verified_at,paused_reason FROM life_report_mail_contacts WHERE owner_id=?').bind(ownerId).all<MailContact>();
+  const rows=await db.prepare('SELECT owner_id,email_sealed,fingerprint,revision,verified_at,enabled_at,paused_reason FROM life_report_mail_contacts WHERE owner_id=?').bind(ownerId).all<MailContact>();
   if(!rows.success)throw Error('Mail contact unavailable');return rows.results[0]??null;
 }
 
@@ -21,7 +21,7 @@ export async function reportMailContactState(db:D1Database,ownerId:number,vault:
   if(!settings.success)throw Error('Mail settings unavailable');
   let masked:string|null=null;
   if(row){const email=await vault.open(ownerId,row.email_sealed);if(await vault.fingerprint(ownerId,email)!==row.fingerprint)throw Error('Mail contact damaged');masked=maskedReportRecipient(email);}
-  return {ownerId,maskedRecipient:masked,contactRevision:row?.revision??0,preferencesRevision:settings.results[0]?.revision??0,verified:Boolean(row?.verified_at),enabled:Boolean(row?.verified_at&&!row.paused_reason&&settings.results[0]?.email_enabled===1),pausedReason:row?.paused_reason??null};
+  return {ownerId,maskedRecipient:masked,contactRevision:row?.revision??0,preferencesRevision:settings.results[0]?.revision??0,verified:Boolean(row?.verified_at),enabled:Boolean(row?.verified_at&&row.enabled_at!==null&&!row.paused_reason&&settings.results[0]?.email_enabled===1),pausedReason:row?.paused_reason??null};
 }
 
 export async function saveReportRecipient(options:{db:D1Database;ownerId:number;email:string;baseRevision:number;vault:MailVault;now?:Date}){
@@ -35,7 +35,7 @@ export async function saveReportRecipient(options:{db:D1Database;ownerId:number;
   const rows=await db.batch([
     db.prepare(`INSERT INTO life_report_mail_contacts(owner_id,email_sealed,fingerprint,revision,updated_at)
       SELECT ?,?,?,1,? WHERE ?=0 OR EXISTS(SELECT 1 FROM life_report_mail_contacts WHERE owner_id=?)
-      ON CONFLICT(owner_id) DO UPDATE SET email_sealed=excluded.email_sealed,fingerprint=excluded.fingerprint,revision=revision+1,verified_at=NULL,paused_reason=NULL,updated_at=excluded.updated_at
+      ON CONFLICT(owner_id) DO UPDATE SET email_sealed=excluded.email_sealed,fingerprint=excluded.fingerprint,revision=revision+1,verified_at=NULL,enabled_at=NULL,paused_reason=NULL,updated_at=excluded.updated_at
       WHERE revision=? RETURNING revision`).bind(ownerId,sealed,fingerprint,seconds,options.baseRevision,ownerId,options.baseRevision),
     // A changed recipient always switches off delivery, without overwriting any clocks/other flags.
     db.prepare('UPDATE life_report_preferences SET email_enabled=0,revision=revision+1,updated_at=? WHERE owner_id=? AND changes()>0').bind(seconds,ownerId),
@@ -75,12 +75,17 @@ export async function setReportEmailEnabled(options:{db:D1Database;ownerId:numbe
   if(!await reportMailOwner(db,ownerId,seconds))throw Error('Owner access required');
   const prefs=await readReportPreferences(db,ownerId),contact=await readMailContact(db,ownerId);
   if(options.enabled&&(!contact?.verified_at||contact.paused_reason||contact.revision!==options.contactRevision))return {saved:false,reason:'verification-required'};
+  const flags=await db.prepare('SELECT email_enabled FROM life_report_preferences WHERE owner_id=?').bind(ownerId).all<{email_enabled:number}>();
+  if(!flags.success)throw Error('Mail settings unavailable');
+  if((flags.results[0]?.email_enabled===1)===options.enabled&&(!options.enabled||contact?.enabled_at!==null))return {saved:true,reason:'unchanged'};
   if(prefs.revision!==options.baseRevision)return {saved:false,reason:'conflict'};
   if(!await reserveReportWrite(db))return {saved:false,reason:'write-budget'};
-  const result=await db.prepare(`INSERT INTO life_report_preferences(owner_id,email_enabled,revision)
+  const result=await db.batch([db.prepare(`INSERT INTO life_report_preferences(owner_id,email_enabled,revision)
     SELECT ?,?,1 WHERE (?=0 OR EXISTS(SELECT 1 FROM life_report_preferences WHERE owner_id=?)) AND (?=0 OR EXISTS(SELECT 1 FROM life_report_mail_contacts WHERE owner_id=? AND revision=? AND verified_at IS NOT NULL AND paused_reason IS NULL))
     ON CONFLICT(owner_id) DO UPDATE SET email_enabled=excluded.email_enabled,revision=revision+1,updated_at=? WHERE revision=?
-      AND (?=0 OR EXISTS(SELECT 1 FROM life_report_mail_contacts WHERE owner_id=? AND revision=? AND verified_at IS NOT NULL AND paused_reason IS NULL)) RETURNING revision`).bind(ownerId,options.enabled?1:0,options.baseRevision,ownerId,options.enabled?1:0,ownerId,options.contactRevision,seconds,options.baseRevision,options.enabled?1:0,ownerId,options.contactRevision).all();
-  if(!result.success)throw Error('Mail enable save unconfirmed');
-  return {saved:result.results.length===1,reason:result.results.length?'saved':'conflict'};
+      AND (?=0 OR EXISTS(SELECT 1 FROM life_report_mail_contacts WHERE owner_id=? AND revision=? AND verified_at IS NOT NULL AND paused_reason IS NULL)) RETURNING revision`).bind(ownerId,options.enabled?1:0,options.baseRevision,ownerId,options.enabled?1:0,ownerId,options.contactRevision,seconds,options.baseRevision,options.enabled?1:0,ownerId,options.contactRevision),
+    db.prepare('UPDATE life_report_mail_contacts SET enabled_at=? WHERE owner_id=? AND changes()>0').bind(options.enabled?seconds:null,ownerId),
+  ]);
+  if(result.some(row=>!row.success))throw Error('Mail enable save unconfirmed');
+  return {saved:result[0].results.length===1,reason:result[0].results.length?'saved':'conflict'};
 }

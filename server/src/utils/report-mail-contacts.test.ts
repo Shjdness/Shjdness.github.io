@@ -1,37 +1,9 @@
-import {createRequire} from 'node:module';
-import {readFileSync,readdirSync} from 'node:fs';
 import {expect,it} from 'vitest';
 import {requestReportVerification,submitReportDelivery,reserveMailSubmission,readReportDelivery,type ReportMailProvider} from './report-mail-delivery';
-import {reportMailVault,reportVerificationToken} from './report-mail-vault';
+import {mailFixture,now,seconds} from './report-mail-fixture';
 import {saveReportRecipient,reportMailContactState,verifyReportRecipient,setReportEmailEnabled} from './report-mail-contacts';
-const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
-const now=new Date('2026-11-02T00:00:00Z'),seconds=now.getTime()/1000;
-const secret=btoa(String.fromCharCode(...Array.from({length:32},(_,i)=>i+1)));
-
-async function fixture(){
-  const sqlite=new DatabaseSync(':memory:'),folder=new URL('../../sql/',import.meta.url);
-  for(const file of readdirSync(folder).filter(name=>name.endsWith('.sql')).sort()){
-    sqlite.exec(readFileSync(new URL(file,folder),'utf8'));if(file==='0002.sql')sqlite.exec('ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0');
-  }
-  sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'owner','owner',1),(2,'other','other',1),(3,'trusted','trusted',2); INSERT INTO life_report_preferences(owner_id,daily_time,daily_enabled,weekly_enabled) VALUES(1,'09:15',1,1)");
-  let tail=Promise.resolve();
-  const raw={prepare(sql:string){let values:unknown[]=[];return {bind(...args:unknown[]){values=args;return this;},async all(){return {success:true,results:sqlite.prepare(sql).all(...values),meta:{}};}};},batch(statements:Array<{all:()=>Promise<unknown>}>){
-    const next=tail.then(async()=>{sqlite.exec('BEGIN');try{const rows=[];for(const statement of statements)rows.push(await statement.all());sqlite.exec('COMMIT');return rows;}catch(error){sqlite.exec('ROLLBACK');throw error;}});tail=next.then(()=>{},()=>{});return next;
-  }} as any;
-  const vault=await reportMailVault(secret);
-  const configure=(email='fixture@example.invalid',baseRevision=0)=>saveReportRecipient({db:raw,ownerId:1,email,baseRevision,vault,now});
-  const issueFixture=async(expires=seconds+1800)=>{
-    const token=await reportVerificationToken(),contact=sqlite.prepare('SELECT * FROM life_report_mail_contacts WHERE owner_id=1').get(),key=token.hash;
-    // Test-only fake outbound proof. No production issuer or provider is wired yet.
-    sqlite.prepare("INSERT INTO life_report_mail_deliveries(delivery_key,owner_id,kind,purpose_key,contact_revision,fingerprint,provider_identity,state,message_sha256,created_at,updated_at) VALUES(?,1,'verification',?,?,?,'mock-v1','accepted',?,?,?)").run(key,key,contact.revision,contact.fingerprint,'a'.repeat(64),seconds,seconds);
-    sqlite.prepare('INSERT INTO life_report_mail_verifications(token_hash,owner_id,contact_revision,fingerprint,delivery_key,created_at,expires_at) VALUES(?,1,?,?,?,?,?)').run(token.hash,contact.revision,contact.fingerprint,key,seconds-60,expires);
-    return token.token;
-  };
-  return {sqlite,raw,vault,configure,issueFixture};
-}
-
 it('stores only account-bound ciphertext, avoids unchanged rewrites and rejects stale recipient edits',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     expect(await f.configure()).toMatchObject({saved:true,contactRevision:1,maskedRecipient:'f***@example.invalid',verified:false,enabled:false});
     const original=f.sqlite.prepare('SELECT * FROM life_report_mail_contacts').get();expect(JSON.stringify(original)).not.toContain('fixture@example.invalid');
     const before=f.sqlite.prepare('SELECT total_changes() AS n').get().n;
@@ -44,7 +16,7 @@ it('stores only account-bound ciphertext, avoids unchanged rewrites and rejects 
 });
 
 it('redeems a token once under racing verification, then changing address disables delivery and invalidates old proofs',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();const token=await f.issueFixture();
     expect(await verifyReportRecipient({db:f.raw,ownerId:2,token,vault:f.vault,now})).toEqual({verified:false});
     const verified=await Promise.all(Array.from({length:5},()=>verifyReportRecipient({db:f.raw,ownerId:1,token,vault:f.vault,now})));
@@ -60,7 +32,7 @@ it('redeems a token once under racing verification, then changing address disabl
 });
 
 it('rejects expired/unverified/suppressed activation and supports a manual pause without requiring decryption',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();const expired=await f.issueFixture(seconds-1);
     expect(await verifyReportRecipient({db:f.raw,ownerId:1,token:expired,vault:f.vault,now})).toEqual({verified:false});
     expect(await setReportEmailEnabled({db:f.raw,ownerId:1,enabled:true,contactRevision:1,baseRevision:1,now})).toMatchObject({saved:false});
@@ -74,7 +46,7 @@ it('rejects expired/unverified/suppressed activation and supports a manual pause
 });
 
 it('rolls back encrypted recipient changes if disabling the old delivery flag fails later in the transaction',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();const original=f.sqlite.prepare('SELECT * FROM life_report_mail_contacts').get();
     f.sqlite.exec("CREATE TRIGGER fixture_contact_abort BEFORE UPDATE ON life_report_preferences BEGIN SELECT RAISE(ABORT,'fixture contact transaction abort'); END");
     await expect(f.configure('changed@example.invalid',1)).rejects.toThrow('transaction abort');
@@ -84,7 +56,7 @@ it('rolls back encrypted recipient changes if disabling the old delivery flag fa
 
 
 it('claims one verification slot under racing requests and never persists or returns the inbox token',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();const messages:Array<any>=[];
     const provider:ReportMailProvider={identity:'mock-v1',async submit(message){messages.push(message);return {state:'accepted',id:'<fixture-accepted-1@relay.example.invalid>'};}};
     const options={db:f.raw,ownerId:1,vault:f.vault,provider,now};
@@ -101,7 +73,7 @@ it('claims one verification slot under racing requests and never persists or ret
 });
 
 it('retains unknown send outcomes and does not resubmit after a provider response or database write is lost',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();let calls=0;
     const provider:ReportMailProvider={identity:'mock-v1',async submit(){calls++;throw Error('fixture secret diagnostic');}};
     const options={db:f.raw,ownerId:1,vault:f.vault,provider,now};
@@ -120,7 +92,7 @@ it('retains unknown send outcomes and does not resubmit after a provider respons
 });
 
 it('limits new verification requests and keeps admission receipts across UTC days',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();let calls=0;
     const provider:ReportMailProvider={identity:'mock-v1',async submit(){calls++;return {state:'accepted',id:'fixture-admitted-'+calls};}};
     const options={db:f.raw,ownerId:1,vault:f.vault,provider,now};
@@ -134,7 +106,7 @@ it('limits new verification requests and keeps admission receipts across UTC day
 });
 
 it('does not submit to a recipient changed between decryption and the durable claim, or without a configured provider',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();let calls=0;
     const provider:ReportMailProvider={identity:'mock-v1',async submit(){calls++;return {state:'accepted',id:'must-not-send'};}};
     expect(await requestReportVerification({db:f.raw,ownerId:1,vault:f.vault,now})).toMatchObject({state:'not-configured'});
@@ -147,7 +119,7 @@ it('does not submit to a recipient changed between decryption and the durable cl
 
 
 it('uses a whole-provider deadline and retains the quota without automatically retrying the same verification',async()=>{
-  const f=await fixture();try{
+  const f=await mailFixture();try{
     await f.configure();let calls=0;
     const provider:ReportMailProvider={identity:'mock-v1',async submit(){calls++;return await new Promise(()=>{});}};
     const options={db:f.raw,ownerId:1,vault:f.vault,provider,now,timeoutMs:10};

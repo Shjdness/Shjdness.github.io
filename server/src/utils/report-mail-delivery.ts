@@ -68,8 +68,8 @@ export async function submitReportDelivery(options:{db:D1Database;ownerId:number
     AND EXISTS(SELECT 1 FROM life_report_mail_contacts c WHERE c.owner_id=? AND c.revision=? AND c.fingerprint=? AND c.paused_reason IS NULL
       AND (?='verification' OR (c.verified_at IS NOT NULL AND EXISTS(SELECT 1 FROM life_report_preferences p WHERE p.owner_id=c.owner_id AND p.email_enabled=1))))
     AND (?='verification' OR EXISTS(SELECT 1 FROM life_report_jobs j JOIN life_report_preferences p ON p.owner_id=j.owner_id
-      WHERE j.job_key=life_report_mail_deliveries.job_key AND j.owner_id=? AND j.state='ready' AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1)))
-    RETURNING delivery_key`).bind(claimSeconds,ownerId,key,ownerId,claimSeconds,ownerId,row.contact_revision,row.fingerprint,row.kind,row.kind,ownerId).all();
+      WHERE j.job_key=life_report_mail_deliveries.job_key AND j.owner_id=? AND j.state='ready' AND j.anchor_at>=(SELECT enabled_at FROM life_report_mail_contacts WHERE owner_id=j.owner_id) AND j.anchor_at>=? AND j.anchor_at<=? AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1)))
+    RETURNING delivery_key`).bind(claimSeconds,ownerId,key,ownerId,claimSeconds,ownerId,row.contact_revision,row.fingerprint,row.kind,row.kind,ownerId,claimSeconds-86400,claimSeconds).all();
   if(!claim.success)throw Error('Mail claim unconfirmed');if(!claim.results.length)return stop('disabled');
   let outcome:{state:'accepted';id:string}|{state:'rejected'}|{state:'unknown'}={state:'unknown'};
   try{

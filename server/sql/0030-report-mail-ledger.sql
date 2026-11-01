@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS life_report_mail_contacts (
   fingerprint text NOT NULL CHECK(length(fingerprint)=64),
   revision integer NOT NULL CHECK(revision>=1),
   verified_at integer,
+  enabled_at integer,
   paused_reason text CHECK(paused_reason IN ('bounced','complained')),
   updated_at integer NOT NULL DEFAULT (unixepoch())
 );
@@ -61,7 +62,8 @@ CREATE TABLE IF NOT EXISTS life_report_mail_admissions (
 CREATE TABLE IF NOT EXISTS life_report_mail_events (
   event_id text PRIMARY KEY NOT NULL CHECK(length(event_id)<=128),
   delivery_key text NOT NULL REFERENCES life_report_mail_deliveries(delivery_key),
-  status text NOT NULL CHECK(status IN ('accepted','delivered','bounced','complained')),
+  status text NOT NULL CHECK(status IN ('accepted','delivered','rejected','bounced','complained')),
+  event_sha256 text NOT NULL CHECK(length(event_sha256)=64),
   created_at integer NOT NULL
 );
 INSERT INTO info(key,value) VALUES('migration_version','30')
