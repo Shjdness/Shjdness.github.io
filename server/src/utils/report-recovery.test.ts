@@ -4,6 +4,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {expect,it} from 'vitest';
 import {BACKUP_TABLES,encryptBackup,decryptBackup,type Backup} from '../../../client/src/features/life/backup-format';
 import {buildBackupEnvelope} from '../services/life-backup';
+import {reportAIRequestKey,reportDigest} from './report-analysis-format';
 import {reportSnapshot,reportWindow} from './life-report';
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
@@ -17,7 +18,7 @@ function targetDatabase(){
   return sqlite;
 }
 
-async function encryptedFixture(){
+async function encryptedFixture(version:3|4=3){
   const data:Record<string,unknown[]>=Object.fromEntries(BACKUP_TABLES.map(name=>[name,[]]));
   const report=reportSnapshot(1,{version:1,ownerId:1,generatedAt:'2026-11-02T00:00:00Z',period:reportWindow('daily',new Date('2026-11-02T00:00:00Z')),coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:1,tasksCompleted:1,ideasCreated:0,habitCompletions:1,daysWithNotes:1,focus:{completedSessions:1,recordedMinutes:7,earlySessions:1},aiEnabled:false,emailEnabled:false});
   const json=JSON.stringify(report),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(json));
@@ -25,14 +26,18 @@ async function encryptedFixture(){
   data.lifeReports=[{id:501,ownerId:1,kind:'daily',periodStart:report.period.start,periodEnd:report.period.end,timezone:'Asia/Shanghai',templateVersion:1,snapshotJson:json,snapshotSha256:sha,createdAt:'2026-11-02T00:00:00Z'}];
   // Source flags can be enabled; recovery must NOT resume external activity.
   data.lifeReportPreferences=[{ownerId:1,timezone:'Asia/Shanghai',dailyTime:'08:00',weeklyTime:'09:00',weeklyDay:1,dailyEnabled:1,weeklyEnabled:1,emailEnabled:1,aiEnabled:1,aiScope:'statistics'}];
-  const backup=await buildBackupEnvelope(1,data,3);
+  if(version===4){
+    const result=JSON.stringify({summary:'合成成果记录。',observations:[],actions:['选择一件小事。']});
+    data.lifeReportAnalyses=[{requestKey:await reportAIRequestKey({id:501,ownerId:1,sha256:sha}),ownerId:1,reportId:501,snapshotSha256:sha,model:'deepseek-flash',promptVersion:1,state:'succeeded',reason:null,analysisJson:result,analysisSha256:await reportDigest(result),createdAt:'2026-11-02T00:00:00Z',updatedAt:'2026-11-02T00:00:00Z'}];
+  }
+  const backup=await buildBackupEnvelope(1,data,version);
   return {encrypted:await encryptBackup(backup,'isolated-report-recovery-fixture'),report,sha};
 }
 
 /** Test-only procedure, not an exported production restore path. Start only AFTER
  * decryptBackup has verified owner, envelope and inner report snapshots. */
 function restoreFixture(sqlite:any,backup:Backup){
-  if(backup.version!==3||backup.ownerId!==1)throw Error('Fixture requires a verified owner v3 backup');
+  if(![3,4].includes(backup.version)||backup.ownerId!==1)throw Error('Fixture requires a verified owner v3 backup');
   sqlite.exec('BEGIN');
   try{
     for(const value of backup.data.lifeReports){
@@ -42,6 +47,10 @@ function restoreFixture(sqlite:any,backup:Backup){
     for(const value of backup.data.lifeReportPreferences){
       const p=value as Record<string,any>;
       sqlite.prepare(`INSERT INTO life_report_preferences(owner_id,timezone,daily_time,weekly_time,weekly_day,daily_enabled,weekly_enabled,email_enabled,ai_enabled,ai_scope) VALUES(?,?,?,?,?,0,0,0,0,?)`).run(p.ownerId,p.timezone,p.dailyTime,p.weeklyTime,p.weeklyDay,p.aiScope);
+    }
+    for(const value of backup.data.lifeReportAnalyses??[]){
+      const a=value as Record<string,any>,pending=a.state==='pending';
+      sqlite.prepare(`INSERT INTO life_report_analyses(request_key,owner_id,report_id,snapshot_sha256,model,prompt_version,state,reason,analysis_json,analysis_sha256,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(a.requestKey,a.ownerId,a.reportId,a.snapshotSha256,a.model,a.promptVersion,pending?'unknown':a.state,pending?'interrupted':a.reason,a.analysisJson,a.analysisSha256,Date.parse(a.createdAt)/1000,Date.parse(a.updatedAt)/1000);
     }
     sqlite.exec('COMMIT');
   }catch(error){sqlite.exec('ROLLBACK');throw error;}
@@ -89,5 +98,26 @@ it('refuses wrong accounts/files before restore and rolls the whole report resto
     target.exec('DROP TRIGGER fixture_abort_report_restore');restoreFixture(target,backup);
     expect(target.prepare('SELECT count(*) AS n FROM life_reports').get()).toMatchObject({n:1});
     assertUnrelatedData(target);
+  }finally{target.close();}
+});
+
+
+it('recovers encrypted v4 analysis results without changing global spend and never resumes pending calls',async()=>{
+  const source=await encryptedFixture(4),target=targetDatabase();
+  try{
+    const backup=await decryptBackup(source.encrypted,'isolated-report-recovery-fixture',1);
+    restoreFixture(target,backup);
+    expect(target.prepare('SELECT state,analysis_json FROM life_report_analyses').get()).toMatchObject({state:'succeeded',analysis_json:expect.stringContaining('合成成果记录')});
+    assertUnrelatedData(target);
+    const pending=structuredClone(backup),a=pending.data.lifeReportAnalyses[0] as Record<string,any>;
+    a.state='pending';a.reason=null;a.analysisJson=null;a.analysisSha256=null;
+    const clean=targetDatabase();
+    try{pending.sha256=await reportDigest(JSON.stringify(pending.data));const pendingFile=await encryptBackup(pending,'isolated-pending-v4-passphrase');const checked=await decryptBackup(pendingFile,'isolated-pending-v4-passphrase',1);restoreFixture(clean,checked);expect(clean.prepare('SELECT state,reason FROM life_report_analyses').get()).toMatchObject({state:'unknown',reason:'interrupted'});assertUnrelatedData(clean);}finally{clean.close();}
+    const interrupted=targetDatabase();
+    try{
+      interrupted.exec("CREATE TRIGGER fixture_analysis_abort BEFORE INSERT ON life_report_analyses BEGIN SELECT RAISE(ABORT,'analysis restore failure'); END");
+      expect(()=>restoreFixture(interrupted,backup)).toThrow('analysis restore failure');
+      expect(interrupted.prepare('SELECT count(*) AS n FROM life_reports').get()).toMatchObject({n:0});assertUnrelatedData(interrupted);
+    }finally{interrupted.close();}
   }finally{target.close();}
 });

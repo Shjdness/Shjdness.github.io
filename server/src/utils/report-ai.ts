@@ -2,16 +2,11 @@ import type {D1Database} from '@cloudflare/workers-types';
 import type {LifeReportPreview} from './life-report';
 import {reportSnapshot} from './report-history';
 
-export const REPORT_AI_MODEL='deepseek-flash';
+import {analysisValue,REPORT_AI_MODEL,type ReportAnalysis} from './report-analysis-format';
+export {REPORT_AI_MODEL,reportAIRequestKey} from './report-analysis-format';
 export const REPORT_AI_MONTHLY_FEN=1000;
 export const REPORT_AI_RESERVE_FEN=5;
-const PRICE_REVIEW_BEFORE=Date.parse('2026-12-01T00:00:00+08:00');
-
-export async function reportAIRequestKey(record:{id:number;ownerId:number;sha256:string}){
-  if(!Number.isSafeInteger(record.id)||record.id<=0||!Number.isSafeInteger(record.ownerId)||record.ownerId<=0||!/^[a-f0-9]{64}$/.test(record.sha256))throw Error('Stored report required');
-  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`report-analysis:v1:${REPORT_AI_MODEL}:${record.ownerId}:${record.id}:${record.sha256}`));
-  return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
-}
+export const REPORT_AI_PRICE_REVIEW_BEFORE=Date.parse('2026-12-01T00:00:00+08:00');
 
 /** Only integer metrics leave the Worker. No dates, IDs, names, URLs or prose. */
 export function reportAIInput(value:LifeReportPreview){
@@ -40,8 +35,7 @@ export async function reserveReportAI(db:D1Database,key:string,now=new Date()){
 
 const INSTRUCTION='你是温和、务实的生活复盘助手。输入JSON只有统计数字，不含完整生活记录。不要编造具体经历、任务名称、人格评价或未提供的趋势，不把无记录说成没有努力。recordedFocusMinutes是保存值，不是独立核验用时；earlyFocusSessions为提前结束记录，习惯仅为次数没有完成率。仅返回JSON对象：summary为一句简短总结，observations为最多3条有依据的观察，actions为最多3条可选择的小行动。不要输出链接、HTML、Markdown或重新计算统计数字。';
 
-type Analysis={summary:string;observations:string[];actions:string[]};
-export type ReportAIResult={mode:'ai';analysis:Analysis;model:typeof REPORT_AI_MODEL}|{mode:'statistics';reason:'not-configured'|'pricing-review'|'budget-or-duplicate'|'unavailable'};
+export type ReportAIResult={mode:'ai';analysis:ReportAnalysis;model:typeof REPORT_AI_MODEL}|{mode:'statistics';reason:'not-configured'|'pricing-review'|'budget-or-duplicate'|'unavailable'};
 
 async function limitedJSON(response:Response,signal:AbortSignal){
   const reader=response.body?.getReader();if(!reader)throw Error('Missing response');
@@ -52,20 +46,12 @@ async function limitedJSON(response:Response,signal:AbortSignal){
   finally{signal.removeEventListener('abort',cancel);await reader.cancel().catch(()=>{});}
 }
 
-function analysisValue(value:unknown):Analysis {
-  if(!value||typeof value!=='object')throw Error('Invalid analysis');
-  const v=value as Record<string,unknown>;
-  const plain=(s:unknown,max:number):s is string=>typeof s==='string'&&s.trim().length>0&&s.length<=max&&!/<|>|https?:\/\//i.test(s);
-  if(!plain(v.summary,600)||!Array.isArray(v.observations)||v.observations.length>3||!v.observations.every(s=>plain(s,240))||!Array.isArray(v.actions)||v.actions.length>3||!v.actions.every(s=>plain(s,240)))throw Error('Invalid analysis');
-  return {summary:v.summary.trim(),observations:v.observations.map(s=>s.trim()),actions:v.actions.map(s=>s.trim())};
-}
-
 /** Internal adapter only; reserve MUST atomically acquire a durable unique job key.
  * No automatic retries, alternate providers, tools, search or logging of errors. */
 export async function analyzeReport(options:{report:LifeReportPreview;apiKey?:string;enabled:boolean;reserve:()=>Promise<boolean>;fetcher?:(url:string,init:RequestInit)=>Promise<Response>;now?:Date;timeoutMs?:number}):Promise<ReportAIResult>{
   if(!options.enabled||!options.apiKey)return {mode:'statistics',reason:'not-configured'};
   const now=options.now??new Date();
-  if(!Number.isFinite(now.getTime())||now.getTime()>=PRICE_REVIEW_BEFORE)return {mode:'statistics',reason:'pricing-review'};
+  if(!Number.isFinite(now.getTime())||now.getTime()>=REPORT_AI_PRICE_REVIEW_BEFORE)return {mode:'statistics',reason:'pricing-review'};
   const metrics=reportAIInput(options.report);
   const body=JSON.stringify({model:REPORT_AI_MODEL,thinking:{type:'disabled'},stream:false,max_tokens:768,response_format:{type:'json_object'},messages:[{role:'system',content:INSTRUCTION},{role:'user',content:JSON.stringify(metrics)}]});
   // Fixed numeric projection + static prompt only. Limit before reservation/send.

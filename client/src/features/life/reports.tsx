@@ -55,7 +55,7 @@ export function LifeReportsView(){
   return <LifeLayout section="reports" title="复盘与提醒" intro="回看已记录的进展，让下一步更容易开始。">
     <div className="life-reports">
       <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
-      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 分析与邮件提醒尚未启用，不会向外部服务提交生活记录。</p>
+      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 仅在保存报告后明确选择时分析统计数字；邮件提醒尚未启用。</p>
       {loading&&!historical&&<p role="status">正在读取已同步记录…</p>}
       {error&&!historical&&<p role="alert">{error}</p>}
       {report&&<>

@@ -19,7 +19,7 @@ export function LifeBackupButton() {
       if (passphrase.length < 12 || passphrase !== confirmation) throw new Error('请输入至少 12 字符且两次一致的备份口令');
       const [pending, legacy] = await Promise.all([getSyncQueue(), getLegacySyncQueueCount()]);
       if (pending.length || legacy) throw new Error(`还有 ${pending.length + legacy} 条离线操作待核对；同步完成后再导出`);
-      const backup = await validateBackup(await lifeApi<unknown>('/life/backup?version=3', { cache: 'no-store' }, 60_000), ownerId);
+      const backup = await validateBackup(await lifeApi<unknown>('/life/backup?version=4', { cache: 'no-store' }, 60_000), ownerId);
       const encrypted = await encryptBackup(backup, passphrase);
       const blob = new Blob([JSON.stringify(encrypted)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -30,7 +30,7 @@ export function LifeBackupButton() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setMessage(`已加密并下载：文章/日记 ${backup.counts.feeds} 条、待办 ${backup.counts.lifeTodos} 条、番茄钟 ${backup.counts.pomodoroSessions} 条${backup.version===3?`、复盘报告 ${backup.counts.lifeReports} 份`:'；旧版备份范围不含复盘历史'}；请另行保管口令`);
+      setMessage(`已加密并下载：文章/日记 ${backup.counts.feeds} 条、待办 ${backup.counts.lifeTodos} 条、番茄钟 ${backup.counts.pomodoroSessions} 条${backup.version>=3?`、复盘报告 ${backup.counts.lifeReports} 份${backup.version===4?`、分析记录 ${backup.counts.lifeReportAnalyses} 条`:'（旧版未包含 AI 分析记录）'}`:'；旧版备份范围不含复盘历史'}；请另行保管口令`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '备份失败，请稍后重试');
     } finally {
@@ -46,7 +46,7 @@ export function LifeBackupButton() {
       if (!ownerId) throw new Error('请重新登录后验证备份');
       if (file.size > 100 * 1024 * 1024) throw new Error('备份文件超过 100 MB，请使用离线恢复工具核对');
       const backup = await decryptBackup(JSON.parse(await file.text()), passphrase, ownerId);
-      setMessage(`备份有效：${new Date(backup.exportedAt).toLocaleString('zh-CN')}；文章/日记 ${backup.counts.feeds} 条、待办 ${backup.counts.lifeTodos} 条、番茄钟 ${backup.counts.pomodoroSessions} 条${backup.version===3?`、复盘报告 ${backup.counts.lifeReports} 份`:'；旧版备份范围不含复盘历史'}。此处仅验证，不会覆盖网站数据。`);
+      setMessage(`备份有效：${new Date(backup.exportedAt).toLocaleString('zh-CN')}；文章/日记 ${backup.counts.feeds} 条、待办 ${backup.counts.lifeTodos} 条、番茄钟 ${backup.counts.pomodoroSessions} 条${backup.version>=3?`、复盘报告 ${backup.counts.lifeReports} 份${backup.version===4?`、分析记录 ${backup.counts.lifeReportAnalyses} 条`:'（旧版未包含 AI 分析记录）'}`:'；旧版备份范围不含复盘历史'}。此处仅验证，不会覆盖网站数据。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '备份验证失败');
     } finally {

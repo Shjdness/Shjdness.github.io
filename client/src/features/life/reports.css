@@ -28,3 +28,9 @@
 .life-report-settings label{display:flex;flex-direction:column;gap:.4rem;min-width:0}
 .life-report-settings input,.life-report-settings select{box-sizing:border-box;width:100%;min-width:0;border:1px solid var(--surface-edge);border-radius:.6rem;background:var(--surface-inner);color:var(--ink);padding:.5rem}
 @media(max-width:640px){.life-reports-toolbar{align-items:stretch}.life-reports-toolbar nav{width:100%}.life-reports-toolbar nav button{flex:1}.life-reports-entry{align-items:flex-start}.life-report-metrics strong{font-size:1.4rem}}
+
+.life-report-analysis { margin-block:1.25rem; padding:1rem; border:1px solid var(--life-border,rgba(150,180,210,.22)); border-radius:1rem; overflow-wrap:anywhere; }
+.life-report-analysis label { display:flex; align-items:flex-start; gap:.5rem; margin-block:.75rem; }
+.life-report-analysis input[type="checkbox"] { flex:0 0 auto; width:1rem; height:1rem; margin-top:.2rem; }
+.life-report-analysis button { margin:.5rem .5rem .25rem 0; max-width:100%; white-space:normal; }
+.life-report-analysis>div{display:block;margin-top:1rem}.life-report-analysis h3{margin:0 0 .6rem}.life-report-analysis h4{margin:1rem 0 .3rem}.life-report-analysis ul{display:block;margin:.3rem 0;padding-left:1.25rem}.life-report-analysis small{display:block;color:var(--ink-muted);margin-top:.8rem}

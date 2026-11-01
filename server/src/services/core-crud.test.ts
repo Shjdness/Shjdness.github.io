@@ -10,6 +10,7 @@ import * as schema from '../db/schema';
 import {runRequestContext} from '../utils/di';
 import {ServerConfig} from '../utils/cache';
 import {validateBackup,encryptBackup,decryptBackup} from '../../../client/src/features/life/backup-format';
+import {reportAIRequestKey,reportDigest} from '../utils/report-analysis-format';
 import {reportWindow,reportSnapshot} from '../utils/life-report';
 vi.mock('../utils/s3',()=>({createS3Client:()=>({send:vi.fn(async()=>({}))})}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
@@ -106,6 +107,27 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect(batch).toHaveBeenCalledOnce();expect(batch.mock.calls[0][0]).toHaveLength(17);
   const v3Encrypted=await encryptBackup(v3,'synthetic-v3-application-passphrase');
   expect((await decryptBackup(v3Encrypted,'synthetic-v3-application-passphrase',1)).counts.lifeReportPreferences).toBe(1);
+
+  // Explicit v4 adds analysis results, preserving v2/v3 manifests and one snapshot transaction.
+  const ownReport=sqlite.prepare('SELECT id,snapshot_sha256 FROM life_reports WHERE owner_id=1').get();
+  const text=JSON.stringify({summary:'合成统计分析。',observations:[],actions:[]});
+  sqlite.prepare("INSERT INTO life_report_analyses(request_key,owner_id,report_id,snapshot_sha256,model,state,analysis_json,analysis_sha256) VALUES(?,?,?,?,?,'succeeded',?,?)").run(await reportAIRequestKey({id:ownReport.id,ownerId:1,sha256:ownReport.snapshot_sha256}),1,ownReport.id,ownReport.snapshot_sha256,'deepseek-flash',text,await reportDigest(text));
+  const otherReport=sqlite.prepare('SELECT id,snapshot_sha256 FROM life_reports WHERE owner_id=21').get();
+  sqlite.prepare("INSERT INTO life_report_analyses(request_key,owner_id,report_id,snapshot_sha256,model,state) VALUES(?,?,?,?,?,'pending')").run(await reportAIRequestKey({id:otherReport.id,ownerId:21,sha256:otherReport.snapshot_sha256}),21,otherReport.id,otherReport.snapshot_sha256,'deepseek-flash');
+  batch.mockClear();
+  const v4Response=await fetcher('http://localhost/life/backup?version=4',{headers});
+  expect(v4Response.status).toBe(200);const v4=await validateBackup(await v4Response.json(),1);
+  expect(v4.version).toBe(4);expect(v4.counts.lifeReportAnalyses).toBe(1);
+  expect(v4.data.lifeReportAnalyses[0]).toMatchObject({ownerId:1,state:'succeeded'});
+  expect(Object.keys(v4.data)).not.toContain('lifeReportAIReservations');
+  expect(batch).toHaveBeenCalledOnce();expect(batch.mock.calls[0][0]).toHaveLength(18);
+  const v4Encrypted=await encryptBackup(v4,'synthetic-v4-application-passphrase');
+  expect((await decryptBackup(v4Encrypted,'synthetic-v4-application-passphrase',1)).counts.lifeReportAnalyses).toBe(1);
+  for(const mutate of [(b:any)=>{b.data.lifeReportAnalyses[0].ownerId=21;},(b:any)=>{b.data.lifeReportAnalyses[0].analysisJson='{}';},(b:any)=>{b.data.lifeReportAnalyses[0].reportId=otherReport.id;}]){
+    const invalid=structuredClone(v4);mutate(invalid);
+    invalid.sha256=await reportDigest(JSON.stringify(invalid.data));
+    await expect(validateBackup(invalid,1)).rejects.toThrow();
+  }
 
   for(const [url,body,table] of [
     ['/life/todos',{content:'concurrent task',type:'task',clientKey:'parallel-todo'},'life_todos'],

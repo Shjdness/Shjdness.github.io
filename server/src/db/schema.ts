@@ -121,6 +121,22 @@ export const lifeReports = sqliteTable('life_reports', {
     createdAt: created_at,
 }, table=>({ownerPeriod:uniqueIndex('life_reports_owner_period_version').on(table.ownerId,table.kind,table.periodStart,table.periodEnd,table.templateVersion)}));
 
+/** Durable call/results only; global spend receipts stay outside personal backups. */
+export const lifeReportAnalyses = sqliteTable('life_report_analyses', {
+    requestKey: text('request_key').primaryKey(),
+    ownerId: integer('owner_id').notNull().references(() => users.id, {onDelete:'cascade'}),
+    reportId: integer('report_id').notNull().references(() => lifeReports.id, {onDelete:'cascade'}),
+    snapshotSha256: text('snapshot_sha256').notNull(),
+    model: text('model').notNull(),
+    promptVersion: integer('prompt_version').notNull().default(1),
+    state: text('state').notNull(),
+    reason: text('reason'),
+    analysisJson: text('analysis_json'),
+    analysisSha256: text('analysis_sha256'),
+    createdAt: created_at,
+    updatedAt: updated_at,
+}, table=>({reportModel:uniqueIndex('life_report_analyses_report_model').on(table.ownerId,table.reportId,table.model,table.promptVersion)}));
+
 export const dailyBasics = sqliteTable("daily_basics", {
     id: integer("id").primaryKey(),
     ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),

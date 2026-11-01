@@ -9,7 +9,7 @@ const sample=():LifeReportPreview=>({version:1,ownerId:1,generatedAt:'2026-11-02
 function database(){
   const sqlite=new DatabaseSync(':memory:');
   const folder=new URL('../../sql/',import.meta.url);
-  for(const file of readdirSync(folder).filter(name=>name.endsWith('.sql')&&!name.startsWith('0027')).sort()){
+  for(const file of readdirSync(folder).filter(name=>name.endsWith('.sql')&&name<'0027').sort()){
     sqlite.exec(readFileSync(new URL(file,folder),'utf8'));if(file==='0002.sql')sqlite.exec('ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0');
   }
   sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'fixture-a','a',1),(2,'fixture-b','b',1); INSERT INTO life_todos(id,owner_id,content) VALUES(91,1,'original task fixture'); INSERT INTO life_daily_notes(owner_id,date,content) VALUES(1,'2026-11-01','original note fixture')");

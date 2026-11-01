@@ -43,7 +43,7 @@ function fixture(){
 it('protects all report history/settings/status routes and discloses only secret presence to the owner',async()=>{
   const f=fixture();try{
     const patch={dailyTime:'09:00',weeklyTime:'09:30',weeklyDay:1,baseRevision:0};
-    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined]] as const){
+    for(const owner of [undefined,3,4])for(const [path,body] of [['/status',undefined],['/settings',undefined],['/settings',patch],['/history',undefined],['/history',{kind:'daily'}],['/history/1',undefined],['/history/1/analysis',undefined],['/history/1/analysis',{allowNumericAnalysis:true}]] as const){
       const result=await f.request(owner,path,body);expect(result.status).toBe(403);expect(result.headers.get('cache-control')).toContain('no-store');
     }
     expect(f.batch).not.toHaveBeenCalled();
@@ -152,4 +152,26 @@ it('denies anonymous/member/trusted requests, scopes owner identities, and marks
     for(const id of [1,2]){const response=await get(id,'?kind=weekly');expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('private');expect(await response.json()).toMatchObject({ownerId:id,period:{kind:'weekly'}});}
     expect((await get(1,'?kind=invalid')).status).toBe(422);
   }finally{f.sqlite.close();}
+});
+
+
+it('requires explicit numeric consent, scopes analysis to saved owner reports and never repeats a paid call',async()=>{
+  const f=fixture();const provider=vi.fn(async(_url:string,_init:RequestInit)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({summary:'合成数字分析。',observations:[],actions:[]})}}]}));
+  vi.stubGlobal('fetch',provider);
+  try{
+    f.env.DEEPSEEK_API_KEY='synthetic-key-only';
+    const saved=await saveReportSnapshot(f.raw,1,await previewLifeReport(f.raw,1,'daily'));
+    expect((await f.request(2,`/history/${saved.id}/analysis`)).status).toBe(404);
+    expect((await f.request(2,`/history/${saved.id}/analysis`,{allowNumericAnalysis:true})).status).toBe(404);
+    expect((await f.request(1,`/history/${saved.id}/analysis`,{})).status).toBe(422);
+    expect((await f.request(1,`/history/${saved.id}/analysis`,{allowNumericAnalysis:true,diaryBody:'forbidden fixture'})).status).toBe(422);
+    expect(await (await f.request(1,`/history/${saved.id}/analysis`)).json()).toMatchObject({ownerId:1,reportId:saved.id,state:'none'});
+    const generated=await f.request(1,`/history/${saved.id}/analysis`,{allowNumericAnalysis:true});expect(generated.status).toBe(200);
+    expect(await generated.json()).toMatchObject({ownerId:1,reportId:saved.id,state:'succeeded',analysis:{summary:'合成数字分析。'}});
+    const again=await f.request(1,`/history/${saved.id}/analysis`,{allowNumericAnalysis:true});expect((await again.json()).state).toBe('succeeded');
+    expect(provider).toHaveBeenCalledOnce();
+    const body=JSON.parse(provider.mock.calls[0][1].body as string);
+    expect(Object.values(JSON.parse(body.messages[1].content)).every(Number.isSafeInteger)).toBe(true);
+    const status=await (await f.request(1,'/status')).json();expect(status).toMatchObject({reservedMonthlyFen:5,aiEnabled:false,emailEnabled:false});
+  }finally{vi.unstubAllGlobals();f.sqlite.close();}
 });
