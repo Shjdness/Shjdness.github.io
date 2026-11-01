@@ -1,4 +1,5 @@
 import Elysia, { t } from 'elysia';
+import type {D1Database} from '@cloudflare/workers-types';
 import { setup } from '../setup';
 import { getEnv } from '../utils/di';
 import { reportWindow, type ReportKind, type ReportWindow, type LifeReportPreview } from '../utils/life-report';
