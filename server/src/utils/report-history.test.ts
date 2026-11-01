@@ -33,6 +33,7 @@ it('adds report tables without touching old records and keeps all outbound featu
     expect(db.sqlite.prepare('SELECT * FROM life_report_preferences').get()).toMatchObject({daily_time:'08:00',weekly_time:'08:00',weekly_day:1,daily_enabled:0,weekly_enabled:0,email_enabled:0,ai_enabled:0,ai_scope:'statistics'});
     expect(()=>db.sqlite.exec("UPDATE life_report_preferences SET daily_time='29:00'")).toThrow();
     expect(()=>db.sqlite.exec("UPDATE life_report_preferences SET ai_scope='diary-body'")).toThrow();
+    expect(()=>db.sqlite.exec("UPDATE life_report_preferences SET ai_scope='named'")).toThrow();
   }finally{db.sqlite.close();}
 });
 

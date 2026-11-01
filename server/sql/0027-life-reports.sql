@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS life_report_preferences (
   weekly_enabled integer NOT NULL DEFAULT 0 CHECK(weekly_enabled IN (0,1)),
   email_enabled integer NOT NULL DEFAULT 0 CHECK(email_enabled IN (0,1)),
   ai_enabled integer NOT NULL DEFAULT 0 CHECK(ai_enabled IN (0,1)),
-  ai_scope text NOT NULL DEFAULT 'statistics' CHECK(ai_scope IN ('statistics','named')),
+  ai_scope text NOT NULL DEFAULT 'statistics' CHECK(ai_scope='statistics'),
   updated_at integer NOT NULL DEFAULT (unixepoch())
 );
 
