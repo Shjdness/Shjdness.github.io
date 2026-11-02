@@ -1,5 +1,5 @@
 import type {D1Database} from '@cloudflare/workers-types';
-import {dueReportOccurrence} from './report-schedule';
+import {dueReportOccurrence,REPORT_CAPTURE_TIME} from './report-schedule';
 import {reportDigest} from './report-analysis-format';
 import {reportWindow,type ReportKind} from './life-report';
 import {findReportForPeriod,saveReportSnapshot} from './report-history';
@@ -75,7 +75,7 @@ export async function runReportSchedule(db:D1Database,now=new Date(),options:{ch
   let preferences=await select(cursor);if(!preferences.length&&cursor>0)preferences=await select(0);
   let queued=0,processed=0;
   for(const p of preferences){
-    let due=dueReportOccurrence({ownerId:p.owner_id,dailyEnabled:p.daily_enabled===1,weeklyEnabled:p.weekly_enabled===1,dailyTime:p.daily_time,weeklyTime:p.weekly_time,weeklyDay:p.weekly_day},now);
+    let due=dueReportOccurrence({ownerId:p.owner_id,dailyEnabled:p.daily_enabled===1,weeklyEnabled:p.weekly_enabled===1,dailyTime:p.daily_time,weeklyTime:p.weekly_time,weeklyDay:p.weekly_day},now,{captureTime:REPORT_CAPTURE_TIME});
     if(!due)continue;
     let key=await reportDigest(due.occurrenceKey);
     const lookup=async(jobKey:string)=>{
@@ -86,7 +86,7 @@ export async function runReportSchedule(db:D1Database,now=new Date(),options:{ch
     // Moving the weekly day after this week's report already exists must not
     // swallow a different day's daily report or resend that weekly report.
     if(existing&&due.kind==='weekly'&&due.includeDaily&&reportWindow('daily',new Date(existing.anchor_at*1000)).start!==reportWindow('daily',now).start){
-      due=dueReportOccurrence({ownerId:p.owner_id,dailyEnabled:true,weeklyEnabled:false,dailyTime:p.daily_time,weeklyTime:p.weekly_time,weeklyDay:p.weekly_day},now);
+      due=dueReportOccurrence({ownerId:p.owner_id,dailyEnabled:true,weeklyEnabled:false,dailyTime:p.daily_time,weeklyTime:p.weekly_time,weeklyDay:p.weekly_day},now,{captureTime:REPORT_CAPTURE_TIME});
       if(!due)continue;
       key=await reportDigest(due.occurrenceKey);existing=await lookup(key);
     }

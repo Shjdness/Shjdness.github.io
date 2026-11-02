@@ -24,7 +24,7 @@ export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeRep
     `习惯完成记录：${value.habitCompletions} 次；有日历便签：${value.daysWithNotes} 天`,
     `新增未来构想：${value.ideasCreated}`,
   ];
-  const lines=[...block(report,label),...(daily?['',...block(daily,dailyOverlaps?'昨日记录（包含在上周统计中，不重复相加）':'昨日记录（与上周统计分别展示）')]:[]),
+  const lines=[...block(report,label),`实际采集快照：${new Date(report.generatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}（北京时间）`,...(daily?['',...block(daily,dailyOverlaps?'昨日记录（包含在上周统计中，不重复相加）':'昨日记录（与上周统计分别展示）')]:[]),
     ...(analysis?['','AI 数字复盘（可能有误，仅供参考）',analysis.summary,...analysis.observations.map(s=>`观察：${s}`),...analysis.actions.map(s=>`可选行动：${s}`)]:['','本次为统计版。']),
     '', '只包含已同步记录，不代表完整生活；无记录不等于没有行动。每日执行是记忆清单，不计习惯打卡率。',
     '专注分钟为保存值，不是独立核验用时。', '', `查看报告及暂停提醒：${LINK}（需登录）`];

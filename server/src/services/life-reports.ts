@@ -16,6 +16,8 @@ import {checkinAIShareableInMail} from '../utils/report-checkin-format';
 import {checkinAIRequest} from '../utils/checkin-ai';
 import {generateCheckinAnalysis,readCheckinAnalysis} from '../utils/checkin-analysis';
 
+import {reportCaptureReady} from '../utils/report-schedule';
+
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
 
@@ -97,6 +99,7 @@ export function LifeReportsService() {
       const now=new Date(),reportKind=context.body.kind??'daily',period=reportWindow(reportKind,now);
       const existing=await findReportForPeriod(db,owner,period);
       if(existing)return {ownerId:owner,saved:true,created:false,...existing};
+      if(!reportCaptureReady(now)){context.set.status=503;return {ownerId:owner,code:'REPORT_CAPTURE_NOT_READY',captureTime:'05:00'};}
       const checkins=await optionalCheckinVault(env);
       if(checkins){const stored=await saveReportWithCheckins(db,checkins,owner,period,now);return {ownerId:owner,saved:true,...stored};}
       if(!await reserveReportWrite(db)){context.set.status=503;return {saved:false,code:'REPORT_WRITE_BUDGET_PAUSED'};}

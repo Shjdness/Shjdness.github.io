@@ -149,7 +149,7 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     {preferences&&<fieldset disabled={busy||loading||!status?.schedulerAvailable} className="life-report-automation"><legend>自动保存统计报告</legend>
       <label><input type="checkbox" checked={automationDraft.dailyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,dailyEnabled:checked}));}}/>自动保存日报</label>
       <label><input type="checkbox" checked={automationDraft.weeklyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,weeklyEnabled:checked}));}}/>自动保存周报</label>
-      <p>云端每 5 分钟检查一次，在设置时刻之后保存已同步统计；首次开启时若当天时刻已过，会在下次检查保存。周报当天的日报在周报时间一并保存；已暂停的当期任务不重放，重新开启从下一周期继续。</p>
+      <p>北京时间每日 05:00 起固定采集昨日已同步记录，周报采集完整上周并合并昨日日报；发送仍按上方时间执行。云端每 5 分钟检查一次，实际采集时刻写入报告。05:00 后的补记不改写已固定报告；未同步的本机记录不在其中。若发送时间早于 05:00，将等待采集完成；已暂停任务不重放。</p>
       <p>本开关只控制站内统计保存；AI 分析与邮件提醒需要分别明确启用。</p>
       <button type="button" onClick={()=>void run(saveAutomation)}>保存自动生成设置</button>
     </fieldset>}
