@@ -25,9 +25,10 @@ export async function buildBackupEnvelope(ownerId: number, data: Record<string, 
 export function LifeBackupService() {
   const db = getDB();
   return new Elysia({ aot: false }).use(setup()).get('/life/backup', async ({ uid, lifeAccess, set, query }) => {
-    if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
     set.headers['Cache-Control'] = 'private, no-store, max-age=0';
     set.headers['Pragma'] = 'no-cache';
+    set.headers['Vary'] = 'Origin, Authorization';
+    if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
 
     const ownFeedIds = db.select({ id: feeds.id }).from(feeds).where(eq(feeds.uid, uid));
     const ownTagIds = db.select({ id: feedHashtags.hashtagId }).from(feedHashtags).where(inArray(feedHashtags.feedId, ownFeedIds));

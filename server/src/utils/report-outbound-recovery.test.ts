@@ -23,6 +23,8 @@ it('exports the real owner-scoped v2-v4 HTTP snapshots without operational proof
     const db=drizzle(f.raw,{schema}),env={DB:f.raw,JWT_SECRET:'synthetic-backup-jwt-32-characters-only',RIN_GITHUB_CLIENT_ID:'fixture',RIN_GITHUB_CLIENT_SECRET:'fixture'} as any;
     const jwt=await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
     const service=runRequestContext(env,db,()=>LifeBackupService());
+    const denied=await runRequestContext(env,db,()=>service.handle(new Request('https://api.example.invalid/life/backup?version=4')));
+    expect(denied.status).toBe(403);expect(denied.headers.get('cache-control')).toContain('no-store');expect(denied.headers.get('vary')).toContain('Authorization');
     for(const version of [2,3,4]){
       const response=await runRequestContext(env,db,()=>service.handle(new Request('https://api.example.invalid/life/backup'+(version===2?'':'?version='+version),{headers:{Authorization:'Bearer '+jwt}})));
       expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
