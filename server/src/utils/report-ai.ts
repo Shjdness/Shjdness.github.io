@@ -61,6 +61,9 @@ export async function analyzeReport(options:{report:LifeReportPreview;apiKey?:st
   try{acquired=await options.reserve();}catch{return {mode:'statistics',reason:'unavailable'};}
   if(!acquired)return {mode:'statistics',reason:'budget-or-duplicate'};
   const controller=new AbortController();
+  // Fixed operational categories only: never log headers, keys, body, output,
+  // owner/report identifiers, or the provider's exception/error text.
+  let failure='transport';
   const timeout=Math.max(1,Math.min(options.timeoutMs??20000,20000));
   let timer:ReturnType<typeof setTimeout>;
   const deadline=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('Provider deadline'));},timeout);});
@@ -68,13 +71,17 @@ export async function analyzeReport(options:{report:LifeReportPreview;apiKey?:st
     const work=async():Promise<ReportAIResult>=>{
     const response=await (options.fetcher??fetch)('https://api.deepseek.com/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${options.apiKey}`,'Content-Type':'application/json'},body,signal:controller.signal,redirect:'error',cache:'no-store',credentials:'omit'});
     if(controller.signal.aborted)throw Error('Cancelled');
-    if(!response.ok){await response.body?.cancel().catch(()=>{});throw Error('Provider unavailable');}
+    if(!response.ok){
+      failure=response.status===401||response.status===403?'authentication':response.status===402?'balance':response.status===429?'rate-limit':response.status>=500?'provider-server':'provider-request';
+      await response.body?.cancel().catch(()=>{});throw Error('Provider unavailable');
+    }
+    failure='invalid-response';
     const envelope=await limitedJSON(response,controller.signal);
     const choice=envelope?.choices?.[0];
     if(choice?.finish_reason!=='stop'||typeof choice.message?.content!=='string'||controller.signal.aborted)throw Error('Incomplete analysis');
     return {mode:'ai',model:REPORT_AI_MODEL,analysis:analysisValue(JSON.parse(choice.message.content))};
     };
     return await Promise.race([work(),deadline]);
-  }catch{return {mode:'statistics',reason:'unavailable'};}
+  }catch{console.warn('Life report AI unavailable',controller.signal.aborted?'timeout':failure);return {mode:'statistics',reason:'unavailable'};}
   finally{clearTimeout(timer!);}
 }

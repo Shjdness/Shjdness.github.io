@@ -48,3 +48,22 @@ it('binds analysis admission to a saved report and digest, independent of later 
   expect(await reportAIRequestKey({...saved,ownerId:2})).not.toBe(await reportAIRequestKey(saved));
   await expect(reportAIRequestKey({...saved,id:0})).rejects.toThrow('Stored report');
 });
+
+it('logs only fixed failure categories without provider text, keys or report statistics',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  try{
+    for(const [status,category] of [[401,'authentication'],[403,'authentication'],[402,'balance'],[429,'rate-limit'],[503,'provider-server'],[400,'provider-request']] as const){
+      log.mockClear();const fetcher=vi.fn(async()=>new Response('private error: synthetic-not-a-real-key, owner 1',{status}));
+      expect(await analyzeReport({...options(),fetcher})).toEqual({mode:'statistics',reason:'unavailable'});
+      expect(log.mock.calls).toEqual([['Life report AI unavailable',category]]);expect(fetcher).toHaveBeenCalledOnce();
+    }
+    for(const [fetcher,category] of [
+      [async()=>{throw Error('sensitive transport diagnostic');},'transport'],
+      [async()=>Response.json({choices:[{finish_reason:'stop',message:{content:'private malformed output'}}]}),'invalid-response'],
+      [async()=>new Response(new ReadableStream({start(){}})),'timeout'],
+    ] as const){
+      log.mockClear();await analyzeReport({...options(),fetcher,timeoutMs:10});
+      expect(log.mock.calls).toEqual([['Life report AI unavailable',category]]);
+    }
+  }finally{log.mockRestore();}
+});
