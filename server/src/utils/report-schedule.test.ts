@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {dueReportOccurrence} from './report-schedule';
+import {dueReportOccurrence,reportCaptureReady,REPORT_CAPTURE_TIME} from './report-schedule';
 import {reportMailContent} from './report-mail-format';
 import {reportWindow,type LifeReportPreview} from './life-report';
 const prefs={ownerId:1,dailyEnabled:true,weeklyEnabled:true,dailyTime:'08:00',weeklyTime:'08:00',weeklyDay:1};
@@ -14,6 +14,10 @@ it('plans Shanghai daily/weekly complete periods and merges Monday daily into on
   expect(dueReportOccurrence({...prefs,weeklyTime:'09:00'},new Date('2026-11-02T00:30:00Z'))).toBeNull();
   expect(dueReportOccurrence(prefs,new Date('2026-11-03T00:00:00Z'))).toMatchObject({kind:'daily',includeDaily:false,period:{fromDate:'2026-11-02',toDateExclusive:'2026-11-03'}});
   expect(dueReportOccurrence({...prefs,dailyEnabled:false,weeklyEnabled:false},new Date('2026-11-02T00:00:00Z'))).toBeNull();
+});
+it('separates a fixed 05:00 capture from the 08:00 delivery anchor without changing calendar periods or occurrence keys',()=>{
+ const capture={captureTime:REPORT_CAPTURE_TIME};expect(dueReportOccurrence(prefs,new Date('2026-11-01T20:59:59Z'),capture)).toBeNull();const atFive=dueReportOccurrence(prefs,new Date('2026-11-01T21:00:00Z'),capture)!;expect(atFive).toMatchObject({kind:'weekly',scheduledAt:'2026-11-02T00:00:00.000Z',period:{fromDate:'2026-10-26',toDateExclusive:'2026-11-02'},includeDaily:true});expect(atFive.occurrenceKey).toBe(dueReportOccurrence(prefs,new Date('2026-11-02T00:00:00Z'))!.occurrenceKey);expect(reportCaptureReady(new Date('2026-11-01T20:59:59Z'))).toBe(false);expect(reportCaptureReady(new Date('2026-11-01T21:00:00Z'))).toBe(true);expect(()=>dueReportOccurrence(prefs,new Date(),{captureTime:'29:00'})).toThrow();
+ const tuesday=dueReportOccurrence(prefs,new Date('2026-11-02T21:00:00Z'),capture)!;expect(tuesday).toMatchObject({kind:'daily',scheduledAt:'2026-11-03T00:00:00.000Z',period:{fromDate:'2026-11-02',toDateExclusive:'2026-11-03'}});
 });
 
 it('handles midnight/year boundaries and explicit disabled weekly reminders without inventing missed occurrences',()=>{

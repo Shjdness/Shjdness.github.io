@@ -9,6 +9,7 @@ import {readReportPreferences,reserveReportWrite,updateReportPreferences,updateR
 import {REPORT_AI_MODEL,REPORT_AI_MONTHLY_FEN,REPORT_AI_PRICE_REVIEW_BEFORE} from '../utils/report-ai';
 import {generateReportAnalysis,readReportAnalysis} from '../utils/report-analysis';
 import {readReportAIConsent,setReportAIConsent} from '../utils/report-ai-consent';
+import {reportCaptureReady} from '../utils/report-schedule';
 
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
@@ -91,6 +92,7 @@ export function LifeReportsService() {
       const now=new Date(),reportKind=context.body.kind??'daily',period=reportWindow(reportKind,now);
       const existing=await findReportForPeriod(db,owner,period);
       if(existing)return {ownerId:owner,saved:true,created:false,...existing};
+      if(!reportCaptureReady(now)){context.set.status=503;return {ownerId:owner,code:'REPORT_CAPTURE_NOT_READY',captureTime:'05:00'};}
       if(!await reserveReportWrite(db)){context.set.status=503;return {saved:false,code:'REPORT_WRITE_BUDGET_PAUSED'};}
       const stored=await saveReportSnapshot(db,owner,await previewLifeReport(db,owner,reportKind,now));
       return {ownerId:owner,saved:true,...stored};

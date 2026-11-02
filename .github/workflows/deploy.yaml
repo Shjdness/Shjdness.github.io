@@ -100,6 +100,7 @@ jobs:
           done
           if [ "$snapshot_ready" != "1" ]; then echo 'Transactional backup API was not ready' >&2; exit 1; fi
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportQQSMTPV1":true'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportFixedCaptureV1":true'
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/preview")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/mail")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/ai-automation")" = "403"

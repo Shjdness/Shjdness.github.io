@@ -70,6 +70,12 @@ it('saves only server-generated facts once per complete period and keeps history
     expect(f.sqlite.prepare("SELECT reserved FROM rss_write_budget WHERE day LIKE 'reports:%'").get()).toMatchObject({reserved:8});
   }finally{f.sqlite.close();}
 });
+it('prevents a new manual report before fixed capture, but permits preview/history and saving from 05:00',async()=>{
+ const f=fixture();vi.useFakeTimers({toFake:['Date']});try{
+  vi.setSystemTime(new Date('2026-11-02T20:59:59Z'));const early=await f.request(2,'/history',{kind:'daily'});expect(early.status).toBe(503);expect(await early.json()).toMatchObject({code:'REPORT_CAPTURE_NOT_READY',captureTime:'05:00'});expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get().n).toBe(0);expect((await f.request(2,'/preview?kind=daily')).status).toBe(200);
+  vi.setSystemTime(new Date('2026-11-02T21:00:00Z'));expect((await f.request(2,'/history',{kind:'daily'})).status).toBe(200);expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get().n).toBe(1);
+ }finally{vi.useRealTimers();f.sqlite.close();}
+});
 
 it('uses revision-aware preferences, does not rewrite retries or enable external activity, and pauses writes on budget exhaustion',async()=>{
   const f=fixture();try{
