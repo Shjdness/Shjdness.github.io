@@ -521,3 +521,10 @@ Owner历史保存/20条分页/详情、revision时间设置、仅布尔Secret配
 - 对一份已存在真实日报，仅本次数字同意后执行一次分析。页面返回unknown，重新读取仍unknown；本月预留从0.00变0.05元且未再增加。预留不是已确认供应商账单，不能据此声称Key有效或AI成功；没有重试、创建测试报告、代开自动设置或发邮件。证据outputs/life-reports-2026-11-02/deepseek-real-unconfirmed.png。旧适配器统一抹去错误，无法追溯此次是鉴权/余额/限流/超时/格式失败，不猜测根因。
 - 补充固定运维分类日志：authentication/balance/rate-limit/provider-server/provider-request/invalid-response/transport/timeout；不记录原始错误、密钥、头、正文、统计数字或owner/report标识。只在已获claim的一次失败记录，不新增API调用或重试，不改持久unknown/预留与旧v4备份/冻结schema。未来正常业务请求可用于诊断，本次旧unknown不重放。
 - 新增隔离回归验证各HTTP类别、传输、无效响应和超时只输出固定二元日志，无原始敏感内容。5文件19项定向和服务端类型/diff通过；Vitest首次受沙箱临时文件EPERM阻止，普通权限重跑通过，不是业务失败。Brevo阶段60文件223项全量和D1验收见前检查点；接下来实际main非缓存构建及发布门。
+
+## 2026-11-02 Brevo与AI安全诊断发布验收
+
+- main 645cd09a02f18da75c1bb3612c4eb552c7d01a81已发布：Worker 41376883920、Pages 41376883895均Success。实际main非缓存tsc+Vite构建、服务端类型及19项定向再通过；既有大包告警保留。无新增schema或生产配置更改，0030/0031保持冻结。
+- 线上只读：reportBrevoV1=true；Brevo回调GET405/no-store；邮件、自动AI及v4备份匿名403/private/no-store。首页、新index与Life资源200，反馈标签已更新。证据brevo-live.json、brevo-pages-live.json和两CI HTML位于outputs/life-reports-2026-11-02。没有发真实邮件或新增AI调用。
+- 真实站长登录和一次已存报告分析已执行：结果仍unknown，预算仅预留0.05元，GET重读不加预留。当前无法追溯旧统一错误的具体原因；安全分类日志从本版本以后的正常调用生效，不重放本次unknown，也不将密钥存在/模拟通过称真实AI成功。自动统计、自动AI和邮件仍保持用户原来关闭状态。
+- 任务整体未完成：尚缺合法发件服务/发件人、邮箱验证与实际送达；用户此前明确没有域名/服务，不能自动注册/接受条款/购买或提取个人邮箱凭据。无需再等GitHub登录或再次请求账号授权。后续从此状态继续，禁止为诊断重试同一付费报告、删除消费/claim账本或重置未知结果。若无必要独立代码任务则保存检查点等待外部变化，不能无限新增模块或把发布当外部服务可用。
