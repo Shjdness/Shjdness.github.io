@@ -5,7 +5,7 @@ export type ReportMailEvent={eventId:string;deliveryKey:string;providerId:string
 const rank:Record<string,number>={queued:0,submitting:0,unknown:0,accepted:1,delivered:2,rejected:3,bounced:4,complained:5};
 
 /** Trusted normalized event only: a provider-specific authenticator MUST verify
- * the raw request before calling this function. No public route is wired yet.
+ * the raw request before calling this function; never expose this function alone.
  * Event facts are monotone, not evidence that a person opened/read an email. */
 export async function applyReportMailEvent(db:D1Database,event:ReportMailEvent,now=new Date()){
   if(!/^[A-Za-z0-9_-]{1,128}$/.test(event.eventId)||!/^[a-f0-9]{64}$/.test(event.deliveryKey)||!/^[A-Za-z0-9_-]{1,64}$/.test(event.providerIdentity)||typeof event.providerId!=='string'||!event.providerId.length||event.providerId.length>256||/[\u0000-\u0020\u007f]/.test(event.providerId)||!['accepted','delivered','rejected','bounced','complained'].includes(event.status)||!Number.isFinite(now.getTime()))throw Error('Invalid mail event');

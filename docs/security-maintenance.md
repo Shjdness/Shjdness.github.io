@@ -505,3 +505,12 @@ Owner历史保存/20条分页/详情、revision时间设置、仅布尔Secret配
 - 7项定向（3新Brevo+4既有Svix）及服务端类型/diff通过，覆盖错误header不读body、Secret复用、大小/阻塞读取、重复标签/畸形ID、旧反馈/未来时间及不同包装同一事件。无真实提供商、邮件或AI调用。当前只新增内部解析器，工厂/Worker尚未接Brevo、默认不启用，不宣称无域名邮件已可发送。
 - 下一项将Message-ID归一化接发送响应、按provider分派认证回调与工厂、验证完整账本/退订/暂停及更新运维配置要求；完成后才审阅合main，不反复重做现有UI。GitHub登录仍需用户在已保留页面完成凭据，不重试被拒提交、读取秘密或换浏览器绕过，已获账号授权无需再问。
 - 官方依据：https://developers.brevo.com/docs/secured-webhooks、https://developers.brevo.com/docs/transactional-webhooks、https://developers.brevo.com/reference/send-transac-email。本次只核对协议，不注册账户/接受条款/购买服务。
+
+## 2026-11-02 Brevo工厂/回调/对账接线（功能分支，待合并发布）
+
+- 工厂现在按明确provider选择Resend或Brevo并验证对应独立回调Secret，保留vault/API/总闸/显式发送开关全齐才允许发送的门。Brevo不接受whsec_前缀或复用API/业务Secret，Resend原协议保持；未改变任何生产配置、默认开关或已发布schema。
+- 新增固定 /life/reports/mail/webhook/brevo Worker分派，仍在ServerConfig/DB前认证；path与配置provider不匹配直接404，伪造Bearer在读body/DB前拒绝。发送响应与回调共用保守Message-ID wrapper归一化，避免尖括号差异阻断合法对账。认证收件反馈继续经原持久准入/单向状态/事务抑制；unknown响应丢失可由合法callback补全provider ID和送达事实，无重发/退预算。投诉或退订都抑制，UI用准确的“收件人反馈”描述，不把退订断言为垃圾邮件投诉。
+- 全量60文件223项及前后端类型/diff通过；其后3项callback复验覆盖unknown ID丢失对账。实际Miniflare D1验证5次验证请求仅1模拟Brevo提交/1准入、API/callback ID匹配、5路送达callback仅1事件、维护期间退订关闭发送且重复不增事件，无私密原始字段入库；证据outputs/life-reports-2026-11-02/brevo-ledger-d1-probe.cjs。
+- 修正两类验证问题而未放宽业务断言：receiver返回kind需显式联合类型；旧API验证码夹具固定过期时间和unknown测试固定观测时间在墙钟跨过样例日期后失效，改为实际测试时刻的有效期/实际持久updated_at之后61秒。仍验证真实过期与未知不重试，不增加业务TTL或超时。
+- 运维说明同步单事件JSON/Bearer设置、provider路径、投递标识和未知对账边界；reportBrevoV1表示代码支持，不代表真实服务已配置。无账户注册、条款接受、购买、真实AI或邮件。合法发件人/账户/收件箱验证仍缺；不能保证无域名服务的实际准入或将模拟当投递成功。
+- main仍6537114已验收；本阶段只推功能分支，下一步审阅合main并执行实际合并态非缓存构建/定向验证、推送后核对两CI及新能力/GET回调405/私有路由403只读。0030/0031冻结，没有新增schema。用户登录授权已得，仍待用户完成现有表单；保持此前提交拒绝边界，不重问/重试或读取凭据绕过。

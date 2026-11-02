@@ -13,11 +13,11 @@ export function brevoMessageId(value:unknown){
 /** Brevo uses a shared Bearer header over TLS, NOT a raw-body signature. The
  * event is trusted only after authenticating that header. No URL credentials,
  * IP-only authentication, recipient/subject retention, tracking or DB access.
- * This parser is not wired to a production route/provider configuration yet. */
+ * Callers must bind the configured provider path and durable submission ledger. */
 export async function verifyBrevoReportWebhook(options:{request:Request;secret:string;providerIdentity:string;disallowedSecrets?:readonly string[];now?:Date;bodyTimeoutMs?:number}):Promise<ReportMailEvent|null>{
   const {request,secret,providerIdentity}=options;
   try{
-    if(request.method!=='POST'||!/^[A-Za-z0-9_-]{43,128}$/.test(secret)||!/^[A-Za-z0-9_-]{1,64}$/.test(providerIdentity)||(options.disallowedSecrets??[]).some(s=>s&&s===secret))throw Error();
+    if(request.method!=='POST'||secret.startsWith('whsec_')||!/^[A-Za-z0-9_-]{43,128}$/.test(secret)||!/^[A-Za-z0-9_-]{1,64}$/.test(providerIdentity)||(options.disallowedSecrets??[]).some(s=>s&&s===secret))throw Error();
     const authorization=request.headers.get('authorization')??'';
     if(authorization.length>256||!/^Bearer [A-Za-z0-9_-]{43,128}$/.test(authorization))throw Error();
     // Compare via HMAC verification, without character-by-character secret

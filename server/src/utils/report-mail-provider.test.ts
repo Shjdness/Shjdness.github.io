@@ -19,7 +19,7 @@ it('submits one fixed Resend request with stable opaque idempotency/tag and no u
 it('submits one Brevo text-only body and accepts standard Message-ID',async()=>{
   const fetcher=vi.fn(async()=>Response.json({messageId:'<fixture@relay.example.invalid>'}));
   const provider=reportMailProvider({...config,kind:'brevo',fetcher});
-  expect(await provider.submit(message,new AbortController().signal)).toEqual({state:'accepted',id:'<fixture@relay.example.invalid>'});
+  expect(await provider.submit(message,new AbortController().signal)).toEqual({state:'accepted',id:'fixture@relay.example.invalid'});
   const [url,request]=fetcher.mock.calls[0] as unknown as [string,RequestInit];
   expect(url).toBe('https://api.brevo.com/v3/smtp/email');expect(request.headers).toMatchObject({'api-key':config.apiKey});
   expect(JSON.parse(String(request.body))).toEqual({sender:{email:config.from,name:'夏令时电波'},to:[{email:message.to}],subject:message.subject,textContent:message.text,tags:['report_delivery_'+key]});

@@ -1,6 +1,6 @@
 import type {ScheduledController,ExecutionContext} from '@cloudflare/workers-types';
 import {runReportSchedule} from './utils/report-jobs';
-import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH} from './utils/report-mail-callback';
+import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH,REPORT_MAIL_BREVO_WEBHOOK_PATH} from './utils/report-mail-callback';
 import {runConfiguredReportMail} from './utils/report-mail-schedule';
 import {runConfiguredReportAI} from './utils/report-ai-schedule';
 import { drizzle, DrizzleD1Database } from "drizzle-orm/d1";
@@ -25,7 +25,7 @@ export default {
     if(failed)throw Error('Life report schedule unavailable');
   },
   async fetch(request: Request, env: Env): Promise<Response> {
-    if(new URL(request.url).pathname===REPORT_MAIL_WEBHOOK_PATH)return reportMailCallback(request,env);
+    if([REPORT_MAIL_WEBHOOK_PATH,REPORT_MAIL_BREVO_WEBHOOK_PATH].includes(new URL(request.url).pathname))return reportMailCallback(request,env);
     const db = drizzle(env.DB, { schema: schema });
     return runRequestContext(env,db,async()=>{
     try { await ServerConfig().all(); }

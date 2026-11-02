@@ -7,7 +7,7 @@
 - 日报/周报统计、自动数字分析、邮件是三个独立同意，不因访问页面、配置Key或保存时间而自动开启。
 - 数字分析只允许固定整数指标，沿用站点共享每月1000分预留上限与价格复核截止；日记/任务名称/正文/日期/邮箱/owner标识不提交DeepSeek。固定结果只生成一次，失败未知不退预留、不重发。
 - 邮件必须先通过自己的收件箱验证，再明确启用；邮箱不是来自公开仓库或静态站点配置。受理不是送达，更不是本人已读；本站不跟踪已读。
-- 当前可配置工厂只支持完成HMAC回调闭环的Resend。Resend测试域不是长期正式通道；真实发件域/服务账户仍未配置。Brevo的HTTP传输已有，但Bearer回调与对账未接通，因此不能通过改配置绕过工厂启用。无域名路线仍需用户自行开通合法服务、验证发件人，不能提取个人邮箱凭据替代，也不自动购买域名或服务。
+- 工厂支持Resend的原始体HMAC回调和Brevo的Bearer header认证回调；配置本身不代替账户/发件人/收件人验证。Resend测试域不是长期正式通道。Brevo是否允许特定已验证发件人且是否替换发件域，取决于实际账户和提供商政策，未进行真实通道验收，不承诺个人邮箱可直接长期发信。用户仍需自行开通合法服务并验证发件人；不提取个人邮箱凭据、不自动注册/购买域名或服务。
 
 ## 后端配置（不在前端填写密钥）
 
@@ -16,16 +16,16 @@
 | `DEEPSEEK_API_KEY` | Worker Secret，用户报告已配置；存在不等于当前API有效 |
 | `REPORT_OUTBOUND_PAUSED` | 普通变量，精确值`true`暂停新手动/自动AI与邮件提交；默认未开启此维护闸 |
 | `REPORT_MAIL_ENABLED` | 普通变量，只有精确`true`且其余配置有效才允许发送；默认关闭 |
-| `REPORT_MAIL_PROVIDER` | 当前仅`resend`可建立正式发送对象 |
+| `REPORT_MAIL_PROVIDER` | `resend`或`brevo`，必须与实际账户及回调协议一致 |
 | `REPORT_MAIL_PROVIDER_ID` | 1–64位字母/数字/下划线/连字符的提供商账户版本标识；不填邮箱/用户ID |
 | `REPORT_MAIL_FROM` | 已在提供商验证并获准发送的单个地址，不支持自定义显示名/抄送/列表 |
 | `REPORT_MAIL_API_KEY` | 独立Worker Secret，不复用JWT、DeepSeek、RSS、S3或其他凭据 |
 | `REPORT_MAIL_VAULT_KEY` | 独立随机32字节的base64 Worker Secret，用于owner绑定的AES-GCM地址及HMAC指纹；不复用业务/会话密钥 |
-| `REPORT_MAIL_WEBHOOK_SECRET` | 提供商颁发的独立Svix签名Secret，不复用其他密钥 |
+| `REPORT_MAIL_WEBHOOK_SECRET` | Resend为提供商颁发的独立Svix Secret；Brevo为独立随机32字节base64url Bearer token（43–128字符，不接受whsec_前缀），都不得复用其他密钥 |
 
 Secret只能进入Cloudflare的Secret字段，不发聊天、不写Git/静态资源/日志。不要在本次功能上线中生成、读取或轮换现有生产Secret。初次邮件启用前，按独立配置流程完成合法通道与备份恢复准备。
 
-Resend回调为后端`/life/reports/mail/webhook/resend`，POST原始体HMAC通过后才访问D1，不走前端代理。全局暂停仍接收合法旧回调，以保存退信/投诉抑制。发件账户/提供商变更属于单独迁移：先暂停、对账、保留旧回调接收及抑制证明，再评审账户版本方案。当前单接收配置不能自动并行迁移旧新账户，不能直接换ID/Secret后把旧未知消息绑到新账户重发。
+Resend回调为后端`/life/reports/mail/webhook/resend`，POST原始体HMAC通过后才访问D1。Brevo为`/life/reports/mail/webhook/brevo`，配置transactional单事件JSON回调并设置auth.type=bearer、auth.token为独立Secret；不使用URL携带用户名/密码，不用批量数组模式。Bearer通过TLS认证调用方，不声称提供原始体签名；认证前不读body或D1。两种入口都不走前端代理，不能向另一提供商路径发送事件。全局暂停仍接收合法旧回调，以保存退信/投诉抑制。发件账户/提供商变更属于单独迁移：先暂停、对账、保留旧回调接收及抑制证明，再评审账户版本方案。当前单接收配置不能自动并行迁移旧新账户，不能直接换ID/Secret后把旧未知消息绑到新账户重发。
 
 ## 个人备份与操作账本
 
@@ -63,3 +63,8 @@ LIMIT 20;
 ```
 
 提供商受理/送达事实需与固定delivery key、原提供商账户/消息ID绑定。现阶段支持认证回调对账；没有自动补发或管理员“重置为queued”按钮。无法证明未受理的消息不重试，未来扩展对账接口也须保留此边界。
+
+
+Brevo发送API的尖括号Message-ID与回调的无括号形式归一化为同一标识；配置webhook的id不作为事件唯一键。只保留投递元数据摘要，收件地址/主题不落事件账本。认证后的合法延迟反馈可幂等应用；拒绝异常未来时间，忽略soft_bounce/deferred/open/click作为终态。既有complained抑制桶包括spam及unsubscribed，界面称收件人反馈（投诉或退订），不把退订说成垃圾邮件投诉。未知投递可由匹配准入/标签/提供商标识的认证回调对账恢复，不能重置发送claim或预算。
+
+官方协议参考：[Brevo安全回调](https://developers.brevo.com/docs/secured-webhooks)、[事务事件](https://developers.brevo.com/docs/transactional-webhooks)、[发送接口](https://developers.brevo.com/reference/send-transac-email)。配置和模拟通过不证明账户权限、投递成功或当前免费政策。

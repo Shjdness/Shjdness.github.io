@@ -5,7 +5,7 @@ import {pendingReportVerification,clearReportVerification} from './report-verifi
 
 type MailState={ownerId:number;storageConfigured:boolean;deliveryConfigured:boolean;maskedRecipient:string|null;contactRevision?:number;preferencesRevision?:number;verified:boolean;enabled:boolean;pausedReason?:string|null};
 type Delivery={kind:string;state:string;created_at:number};
-const labels:Record<string,string>={queued:'等待提交',submitting:'提交中，结果待确认',accepted:'服务已受理',delivered:'收件服务器已接收',rejected:'服务拒绝',unknown:'结果未知，不自动重发',bounced:'退信，已暂停',complained:'投诉，已暂停',paused:'已暂停'};
+const labels:Record<string,string>={queued:'等待提交',submitting:'提交中，结果待确认',accepted:'服务已受理',delivered:'收件服务器已接收',rejected:'服务拒绝',unknown:'结果未知，不自动重发',bounced:'退信，已暂停',complained:'收件人反馈（投诉或退订），已暂停',paused:'已暂停'};
 
 export function ReportMailSettings({ownerId,token}:{ownerId:number;token:string}){
   const [state,setState]=useState<MailState|null>(null),[items,setItems]=useState<Delivery[]>([]),[email,setEmail]=useState(''),[consent,setConsent]=useState(false);
@@ -62,7 +62,7 @@ export function ReportMailSettings({ownerId,token}:{ownerId:number;token:string}
     <header><h2 id="report-mail-title">邮件提醒</h2><button type="button" disabled={busy} onClick={()=>void run(load)}>刷新邮件状态</button></header>
     <p>先保存并验证邮箱，再明确启用。邮件只含统计与已有数字分析，不发送日记正文或任务名称；验证和发送均不会因打开此页自动触发。</p>
     {state&&!state.storageConfigured&&<p>邮件配置尚未就绪，当前无法保存新地址或发送邮件。</p>}
-    {state&&<p>收件地址：{state.maskedRecipient??(state.contactRevision?'配置暂不可读取':'尚未配置')} · {state.verified?'已验证':'未验证'} · {state.enabled?'提醒已启用':'提醒已关闭'}{state.pausedReason?' · 退信或投诉后暂停':''}</p>}
+    {state&&<p>收件地址：{state.maskedRecipient??(state.contactRevision?'配置暂不可读取':'尚未配置')} · {state.verified?'已验证':'未验证'} · {state.enabled?'提醒已启用':'提醒已关闭'}{state.pausedReason?' · 退信或收件人反馈后暂停':''}</p>}
     <form onSubmit={event=>{event.preventDefault();void save();}} className="life-report-mail-form">
       <label htmlFor="report-recipient">新的收件邮箱</label><input id="report-recipient" type="email" autoComplete="off" maxLength={254} value={email} disabled={busy||!state?.storageConfigured} onChange={event=>setEmail(event.target.value)} placeholder="输入邮箱，保存后仅显示掩码"/>
       <button disabled={busy||!state?.storageConfigured||!email.trim()}>保存地址</button>

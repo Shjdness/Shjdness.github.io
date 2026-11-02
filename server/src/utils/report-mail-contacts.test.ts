@@ -86,8 +86,9 @@ it('retains unknown send outcomes and does not resubmit after a provider respons
     await expect(requestReportVerification({...options,now:later})).rejects.toThrow('outcome lost');
     f.sqlite.exec('DROP TRIGGER fixture_outcome_lost');
     const key=f.sqlite.prepare("SELECT delivery_key FROM life_report_mail_deliveries WHERE state='submitting'").get().delivery_key;
-    expect(await submitReportDelivery({...options,key,now:new Date(later.getTime()+61000)})).toMatchObject({state:'unknown'});
-    expect(await readReportDelivery(f.raw,1,key,new Date(later.getTime()+61000))).toMatchObject({state:'unknown'});expect(calls).toBe(2);
+    const unknownAt=new Date(Number(f.sqlite.prepare('SELECT updated_at FROM life_report_mail_deliveries WHERE delivery_key=?').get(key).updated_at)*1000+61000);
+    expect(await submitReportDelivery({...options,key,now:unknownAt})).toMatchObject({state:'unknown'});
+    expect(await readReportDelivery(f.raw,1,key,unknownAt)).toMatchObject({state:'unknown'});expect(calls).toBe(2);
   }finally{f.sqlite.close();}
 });
 

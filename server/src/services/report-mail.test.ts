@@ -4,7 +4,7 @@ import {SignJWT} from 'jose';
 import {expect,it,vi} from 'vitest';
 import * as schema from '../db/schema';
 import {runRequestContext} from '../utils/di';
-import {mailFixture} from '../utils/report-mail-fixture';
+import {mailFixture,seconds} from '../utils/report-mail-fixture';
 import {reportMailConfiguration} from '../utils/report-mail-config';
 import {ReportMailService} from './report-mail';
 
@@ -29,6 +29,10 @@ it('fails closed on absent, reused, incomplete or unsupported provider secrets w
       const config=await reportMailConfiguration({...f.env,...patch});expect(config.deliveryConfigured).toBe(false);
     }
     const valid=await reportMailConfiguration({...f.env,...sender});expect(valid.storageConfigured).toBe(true);expect(valid.deliveryConfigured).toBe(true);
+    const brevo={...f.env,...sender,REPORT_MAIL_PROVIDER:'brevo',REPORT_MAIL_WEBHOOK_SECRET:'synthetic_callback_key_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ'};
+    expect((await reportMailConfiguration(brevo)).deliveryConfigured).toBe(true);
+    expect((await reportMailConfiguration({...brevo,REPORT_MAIL_API_KEY:brevo.REPORT_MAIL_WEBHOOK_SECRET})).deliveryConfigured).toBe(false);
+    expect((await reportMailConfiguration({...brevo,REPORT_OUTBOUND_PAUSED:'true'})).deliveryConfigured).toBe(false);
     expect(network).not.toHaveBeenCalled();
   }finally{f.sqlite.close();network.mockRestore();}
 });
@@ -56,7 +60,7 @@ it('stores only encrypted recipient, verifies owner-bound proof and permits emer
   const f=await fixture();try{
     f.env.REPORT_MAIL_VAULT_KEY=vaultKey;
     const saved=await f.request(1,'/recipient',{email:'fixture@example.invalid',baseRevision:0});expect(saved.status).toBe(200);
-    const token=await f.issueFixture();
+    const token=await f.issueFixture(Math.max(seconds,Math.floor(Date.now()/1000))+1800);
     expect((await f.request(2,'/verify',{token})).status).toBe(409);
     const verified=await f.request(1,'/verify',{token});expect(await verified.json()).toEqual({ownerId:1,verified:true});
     expect((await f.request(1,'/enabled',{enabled:true,contactRevision:1,baseRevision:1})).status).toBe(503);

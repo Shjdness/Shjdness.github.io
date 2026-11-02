@@ -1,5 +1,6 @@
 import {reportRecipient} from './report-mail-vault';
 import {reportMailMessage,type ReportMailProvider} from './report-mail-delivery';
+import {brevoMessageId} from './report-mail-brevo';
 
 type MailProviderOptions={kind:'resend'|'brevo';identity:string;apiKey:string;from:string;disallowedSecrets?:readonly string[];fetcher?:(url:string,init:RequestInit)=>Promise<Response>};
 
@@ -39,7 +40,7 @@ export function reportMailProvider(options:MailProviderOptions):ReportMailProvid
         if(signal.aborted)throw Error();
         for(;;){const part=await reader.read();if(signal.aborted)throw Error();if(part.done)break;size+=part.value.byteLength;if(size>8192)throw Error();chunks.push(part.value);}
         const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-        const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),id=kind==='resend'?data?.id:data?.messageId;
+        const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),id=kind==='resend'?data?.id:brevoMessageId(data?.messageId);
         return typeof id==='string'&&id.length>0&&id.length<=256&&!/[\u0000-\u0020\u007f]/.test(id)?{state:'accepted',id}:{state:'unknown'};
       }finally{signal.removeEventListener('abort',cancel);void reader.cancel().catch(()=>{});reader.releaseLock();}
     }catch{return {state:'unknown'};}
