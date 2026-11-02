@@ -3,6 +3,9 @@ import {reportMailVault} from './report-mail-vault';
 import {reportMailProvider} from './report-mail-provider';
 import type {MailVault} from './report-mail-contacts';
 import type {ReportMailProvider} from './report-mail-delivery';
+import {reportQQMailProvider} from './report-mail-qq';
+import {reportDigest} from './report-analysis-format';
+import {reportRecipient} from './report-mail-vault';
 
 /** Do not persist/cache configuration or expose Secret values. Safe to call with
  * missing optional bindings; no database reads or provider requests occur here.
@@ -10,14 +13,21 @@ import type {ReportMailProvider} from './report-mail-delivery';
 export async function reportMailConfiguration(env:Env){
   const protectedSecrets=[env.JWT_SECRET,env.DEEPSEEK_API_KEY,env.RSS_SYNC_TOKEN,env.GUEST_ACCESS_CODE,env.S3_SECRET_ACCESS_KEY,env.S3_ACCESS_KEY_ID,env.RIN_GITHUB_CLIENT_SECRET,env.GITHUB_CLIENT_SECRET].filter((s):s is string=>Boolean(s));
   let vault:MailVault|null=null,provider:ReportMailProvider|null=null;
-  try{if(env.REPORT_MAIL_VAULT_KEY)vault=await reportMailVault(env.REPORT_MAIL_VAULT_KEY,[...protectedSecrets,env.REPORT_MAIL_API_KEY??'',env.REPORT_MAIL_WEBHOOK_SECRET??'']);}catch{/* fail closed without returning Secret/error values */}
+  try{if(env.REPORT_MAIL_VAULT_KEY)vault=await reportMailVault(env.REPORT_MAIL_VAULT_KEY,[...protectedSecrets,env.REPORT_MAIL_API_KEY??'',env.REPORT_MAIL_WEBHOOK_SECRET??'',env.REPORT_QQ_SMTP_AUTH_CODE??'']);}catch{/* fail closed without returning Secret/error values */}
   if(vault&&env.REPORT_OUTBOUND_PAUSED!=='true'&&env.REPORT_MAIL_ENABLED==='true'){
     try{
-      const receiver=reportMailReceiverConfiguration(env);if(!receiver)throw Error();
-      provider=reportMailProvider({kind:receiver.kind,identity:receiver.providerIdentity,apiKey:env.REPORT_MAIL_API_KEY??'',from:env.REPORT_MAIL_FROM??'',disallowedSecrets:[...protectedSecrets,receiver.secret,env.REPORT_MAIL_VAULT_KEY??'']});
+      if(env.REPORT_MAIL_PROVIDER==='qq-smtp'){
+        if(!/^[A-Za-z0-9_-]{1,64}$/.test(env.REPORT_MAIL_PROVIDER_ID??''))throw Error();
+        const from=reportRecipient(env.REPORT_MAIL_FROM??''),to=reportRecipient(env.REPORT_MAIL_TO??'');
+        const identity='qq-'+(await reportDigest(JSON.stringify(['qq-smtp:v1',env.REPORT_MAIL_PROVIDER_ID,from,to]))).slice(0,60);
+        provider=reportQQMailProvider({identity,from,to,authorizationCode:env.REPORT_QQ_SMTP_AUTH_CODE??'',disallowedSecrets:[...protectedSecrets,env.REPORT_MAIL_API_KEY??'',env.REPORT_MAIL_WEBHOOK_SECRET??'',env.REPORT_MAIL_VAULT_KEY??'']});
+      }else{
+        const receiver=reportMailReceiverConfiguration(env);if(!receiver)throw Error();
+        provider=reportMailProvider({kind:receiver.kind,identity:receiver.providerIdentity,apiKey:env.REPORT_MAIL_API_KEY??'',from:env.REPORT_MAIL_FROM??'',disallowedSecrets:[...protectedSecrets,receiver.secret,env.REPORT_MAIL_VAULT_KEY??'']});
+      }
     }catch{/* no partial enabling */}
   }
-  return {vault,provider,storageConfigured:Boolean(vault),deliveryConfigured:Boolean(provider)};
+  return {vault,provider,storageConfigured:Boolean(vault),deliveryConfigured:Boolean(provider),feedbackMode:env.REPORT_MAIL_PROVIDER==='qq-smtp'?'manual' as const:'webhook' as const};
 }
 
 /** Authenticated outcomes must still be accepted after delivery is switched off or

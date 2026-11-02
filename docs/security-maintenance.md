@@ -535,3 +535,11 @@ Owner历史保存/20条分页/详情、revision时间设置、仅布尔Secret配
 - 已打开同一IAB官方Brevo注册页，页面显示Free to use/no credit card required，未填写个人信息、密码、接受条款或注册；已交接tab16并请求用户完成本人密码/条款/邮箱验证，截图mail-service-signup-handoff.png。此前用户明确无邮件服务，不能假设已有账号。
 - 官方现行说明无域名替换发件人仅为stopgap，不能承诺永久免费无域名发信；实际账号审核/发件资格必须核对，不能把注册成功当投递成功。新增docs/life-reports-activation.md面向非技术用户说明必要动作与后续维护责任，不含收件地址或Secret。
 - 待用户完成注册后继续合法发件资格、受控配置、回调、网站邮箱验证和真实报告收件箱验收。不需要重新请求GitHub账号权限；不得重放此前AI unknown、扩大数据或购买。当前生产645cd09保持，本地仅文档检查点随下一实质变更推main，避免重复部署。
+
+## 2026-11-02 QQ个人邮箱发信适配（功能分支）
+
+- 用户改选QQ邮箱方案并私下确认发件地址，收件人沿已确认地址；不将两地址写入公开仓库/静态资源/日志。不再等待Brevo注册。SMTP授权码尚未配置，未连接真实QQ或发邮件。
+- 新增固定smtp.qq.com:465 TLS SMTP适配，无任意主机/端口/明文或邮箱读取；只准独立16字母授权码，凭据不复用。环境要求固定单收件人、vault、明确发送门，factory创建无网络。发件/收件/账户标签形成provider identity，改址不接管旧队列。
+- 协议有限状态与12秒独立超时、abort关闭、32KiB/512字节/64行响应界限；UTF8 base64正文/折叠Subject，最后DATA 250才accepted。断线或丢失结果unknown，不重发/退款；QQ无可信反馈回调，owner UI明确需收件箱/退信核对，不能声称自动送达或投诉抑制。
+- 新5项SMTP复合回归及工厂/API矩阵：固定TLS/正确阶段/中文MIME/注入拒绝/授权失败停止/异常响应与断线超时/并发只1准入及模拟会话、未知不重放、收件白名单、凭据和地址不回HTTP或账本。61文件229项全量与前后端类型/diff通过；Wrangler dry-run打包通过，未上传或调用网络SMTP。真实临时D1验证5个并发mail tick仅1准入/1模拟SMTP提交、周报合并正文/后续tick不重发，证据qq-schedule-d1-probe.cjs。
+- 新reportQQSMTPV1能力门令Pages等待新Worker后部署，无schema修改，0030/31冻结。启用指南改为QQ，不再要求域名或Brevo账号。所有邮件配置字段建议Secret，避免正常CI重置未声明普通vars。接下来实际main构建/差异审阅/两CI及只读能力验收，之后本人开启SMTP并在官方Cloudflare Secret页面输入授权码，再进行真实收件验证；不在聊天收Secret，当前不能称已收到报告。

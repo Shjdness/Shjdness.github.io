@@ -33,6 +33,13 @@ it('fails closed on absent, reused, incomplete or unsupported provider secrets w
     expect((await reportMailConfiguration(brevo)).deliveryConfigured).toBe(true);
     expect((await reportMailConfiguration({...brevo,REPORT_MAIL_API_KEY:brevo.REPORT_MAIL_WEBHOOK_SECRET})).deliveryConfigured).toBe(false);
     expect((await reportMailConfiguration({...brevo,REPORT_OUTBOUND_PAUSED:'true'})).deliveryConfigured).toBe(false);
+    const qq={...f.env,...sender,REPORT_MAIL_PROVIDER:'qq-smtp',REPORT_MAIL_FROM:'fixture_sender@qq.com',REPORT_MAIL_TO:'fixture@example.invalid',REPORT_QQ_SMTP_AUTH_CODE:'abcdefghijklmnop',REPORT_MAIL_WEBHOOK_SECRET:undefined,REPORT_MAIL_API_KEY:undefined};
+    const qqConfig=await reportMailConfiguration(qq);expect(qqConfig.deliveryConfigured).toBe(true);expect(qqConfig.feedbackMode).toBe('manual');
+    for(const patch of [{REPORT_OUTBOUND_PAUSED:'true'},{REPORT_MAIL_ENABLED:'false'},{REPORT_QQ_SMTP_AUTH_CODE:undefined},{REPORT_MAIL_TO:undefined},{REPORT_MAIL_FROM:'other@outside.invalid'},{JWT_SECRET:qq.REPORT_QQ_SMTP_AUTH_CODE}])expect((await reportMailConfiguration({...qq,...patch})).deliveryConfigured).toBe(false);
+    expect((await reportMailConfiguration({...qq,REPORT_MAIL_FROM:'other@qq.com'})).provider?.identity).not.toBe(qqConfig.provider?.identity);
+    expect((await reportMailConfiguration({...qq,REPORT_MAIL_TO:'other@example.invalid'})).provider?.identity).not.toBe(qqConfig.provider?.identity);
+    Object.assign(f.env,qq);const qqState=await (await f.request(1)).text();expect(qqState).toContain('"feedbackMode":"manual"');
+    for(const privateValue of [qq.REPORT_MAIL_FROM,qq.REPORT_MAIL_TO,qq.REPORT_QQ_SMTP_AUTH_CODE])expect(qqState).not.toContain(privateValue);
     expect(network).not.toHaveBeenCalled();
   }finally{f.sqlite.close();network.mockRestore();}
 });

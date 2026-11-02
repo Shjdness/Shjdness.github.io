@@ -68,3 +68,9 @@ LIMIT 20;
 Brevo发送API的尖括号Message-ID与回调的无括号形式归一化为同一标识；配置webhook的id不作为事件唯一键。只保留投递元数据摘要，收件地址/主题不落事件账本。认证后的合法延迟反馈可幂等应用；拒绝异常未来时间，忽略soft_bounce/deferred/open/click作为终态。既有complained抑制桶包括spam及unsubscribed，界面称收件人反馈（投诉或退订），不把退订说成垃圾邮件投诉。未知投递可由匹配准入/标签/提供商标识的认证回调对账恢复，不能重置发送claim或预算。
 
 官方协议参考：[Brevo安全回调](https://developers.brevo.com/docs/secured-webhooks)、[事务事件](https://developers.brevo.com/docs/transactional-webhooks)、[发送接口](https://developers.brevo.com/reference/send-transac-email)。配置和模拟通过不证明账户权限、投递成功或当前免费政策。
+
+## QQ个人邮箱 SMTP 通道
+
+新增provider=qq-smtp，使用固定smtp.qq.com:465隐式TLS。独立授权码绑定为REPORT_QQ_SMTP_AUTH_CODE，唯一收件白名单为REPORT_MAIL_TO；配置值仅进Worker Secret，不写仓库或同库明文。无需第三方邮件API或回调Secret。报告地址仍须owner验证，代码不因配置自动开启用户计划。QQ SMTP接收后的250仅表示受理；没有已接入的送达/退信回调，不自动读取个人邮箱，未知结果不重发。收件邮箱或发件人改变会生成新的provider identity，旧queued不挪用。首次启用与无秘密操作步骤见life-reports-activation.md。
+
+SMTP会话有独立12秒上限、外层15秒截止与abort关闭套接字、累计响应32KiB/单行512字节/每回复64行界限；只允许EHLO→AUTH LOGIN→单发件/单收件→DATA，最后250才记录受理。正文UTF-8 base64与安全折叠Subject防SMTP命令和邮件头注入，不输出原始服务端文本或凭据。此通道不能冒充支持Resend/Brevo反馈回调。

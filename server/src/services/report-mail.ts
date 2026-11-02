@@ -22,12 +22,12 @@ export function ReportMailService(){
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};
       const config=await reportMailConfiguration(env);
       if(config.vault){
-        try{return {storageConfigured:true,deliveryConfigured:config.deliveryConfigured,...await reportMailContactState(db,owner,config.vault)};}
+        try{return {storageConfigured:true,deliveryConfigured:config.deliveryConfigured,feedbackMode:config.feedbackMode,...await reportMailContactState(db,owner,config.vault)};}
         catch{/* A damaged cipher or wrong vault key must not hide the pause control. */}
       }
       const contact=await readMailContact(db,owner),prefs=await db.prepare('SELECT revision,email_enabled FROM life_report_preferences WHERE owner_id=?').bind(owner).all<{revision:number;email_enabled:number}>();
       if(!prefs.success)throw Error();
-      return {storageConfigured:false,deliveryConfigured:false,ownerId:owner,maskedRecipient:null,contactRevision:contact?.revision??0,preferencesRevision:prefs.results[0]?.revision??0,verified:Boolean(contact?.verified_at),enabled:Boolean(prefs.results[0]?.email_enabled&&contact?.enabled_at!==null&&contact?.verified_at&&!contact.paused_reason),pausedReason:contact?.paused_reason??null};
+      return {storageConfigured:false,deliveryConfigured:false,feedbackMode:config.feedbackMode,ownerId:owner,maskedRecipient:null,contactRevision:contact?.revision??0,preferencesRevision:prefs.results[0]?.revision??0,verified:Boolean(contact?.verified_at),enabled:Boolean(prefs.results[0]?.email_enabled&&contact?.enabled_at!==null&&contact?.verified_at&&!contact.paused_reason),pausedReason:contact?.paused_reason??null};
     })
     .post('/life/reports/mail/recipient',async context=>{
       const owner=authorize(context);if(!owner)return {code:'OWNER_REQUIRED'};

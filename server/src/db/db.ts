@@ -36,6 +36,10 @@ export interface Env {
     REPORT_MAIL_API_KEY?: string,
     REPORT_MAIL_FROM?: string,
     REPORT_MAIL_WEBHOOK_SECRET?: string,
+    /** QQ SMTP authorization code, never the mailbox login password. */
+    REPORT_QQ_SMTP_AUTH_CODE?: string,
+    /** Private fixed recipient allowlist for QQ SMTP (one address only). */
+    REPORT_MAIL_TO?: string,
 }
 
 export function db(env: Env) {
