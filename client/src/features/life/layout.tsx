@@ -13,7 +13,7 @@ export function LifeDenied() {
 
 export function LifeLayout({ section: _section, title, intro, children }: { section: LifeSection; title: string; intro: string; children: React.ReactNode }) {
   return <main className="life-page"><Helmet><title>{title} - {process.env.NAME}</title></Helmet><section className="life-panel life-section">
-    <div className="life-title-row"><div><p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1></div><LifeSyncStatus /></div><p className="life-intro">{intro}</p><SyncConflicts />{children}
+    <div className="life-title-row"><div><p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1></div>{_section!=='check-in'&&<LifeSyncStatus />}</div><p className="life-intro">{intro}</p><SyncConflicts />{children}
   </section></main>;
 }
 

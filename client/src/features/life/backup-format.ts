@@ -1,6 +1,7 @@
 import {validateStoredAnalysis,type StoredReportAnalysis} from '../../../../server/src/utils/report-analysis-format';
 import {reportSnapshot,type LifeReportPreview} from '../../../../server/src/utils/life-report';
 import {validBackupManifest} from '../../../../server/src/utils/backup-manifest';
+import {validateCheckinBackup,validateCheckinDraftCopies} from '../../../../server/src/utils/checkin-backup';
 export {BACKUP_TABLES,REPORT_BACKUP_TABLES} from '../../../../server/src/utils/backup-manifest';
 
 export type Backup = {
@@ -69,7 +70,7 @@ export async function decryptBackup(value: unknown, passphrase: string, expected
 export async function validateBackup(value: unknown, expectedOwnerId: number): Promise<Backup> {
   if (!value || typeof value !== 'object') throw new Error('备份内容无效');
   const backup = value as Backup;
-  if (backup.format !== 'shjdshy-personal-data' || ![1,2,3,4].includes(backup.version)) throw new Error('备份格式不受支持');
+  if (backup.format !== 'shjdshy-personal-data' || ![1,2,3,4,5].includes(backup.version)) throw new Error('备份格式不受支持');
   if (backup.ownerId !== expectedOwnerId) throw new Error('备份所属账号不符');
   if (!Number.isSafeInteger(backup.ownerId) || backup.ownerId <= 0 || !Number.isFinite(Date.parse(backup.exportedAt))) throw new Error('备份元数据无效');
   if (!backup.data || typeof backup.data !== 'object' || !backup.counts || typeof backup.counts !== 'object') throw new Error('备份数据不完整');
@@ -97,7 +98,7 @@ export async function validateBackup(value: unknown, expectedOwnerId: number): P
       if(!row||row.ownerId!==expectedOwnerId||row.timezone!=='Asia/Shanghai'||!clock(row.dailyTime)||!clock(row.weeklyTime)||!Number.isInteger(row.weeklyDay)||Number(row.weeklyDay)<1||Number(row.weeklyDay)>7||row.aiScope!=='statistics'||['dailyEnabled','weeklyEnabled','emailEnabled','aiEnabled'].some(key=>row[key]!==0&&row[key]!==1))throw Error('报表设置备份无效');
     }
   }
-  if(backup.version===4){
+  if(backup.version>=4){
     const reports=new Map(backup.data.lifeReports.map(entry=>{const row=entry as Record<string,unknown>;return [row.id,row];}));
     if(reports.size!==backup.data.lifeReports.length||backup.data.lifeReportPreferences.length>1)throw Error('分析备份存在重复所属记录');
     const keys=new Set<string>();
@@ -110,5 +111,6 @@ export async function validateBackup(value: unknown, expectedOwnerId: number): P
       await validateStoredAnalysis({...row,createdAt:time(row.createdAt),updatedAt:time(row.updatedAt)},{id:row.reportId,ownerId:expectedOwnerId,sha256:parent.snapshotSha256 as string});
     }
   }
+  if(backup.version===5){validateCheckinBackup(backup.data.lifeCheckins,backup.data.lifeCheckinRevisions,expectedOwnerId);validateCheckinDraftCopies(backup.data.lifeCheckinDraftCopies,expectedOwnerId);}
   return backup;
 }

@@ -1,8 +1,12 @@
 import { relations, sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 const created_at = integer("created_at", { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull();
 const updated_at = integer("updated_at", { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull();
+
+const checkinFields=()=>({ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),recordDate:text('record_date').notNull(),revision:integer('revision').notNull(),clientKey:text('client_key').notNull(),sealedJson:text('sealed_json').notNull(),contentHmac:text('content_hmac').notNull(),updatedAt:integer('updated_at').notNull()});
+export const lifeCheckins=sqliteTable('life_checkins',checkinFields(),t=>({pk:primaryKey({columns:[t.ownerId,t.recordDate]})}));
+export const lifeCheckinRevisions=sqliteTable('life_checkin_revisions',checkinFields(),t=>({pk:primaryKey({columns:[t.ownerId,t.recordDate,t.revision]})}));
 
 export const feeds = sqliteTable("feeds", {
     id: integer("id").primaryKey(),

@@ -15,6 +15,7 @@ import { PomodoroService } from './services/pomodoro';
 import { LifeBackupService } from './services/life-backup';
 import { LifeReportsService } from './services/life-reports';
 import { ReportMailService } from './services/report-mail';
+import { LifeCheckinsService } from './services/life-checkins';
 import { getEnv } from './utils/di';
 import { frontendOrigin } from './utils/frontend-origin';
 import { quotaResponse } from './utils/write-budget';
@@ -65,7 +66,8 @@ export const app = () => new Elysia({ aot: false })
     .use(LifeBackupService())
     .use(LifeReportsService())
     .use(ReportMailService())
-    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true,atomicPostUpdates:true,atomicPostCreates:true,idempotentPostCreates:true,atomicTagCreation:true,conditionalDraftDelete:true,lifeReportsPreview:true,lifeReportsHistory:true,reportBackupV3:true,reportAIResults:true,reportBackupV4:true,reportSchedule:true,reportOutboundV1:true,reportBrevoV1:true,reportQQSMTPV1:true}))
+    .use(LifeCheckinsService())
+    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true,atomicPostUpdates:true,atomicPostCreates:true,idempotentPostCreates:true,atomicTagCreation:true,conditionalDraftDelete:true,lifeReportsPreview:true,lifeReportsHistory:true,reportBackupV3:true,reportAIResults:true,reportBackupV4:true,reportSchedule:true,reportOutboundV1:true,reportBrevoV1:true,reportQQSMTPV1:true,lifeCheckinsV1:true,reportBackupV5:true}))
     .get('/', () => `Hi`)
     .onError(({ path, params, code, error, set }) => {
         if(hasBodyLimitError(error))return new Response('Request body is too large',{status:413,headers:{'Cache-Control':'no-store'}});

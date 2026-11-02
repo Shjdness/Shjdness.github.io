@@ -14,7 +14,7 @@ import {ReportAISettings} from './report-ai-settings';
 export function LifeReportsEntry(){
   const profile=useContext(ProfileContext);
   if(profile?.role!=='owner'||accountIdFromToken(getCookie('token'))!==profile.id)return null;
-  return <section className="life-reports-entry"><div><small>REVIEW</small><h2>复盘与提醒</h2><p>回看昨日与上周，记住已经做成的事。</p></div><Link className="life-link" href="/life/reports">查看统计预览 →</Link></section>;
+  return <section className="life-reports-entry"><div><small>REVIEW</small><h2>复盘与提醒</h2><p>回看昨日与上周，记住已经做成的事。</p></div><Link className="life-link" href="/life/check-in">记录今天 →</Link><Link className="life-link" href="/life/reports">报告和邮件 →</Link></section>;
 }
 
 export function LifeReportsView(){
