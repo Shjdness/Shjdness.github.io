@@ -1,4 +1,4 @@
-import {reportCheckinsValue,type ReportCheckins} from './report-checkin-format';
+import {reportCheckinsValue,reportCheckinArchiveValue,type ReportCheckins,type ReportCheckinArchive} from './report-checkin-format';
 import {reportSnapshot,type LifeReportPreview} from './life-report';
 export const CHECKIN_AI_MODULES=['habits','checkins','diet','routine'] as const;
 export type CheckinAIModule=typeof CHECKIN_AI_MODULES[number];
@@ -9,8 +9,8 @@ export type CheckinAIInput={scopeVersion:2;periodDays:1|7;habits:Item[];checkins
 /** Rebuild every outbound property. No owner/source/item IDs, precise calendar
  * dates, diaries, non-module text or items approved only for email. Day=1 is the
  * last complete day. Local clock minutes plus relative offsets avoid identity. */
-export function checkinAIInput(report:LifeReportPreview,value:ReportCheckins):CheckinAIInput{
- const r=reportSnapshot(report.ownerId,report),s=reportCheckinsValue(value,r),out:CheckinAIInput={scopeVersion:2,periodDays:r.period.kind==='daily'?1:7,habits:[],checkins:[],diet:[],routine:[]};
+export function checkinAIInput(report:LifeReportPreview,value:ReportCheckins|ReportCheckinArchive):CheckinAIInput{
+ const r=reportSnapshot(report.ownerId,report),s='sources' in value?reportCheckinsValue(value,r):reportCheckinArchiveValue(value,r),out:CheckinAIInput={scopeVersion:2,periodDays:r.period.kind==='daily'?1:7,habits:[],checkins:[],diet:[],routine:[]};
  const end=Date.parse(s.toDateExclusive+'T00:00:00Z'),minute=(v:string|null)=>v===null?null:Number(v.slice(11,13))*60+Number(v.slice(14,16));
  for(const e of [...s.entries].sort((a,b)=>a.date.localeCompare(b.date))){const day=(end-Date.parse(e.date+'T00:00:00Z'))/86400000;
   for(const i of e.record.items.filter(i=>i.ai)){const module=i.kind==='habit'?'habits':'checkins',ref=(module==='habits'?'H':'C')+(out[module].length+1);out[module].push({ref,day,name:i.name,result:i.result,note:i.note});}

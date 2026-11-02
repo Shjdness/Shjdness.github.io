@@ -1,0 +1,28 @@
+import {useEffect,useRef,useState} from 'react';
+import {getCookie} from 'typescript-cookie';
+import {endpoint} from '../../main';
+import {reportSnapshot} from '../../../../server/src/utils/life-report';
+import {reportCheckinArchiveValue} from '../../../../server/src/utils/report-checkin-format';
+import {checkinAIInput,checkinAIAnalysis,CHECKIN_AI_MODULES,type CheckinAIInput,type CheckinAIAnalysis} from '../../../../server/src/utils/checkin-ai-format';
+type State={input:CheckinAIInput|null;analysis:CheckinAIAnalysis|null;state:string;available:boolean;mailSafe:boolean;reason:string|null;requestBytes:number};
+const labels={habits:'习惯',checkins:'打卡',diet:'食谱与饮食',routine:'作息'};
+const reasons:Record<string,string>={'scope-changed':'来源已更正、撤回或属于只读归档，旧快照不能新发起分析。','no-approved-input':'没有允许 AI 分析的模块内容，保留事实版。','input-limit':'选定内容超过单次预算边界，保留事实版；不会暗中删减或拆成多次收费。','not-configured':'AI 配置暂不可用，保留事实版。','pricing-review':'价格待复核，暂不调用。',paused:'外部调用已暂停。','prior-analysis':'这份报告已有调用或预算记录，不会重新提交。','write-budget':'今日写入预算暂不足，保留事实版。','budget-or-scope':'预算或授权条件不满足，保留事实版。'};
+export function ReportCheckinAnalysis({ownerId,token,reportId}:{ownerId:number;token:string;reportId:number}){
+ const [state,setState]=useState<State|null>(null),[consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const generation=useRef(0),active=useRef(true),lock=useRef(false),controllers=useRef(new Set<AbortController>()),current=()=>active.current&&getCookie('token')===token;
+ const request=async(body?:unknown)=>{const epoch=generation.current,c=new AbortController();controllers.current.add(c);const timer=window.setTimeout(()=>c.abort(),body?30000:15000);try{if(!current())throw Error('账号已变化');const r=await fetch(`${endpoint}/life/reports/history/${reportId}/checkin-analysis`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:c.signal,cache:'no-store',credentials:'omit'});if(!r.ok)throw Error(r.status===503?'复盘分析或解密暂不可用，事实报告仍可查看。':'请求未确认，请重新读取结果核对。');const v=await r.json();if(!current()||c.signal.aborted||epoch!==generation.current||v.ownerId!==ownerId||v.reportId!==reportId)throw Error('账号或报告状态已变化');return v;}finally{window.clearTimeout(timer);controllers.current.delete(c);}};
+ const load=async()=>{const v=await request();if(v.scopeVersion!==2||!['none','pending','succeeded','statistics','unknown'].includes(v.state)||typeof v.available!=='boolean'||typeof v.mailSafe!=='boolean'||!Number.isSafeInteger(v.requestBytes)||v.requestBytes<0||v.requestBytes>12000)throw Error('分析格式不匹配');const report=reportSnapshot(ownerId,v.report),snapshot=v.snapshot===null?null:reportCheckinArchiveValue(v.snapshot,report),input=snapshot?checkinAIInput(report,snapshot):null,analysis=v.state==='succeeded'&&input?checkinAIAnalysis(v.analysis,input):null;if(v.available&&!input||v.state==='succeeded'&&!analysis)throw Error('分析范围无效');if(current()){setState({input,analysis,state:v.state,available:v.available,mailSafe:v.mailSafe,reason:v.unavailableReason??v.reason,requestBytes:v.requestBytes});setConsent(false);}};
+ useEffect(()=>{const epoch=++generation.current;active.current=true;void load().catch(e=>{if(current()&&epoch===generation.current)setMessage(e instanceof Error?e.message:'分析暂不可用');});return()=>{generation.current++;active.current=false;for(const c of controllers.current)c.abort();};},[ownerId,token,reportId]);
+ const run=async(analyze:boolean)=>{if(lock.current||!current()||analyze&&(!consent||!state?.available))return;lock.current=true;setBusy(true);setMessage('');try{if(analyze){setState(s=>s?{...s,available:false}:s);setConsent(false);await request({scopeVersion:2,allowSelectedModules:true});}await load();}catch(e){if(current())setMessage(analyze?'分析结果未确认，请重新读取；系统不会自动重复调用。':e instanceof Error?e.message:'读取失败');}finally{lock.current=false;if(current())setBusy(false);}};
+ if(getCookie('token')!==token||state&&state.input===null)return null;
+ return <section className="life-report-analysis report-checkin-analysis" aria-label="选定生活复盘分析"><h3>习惯、打卡、饮食与作息分析</h3><p>只提交下方逐项允许的模块内容。日记、便签、RSS正文、邮箱及账号不在输入中。名称或备注本身仍可能含私人信息，请核对后再同意。</p>
+ {message&&<p role="status">{message}</p>}{!state&&!message&&<p role="status">正在读取分析范围与结果…</p>}
+ {state?.input&&<><details><summary>查看实际提交的模块数据</summary><pre>{JSON.stringify(state.input,null,2)}</pre></details><p>请求预算边界内约 {state.requestBytes} 字节；日期使用相对日、时刻使用本地分钟，day=1 是最近完整一天。</p>
+ {!state.mailSafe&&<p>部分输入仅允许站内分析，综合 AI 结果不会进入邮件。</p>}
+ {state.analysis&&<><p>{state.analysis.summary}</p>{CHECKIN_AI_MODULES.map(module=><div key={module}><h4>{labels[module]}</h4>{state.analysis!.modules[module].status==='insufficient'&&<p>记录不足，暂不作结论。</p>}<ul>{state.analysis!.modules[module].observations.map((o,i)=><li key={i}>{o.text}<small>依据：{o.evidence.join('、')}</small></li>)}</ul><ul>{state.analysis!.modules[module].actions.map((a,i)=><li key={i}>可选：{a}</li>)}</ul></div>)}<small>AI 根据有限记录提供参考，可能有误；不替代医学或营养诊断，不会改写你的记录。</small></>}
+ {state.state==='pending'&&<p role="status">上次请求尚待确认；只重读结果，不重新提交。</p>}{state.state==='unknown'&&<p role="status">上次结果未知，已保留预算预留并停止重试。事实报告仍可用。</p>}
+ {state.reason&&reasons[state.reason]&&<p>{reasons[state.reason]}</p>}
+ {state.available&&<><label><input type="checkbox" checked={consent} disabled={busy} onChange={e=>setConsent(e.target.checked)}/>我已核对，允许这份报告中已选的四模块内容提交给 DeepSeek 分析，仍受网站每月 10 元上限控制</label><button type="button" disabled={busy||!consent} onClick={()=>void run(true)}>分析选定生活记录</button></>}
+ </>}
+ <button type="button" disabled={busy} onClick={()=>void run(false)}>重新读取生活分析</button></section>;
+}

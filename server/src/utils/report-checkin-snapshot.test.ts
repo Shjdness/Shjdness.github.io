@@ -15,6 +15,7 @@ import {saveReportWithCheckins,readReportCheckins} from './report-checkin-snapsh
 import {reportCheckinsValue,archiveReportCheckins} from './report-checkin-format';
 import {runReportSchedule} from './report-jobs';
 import {generateReportAnalysis,readReportAnalysis} from './report-analysis';
+import {generateCheckinAnalysis} from './checkin-analysis';
 import {runRequestContext} from './di';
 import {LifeBackupService} from '../services/life-backup';
 import {LifeReportsService} from '../services/life-reports';
@@ -61,8 +62,10 @@ it('stores only selected current task labels, and the real scheduler captures we
 it('exports rich history as read-only portable archives and restores it with no external admission proof',async()=>{
  const f=await seeded();try{
   const saved=await saveReportWithCheckins(f.raw,f.vault,1,period(),now),db=drizzle(f.raw,{schema}),env={DB:f.raw,LIFE_CHECKIN_KEY:secret,JWT_SECRET:'synthetic-signing-secret-only-32-chars',RIN_GITHUB_CLIENT_ID:'fixture',RIN_GITHUB_CLIENT_SECRET:'fixture'} as any;
+  const result=await generateCheckinAnalysis({db:f.raw,vault:f.vault,owner:1,saved,scope2Approved:true,enabled:true,apiKey:'synthetic-only',now,fetcher:async()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({version:1,summary:'合成观察。',modules:{habits:{status:'observed',observations:[{text:'习惯结果未记录。',evidence:['H1']}],actions:[]},checkins:{status:'insufficient',observations:[],actions:[]},diet:{status:'insufficient',observations:[],actions:[]},routine:{status:'insufficient',observations:[],actions:[]}}})}}]})});expect(result.state).toBe('succeeded');
   const jwt=await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));const api=runRequestContext(env,db,()=>LifeBackupService());
   const response=await runRequestContext(env,db,()=>api.handle(new Request('https://fixture.invalid/life/backup?version=5',{headers:{Authorization:'Bearer '+jwt}})));expect(response.status,await response.clone().text()).toBe(200);const backup=await validateBackup(await response.json(),1);expect(backup.data.lifeReportCheckinArchives).toHaveLength(1);
+  expect(backup.data.lifeReportCheckinAnalysisArchives).toHaveLength(1);const output=backup.data.lifeReportCheckinAnalysisArchives[0] as any;expect(output).toMatchObject({archiveOnly:true,scopeVersion:2,analysis:result.analysis});for(const hidden of ['requestKey','claimToken','hmac','reserved_fen'])expect(JSON.stringify(output)).not.toContain(hidden);
   const encrypted=await encryptBackup(backup,'synthetic-archive-backup-password'),decoded=await decryptBackup(encrypted,'synthetic-archive-backup-password',1),r=decoded.data.lifeReportCheckinArchives[0] as any;expect(r.archive.archiveOnly).toBe(true);expect(r.archive.sources).toBeUndefined();expect(JSON.stringify(r)).not.toContain('content_hmac');
   const restored=await mailFixture();try{
    const parent=await saveReportSnapshot(restored.raw,1,saved.report),newVault=await checkinVault(btoa(String.fromCharCode(...Array.from({length:32},(_,i)=>i+81))));const sealed=await newVault.sealPayload(1,'report-snapshot',parent.sha256,r.archive),hmac=await newVault.payloadDigest(1,'report-snapshot',parent.sha256,r.archive);

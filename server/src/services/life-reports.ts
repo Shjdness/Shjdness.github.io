@@ -12,6 +12,9 @@ import {readReportAIConsent,setReportAIConsent} from '../utils/report-ai-consent
 import {optionalCheckinVault} from '../utils/checkin-key-guard';
 import {saveReportWithCheckins,readReportCheckins} from '../utils/report-checkin-snapshot';
 import {archiveReportCheckins} from '../utils/report-checkin-format';
+import {checkinAIShareableInMail} from '../utils/report-checkin-format';
+import {checkinAIRequest} from '../utils/checkin-ai';
+import {generateCheckinAnalysis,readCheckinAnalysis} from '../utils/checkin-analysis';
 
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
@@ -125,6 +128,20 @@ export function LifeReportsService() {
       const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
       const details=await readReportCheckins(db,vault,owner,saved);return {ownerId:owner,reportId:id,report:saved.report,details:details?{current:details.current,archived:!('sources' in details.snapshot),snapshot:'sources' in details.snapshot?archiveReportCheckins(details.snapshot,saved.report):details.snapshot}:null};
     })
+    .get('/life/reports/history/:id/checkin-analysis',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
+      if(!allowBurst(`life-checkin-analysis-read:${owner}`,10)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}
+      const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}const exists=await db.prepare('SELECT report_id FROM life_report_checkin_snapshots WHERE owner_id=? AND report_id=?').bind(owner,id).all();if(!exists.success)throw Error('Report extension unavailable');if(!exists.results.length)return {ownerId:owner,reportId:id,scopeVersion:2,report:saved.report,snapshot:null,state:'none',analysis:null,reason:'no-snapshot',available:false,unavailableReason:'no-snapshot',requestBytes:0,mailSafe:false};const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
+      const details=await readReportCheckins(db,vault,owner,saved),view=await readCheckinAnalysis(db,vault,owner,saved);let reason:string|null='no-snapshot',requestBytes=0;
+      if(details){if(!details.current||!('sources' in details.snapshot))reason='scope-changed';else {const prepared=checkinAIRequest(saved.report,details.snapshot);reason=prepared.reason;requestBytes=prepared.body?new TextEncoder().encode(prepared.body).length:0;}}
+      if(!reason&&env.REPORT_OUTBOUND_PAUSED==='true')reason='paused';if(!reason&&!env.DEEPSEEK_API_KEY?.trim())reason='not-configured';if(!reason&&Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE)reason='pricing-review';
+      return {ownerId:owner,reportId:id,scopeVersion:2,report:saved.report,snapshot:details?('sources' in details.snapshot?archiveReportCheckins(details.snapshot,saved.report):details.snapshot):null,...view,available:!reason&&view.state==='none'&&!view.reason,unavailableReason:reason??view.reason,requestBytes,mailSafe:details?checkinAIShareableInMail(details.snapshot):false};
+    })
+    .post('/life/reports/history/:id/checkin-analysis',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';if(env.REPORT_OUTBOUND_PAUSED==='true'){context.set.status=503;return {ownerId:owner,code:'OUTBOUND_PAUSED'};}const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
+      if(!allowBurst(`life-checkin-analysis-write:${owner}`,3)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
+      return {ownerId:owner,reportId:id,...await generateCheckinAnalysis({db,vault,owner,saved,scope2Approved:context.body.allowSelectedModules,enabled:true,apiKey:env.DEEPSEEK_API_KEY})};
+    },{body:t.Object({scopeVersion:t.Literal(2),allowSelectedModules:t.Literal(true)},{additionalProperties:false})})
     .post('/life/reports/history/:id/analysis',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       if(env.REPORT_OUTBOUND_PAUSED==='true'){context.set.status=503;return {ownerId:owner,code:'OUTBOUND_PAUSED'};}

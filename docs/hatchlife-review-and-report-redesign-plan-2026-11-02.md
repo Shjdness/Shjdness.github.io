@@ -290,3 +290,19 @@ flowchart LR
 - 结果用途分离AES-GCM/HMAC绑定owner/request key/原快照；重读不调用。超时/传输/JSON不合法为unknown且保留预留；调用成功后落库失败仍保留pending，过期视unknown不接管。日志只固定运维类别，绝无原provider错误、身份/正文/Key。
 - 最终65文件255项全量、前后端类型/diff通过。真实隔离Miniflare D1 5路rich AI仅1个mock和1笔5分预留，兼容此前并发/回滚/撤回测试。不是生产DeepSeek成功，0真实调用费用/0邮件。
 - **尚未开放付费API/UI或自动scope2调度**。先完成新结果的个人只读归档与恢复口径，再接owner实际输入预览/明确scope2同意、手动/自动调度；旧数值同意不升级。随后密文邮件准备/最终发送资格、固定事实+AI整合与整条QQ收件验收。0032/33/34均未部署，0027–31不改。新加密Key仍未配置生产，线上08d9b50和已有统计邮件不变。总任务继续未完成，不标complete。
+
+## 16. 2026-11-02 手动四模块入口与AI结果备份接线（功能分支，未发布）
+
+- 用户最新明确授权必要的真实AI联调和测试发送，不因费用本身回避必要测试；仍遵守网站月10元、限定四模块内容与已验证收件邮箱，旧unknown不盲目重放，不造个人生活测试记录，不购买服务或重建聊天自动维护。真实联调待新版完整发布与独立Key配置就绪后执行，不以模拟冒充。
+- owner-only GET/POST `/life/reports/history/:id/checkin-analysis` 已接持久核心。读取返回已剥离来源证明的只读快照与状态，POST必须精确scopeVersion2/allowSelectedModules=true，拒绝旧数值授权体。owner/报告隔离、Key/维护总闸、速率和价格/预算限制仍有效，GET/页面打开不产生调用。
+- 报告页新增真实输入数据预览、默认未勾的单份同意、手动四模块结果/证据和小行动、重读按钮。提交只一次，超时未确认先关闭按钮重读；pending/unknown无付费重试。账号/报告切换、StrictMode旧请求用generation+AbortController隔离；模型文本纯文本渲染。旧报告不需新Key且隐藏无扩展模块，解密不可用仍保留统计查看。
+- v5增加`lifeReportCheckinAnalysisArchives`：成功结果与基础报告/扩展同一DB备份事务读出，验证绑定、解密和HMAC后仅导出只读内容，排除requestKey/claimToken/来源证明/消费/同意/队列，pending/unknown不作为可重放任务带入。浏览器校验引用原快照的合法ref；加密文件往返仍验证owner/数据清单，篡改或错Key不静默省略。归档投影只用于校验/回看，付费请求强制要求live快照，不能用archiveOnly冒充权限。生产恢复入口仍未开放，未宣称已生产恢复。
+- 两CI加reportSelectedAIV2能力门与新私有路由匿名403检查，尚未运行线上CI。0032–34未发布，0027–31冻结；main本地原文档和未跟踪方案仍保留，未覆盖。
+- 最终65文件257项全量、前后端类型、Vite实际API地址构建通过；之后真实HTTP v5成功结果导出/加密往返补测与权限路由共18项定向、服务端类型/两CI YAML/diff复验通过。隔离SQL和mock为测试，不连接真实服务。
+- CUA真实构建+loopback合成API：初始0提交，逐份同意后1模拟提交、四模块展示；刷新/重读仍1，unknown重读仍1且无提交按钮；withdrawn/archive/key-off无付费按钮，legacy隐藏新模块，owner2仍0。实际360/800 CSS像素无溢出，console无warn/error，临时viewport重置/服务关闭。证据outputs/life-checkin-2026-11-02/checkin-analysis-{browser.json,desktop.png,mobile.png,build.log}。不读真实用户正文/Secret，未产生真实费用/邮件。
+
+### 接续重点
+
+1. **不重做手动入口或已通过基础**：继续独立scope2持续同意/撤回和有界自动调度，在claim/准入重复核对同意版本与时刻；旧数字开关不升级，周报日报附录不另收费。
+2. 新版QQ邮件接线：固定事实+可分享AI，AI-only输入禁止将综合结果入邮件；敏感准备消息密文保存、最终发送原子核对来源/邮箱/启用资格，unknown不重发，AI失败或未同意仍发安全事实版。
+3. 整条管线/恢复/发布验收后合main、实际main构建、两CI与线上只读，再安全配置独立LIFE_CHECKIN_KEY、正常真实内容联调DeepSeek及必要QQ发送与实际收件。旧unknown仍不退款/重放；总任务未完成，不能因手动页面可用或原统计邮件已收而称新版已落实。

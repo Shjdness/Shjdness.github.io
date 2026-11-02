@@ -9,6 +9,10 @@ import {runRequestContext} from '../utils/di';
 import {LifeReportsService,previewLifeReport,reportQueries} from './life-reports';
 import {reportWindow} from '../utils/life-report';
 import {saveReportSnapshot} from '../utils/report-history';
+import {checkinVault} from '../utils/checkin-vault';
+import {emptyCheckin} from '../utils/checkin-format';
+import {saveCheckin} from '../utils/checkin-store';
+import {saveReportWithCheckins} from '../utils/report-checkin-snapshot';
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
 function fixture(){
@@ -52,6 +56,15 @@ it('protects all report history/settings/status routes and discloses only secret
     const text=await status.text();expect(text).not.toContain(f.env.DEEPSEEK_API_KEY);
     expect(JSON.parse(text)).toMatchObject({ownerId:1,deepseekConfigured:true,apiVerified:false,aiEnabled:false,emailEnabled:false,monthlyBudgetFen:1000});
   }finally{f.sqlite.close();}
+});
+it('requires selected-module approval, exposes actual input only to owner and reuses paid results on refresh',async()=>{
+ const f=fixture(),key=btoa(String.fromCharCode(...Array.from({length:32},(_,i)=>i+77))),fetcher=vi.spyOn(globalThis,'fetch');try{
+  f.env.LIFE_CHECKIN_KEY=key;f.env.DEEPSEEK_API_KEY='synthetic-selected-key-not-disclosed';const vault=await checkinVault(key),now=new Date(),period=reportWindow('daily',now),record=emptyCheckin();record.state='confirmed';record.items=[{key:crypto.randomUUID(),kind:'habit',source:null,name:'approved fixture habit',note:'',result:'unrecorded',ai:true,email:false}];await saveCheckin(f.raw,vault,1,period.fromDate,{value:record,baseRevision:0,clientKey:crypto.randomUUID()},now.getTime()-1000);const saved=await saveReportWithCheckins(f.raw,vault,1,period,now),path='/history/'+saved.id+'/checkin-analysis';
+  for(const owner of [undefined,3,4]){const denied=await f.request(owner,path);expect(denied.status).toBe(403);expect(denied.headers.get('cache-control')).toContain('no-store');}expect((await f.request(2,path)).status).toBe(404);
+  const info=await f.request(1,path);expect(info.status).toBe(200);const body=await info.json();expect(body).toMatchObject({scopeVersion:2,available:true,mailSafe:false,state:'none'});expect(body.snapshot.sources).toBeUndefined();expect(JSON.stringify(body)).not.toContain('hmac');expect(JSON.stringify(body)).not.toContain(f.env.DEEPSEEK_API_KEY);
+  expect((await f.request(1,path,{allowNumericAnalysis:true})).status).toBe(422);expect(fetcher).not.toHaveBeenCalled();
+  const analysis={version:1,summary:'合成观察。',modules:{habits:{status:'observed',observations:[{text:'结果尚未记录。',evidence:['H1']}],actions:[]},checkins:{status:'insufficient',observations:[],actions:[]},diet:{status:'insufficient',observations:[],actions:[]},routine:{status:'insufficient',observations:[],actions:[]}}};fetcher.mockResolvedValue(Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(analysis)}}]}));const result=await f.request(1,path,{scopeVersion:2,allowSelectedModules:true});expect(result.status).toBe(200);expect(await result.json()).toMatchObject({state:'succeeded',analysis});expect(fetcher).toHaveBeenCalledOnce();expect(await (await f.request(1,path)).json()).toMatchObject({available:false,state:'succeeded'});expect(await (await f.request(1,path,{scopeVersion:2,allowSelectedModules:true})).json()).toMatchObject({state:'succeeded'});expect(fetcher).toHaveBeenCalledOnce();f.env.REPORT_OUTBOUND_PAUSED='true';expect((await f.request(1,path,{scopeVersion:2,allowSelectedModules:true})).status).toBe(503);
+ }finally{fetcher.mockRestore();f.sqlite.close();}
 });
 
 it('saves only server-generated facts once per complete period and keeps history owner-scoped',async()=>{

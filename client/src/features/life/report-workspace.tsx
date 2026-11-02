@@ -4,6 +4,7 @@ import {getCookie} from 'typescript-cookie';
 import {endpoint} from '../../main';
 import {reportSnapshot,type LifeReportPreview} from '../../../../server/src/utils/life-report';
 import {ReportCheckinPreview} from './report-checkin-preview';
+import {ReportCheckinAnalysis} from './report-checkin-analysis';
 
 type Preferences={dailyTime:string;weeklyTime:string;weeklyDay:number;revision:number;dailyEnabled:boolean;weeklyEnabled:boolean};
 type Item={id:number;kind:'daily'|'weekly';period_start:number;period_end:number;created_at:number};
@@ -123,6 +124,7 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     {!loading&&!items.length&&<p>还没有保存报告，可以先保存一份当前完整周期的快照。</p>}
     {next&&<button type="button" disabled={busy} onClick={()=>void run(()=>history(next))}>查看更多历史</button>}
     {historical&&activeSaved&&<ReportCheckinPreview key={activeSaved} ownerId={ownerId} token={token} reportId={activeSaved}/>}
+    {historical&&activeSaved&&<ReportCheckinAnalysis key={'selected-'+activeSaved} ownerId={ownerId} token={token} reportId={activeSaved}/>}
     {historical&&activeSaved&&<section className="life-report-analysis" aria-label="统计数字分析">
       <h3>这份报告的数字统计分析</h3>
       <p>只发送成果、待办、专注、习惯与便签天数等统计数字，不发送正文、名称、日期、邮箱或账号。</p>
