@@ -496,3 +496,12 @@ Owner历史保存/20条分页/详情、revision时间设置、仅布尔Secret配
 
 - 用户已明确授权使用站长Shjdness沿既有权限登录，并以一份真实报告的整数统计做DeepSeek受控验证；不再把OAuth账号授权视为缺失。当前IAB无GitHub会话，已进入现有GitHub登录表单并填写公开用户名；密码/通行密钥需要用户直接完成。Sign in提交被自动审批拒绝，理由是凭据输入尚未完成、可能失败或锁定，已交接页面并请求完成状态，不重试或读取字段值/凭据/令牌绕过。未发生真实AI/邮件调用或费用。
 - 独立小修：LifeBackupService在鉴权拒绝前统一设置private/no-store、Pragma和Vary Origin/Authorization，匿名403及授权导出均不缓存，原权限/备份格式/数据范围保持。3项实际备份/恢复边界定向与服务端类型/diff通过，不重复无变化全量扫描；推送后按CI和线上只读验收保存状态。
+
+## 2026-11-02 备份缓存修补发布闭环与Brevo认证基础
+
+- 6537114的Worker41367226883与Pages41367226936均Status Success；只读备份v4匿名403现在带private/no-store与Vary Authorization，证据outputs/life-reports-2026-11-02/backup-cache-live.json和两CI HTML。main/功能树起点均为6537114，无重复部署或生产测试记录。本次仅回归对应3项/类型，继承前次219项全量，不冒充再次全量。
+- 基于Brevo官方secured-webhooks与transactional-webhooks文档新增未接线认证器：Bearer header经WebCrypto比较后才读取原始体（不是内容HMAC签名）；复用32KiB/5秒流量边界，仅投影规范化事件元数据，排除地址/主题/原文。独立高熵Secret且不得复用JWT/业务凭据；不使用URL携带秘密、IP白名单代替认证或未经认证访问DB。
+- 识别发送API尖括号Message-ID与回调可能无括号的差异，新增保守wrapper归一化，不改大小写/不拼URL。event id按provider/delivery/message/type/time摘要生成，不能误用Brevo webhook配置id作全局事件id。认证后的旧反馈允许通过单向账本去重，避免合法延迟退信/退订被5分钟窗口误丢；仅拒绝未来异常时间。临时soft_bounce/deferred与open/click不当作终态或人类已读；spam/unsubscribed规范为既有收件反馈抑制桶，接线前需同步UI描述，不能把所有反馈都声称为垃圾邮件投诉。
+- 7项定向（3新Brevo+4既有Svix）及服务端类型/diff通过，覆盖错误header不读body、Secret复用、大小/阻塞读取、重复标签/畸形ID、旧反馈/未来时间及不同包装同一事件。无真实提供商、邮件或AI调用。当前只新增内部解析器，工厂/Worker尚未接Brevo、默认不启用，不宣称无域名邮件已可发送。
+- 下一项将Message-ID归一化接发送响应、按provider分派认证回调与工厂、验证完整账本/退订/暂停及更新运维配置要求；完成后才审阅合main，不反复重做现有UI。GitHub登录仍需用户在已保留页面完成凭据，不重试被拒提交、读取秘密或换浏览器绕过，已获账号授权无需再问。
+- 官方依据：https://developers.brevo.com/docs/secured-webhooks、https://developers.brevo.com/docs/transactional-webhooks、https://developers.brevo.com/reference/send-transac-email。本次只核对协议，不注册账户/接受条款/购买服务。

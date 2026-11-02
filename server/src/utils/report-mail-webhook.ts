@@ -4,7 +4,7 @@ import type {ReportMailEvent} from './report-mail-events';
 const bytes=(value:string)=>new TextEncoder().encode(value);
 const decode=(value:string)=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
 
-async function webhookBody(request:Request,timeoutMs=5000){
+export async function webhookBody(request:Request,timeoutMs=5000){
   if(Number(request.headers.get('content-length')??0)>32768)throw Error('Invalid mail webhook');
   const reader=request.body?.getReader();if(!reader)return new Uint8Array();
   const chunks:Uint8Array[]=[];let size=0,expired=false,timer:ReturnType<typeof setTimeout>;
