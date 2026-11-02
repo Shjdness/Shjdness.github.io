@@ -543,3 +543,8 @@ Owner历史保存/20条分页/详情、revision时间设置、仅布尔Secret配
 - 协议有限状态与12秒独立超时、abort关闭、32KiB/512字节/64行响应界限；UTF8 base64正文/折叠Subject，最后DATA 250才accepted。断线或丢失结果unknown，不重发/退款；QQ无可信反馈回调，owner UI明确需收件箱/退信核对，不能声称自动送达或投诉抑制。
 - 新5项SMTP复合回归及工厂/API矩阵：固定TLS/正确阶段/中文MIME/注入拒绝/授权失败停止/异常响应与断线超时/并发只1准入及模拟会话、未知不重放、收件白名单、凭据和地址不回HTTP或账本。61文件229项全量与前后端类型/diff通过；Wrangler dry-run打包通过，未上传或调用网络SMTP。真实临时D1验证5个并发mail tick仅1准入/1模拟SMTP提交、周报合并正文/后续tick不重发，证据qq-schedule-d1-probe.cjs。
 - 新reportQQSMTPV1能力门令Pages等待新Worker后部署，无schema修改，0030/31冻结。启用指南改为QQ，不再要求域名或Brevo账号。所有邮件配置字段建议Secret，避免正常CI重置未声明普通vars。接下来实际main构建/差异审阅/两CI及只读能力验收，之后本人开启SMTP并在官方Cloudflare Secret页面输入授权码，再进行真实收件验证；不在聊天收Secret，当前不能称已收到报告。
+
+## 2026-11-02 实际main构建兼容复验
+
+- 实际合并态首次构建发现浏览器的服务器类型推断未加载cloudflare:sockets声明。尝试引用整个Worker类型包会污染浏览器Response.json类型，因此改为只声明本适配器使用的原生Socket契约；不改TLS、运行时模块或现有页面行为。实际main非缓存tsc+Vite和服务端类型随后通过，未推送失败构建。8项QQ/设置定向在main通过；完整229项及真实临时D1/Worker dry-run见前记录。
+- 用户已取得QQ SMTP授权码且本人完成Cloudflare登录；不在聊天收取/读取授权码。已交接tab17现有Worker设置入口，后续准备Secret输入并由用户本人填写；如安全验证/2FA设置提示阻挡，由用户选择，不代关闭安全保护。尚未写生产邮件配置或真实发信。

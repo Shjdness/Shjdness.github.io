@@ -1,3 +1,4 @@
+/// <reference path="./report-mail-sockets.d.ts" />
 import {reportRecipient} from './report-mail-vault';
 import {reportMailMessage,type ReportMailProvider} from './report-mail-delivery';
 
