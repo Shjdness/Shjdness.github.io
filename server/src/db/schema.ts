@@ -10,6 +10,9 @@ export const lifeCheckinRevisions=sqliteTable('life_checkin_revisions',checkinFi
 export const lifeReportCheckinSnapshots=sqliteTable('life_report_checkin_snapshots',{
  reportId:integer('report_id').primaryKey().references(()=>lifeReports.id,{onDelete:'cascade'}),ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),reportSha256:text('report_sha256').notNull(),version:integer('version').notNull(),outboundEligible:integer('outbound_eligible').notNull().default(0),sealedJson:text('sealed_json').notNull(),contentHmac:text('content_hmac').notNull(),createdAt:integer('created_at').notNull(),
 });
+export const lifeReportCheckinAnalyses=sqliteTable('life_report_checkin_analyses',{
+ requestKey:text('request_key').primaryKey(),ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),reportId:integer('report_id').notNull().references(()=>lifeReports.id,{onDelete:'cascade'}),reportSha256:text('report_sha256').notNull(),snapshotHmac:text('snapshot_hmac').notNull(),scopeVersion:integer('scope_version').notNull(),claimToken:text('claim_token').notNull(),state:text('state').notNull(),reason:text('reason'),sealedJson:text('sealed_json'),resultHmac:text('result_hmac'),createdAt:integer('created_at').notNull(),updatedAt:integer('updated_at').notNull(),
+},t=>({ownerReport:uniqueIndex('life_report_checkin_analysis_owner').on(t.ownerId,t.reportId)}));
 
 export const feeds = sqliteTable("feeds", {
     id: integer("id").primaryKey(),
