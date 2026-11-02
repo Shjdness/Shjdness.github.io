@@ -104,6 +104,8 @@ jobs:
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/mail")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/ai-automation")" = "403"
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"lifeCheckinsV1":true'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportCheckinSnapshotsV1":true'
+          test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/history/1/checkins")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/checkins/status")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/backup?version=5")" = "403"
           test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$API_URL/life/todos")" = "403"

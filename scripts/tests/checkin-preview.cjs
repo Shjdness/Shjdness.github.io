@@ -8,14 +8,33 @@ const fixtureOwner=new URLSearchParams(location.search).get('qaOwner')==='2'?2:1
 document.cookie='token=x.'+(fixtureOwner===2?'eyJpZCI6Mn0':'eyJpZCI6MX0')+'.x; Path=/; SameSite=Strict';
 localStorage.setItem('shjdshy-life-profile',JSON.stringify({id:fixtureOwner,name:'合成验收账号',role:'owner',permission:1,canWrite:true,avatar:''}));
 const actualFetch=window.fetch.bind(window);
+const qaMode=new URLSearchParams(location.search).get('qaMode');
+window.fixtureCalls=[];
+const qaReport={version:1,ownerId:fixtureOwner,generatedAt:'2026-11-02T00:00:00.000Z',period:{kind:'daily',timezone:'Asia/Shanghai',fromDate:'2026-11-01',toDateExclusive:'2026-11-02',start:'2026-10-31T16:00:00.000Z',end:'2026-11-01T16:00:00.000Z'},coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:2,tasksCompleted:1,ideasCreated:0,focus:{completedSessions:1,recordedMinutes:25,earlySessions:0},habitCompletions:1,daysWithNotes:0,aiEnabled:false,emailEnabled:false};
+const qaRecord={version:1,state:'confirmed',items:[{key:'11111111-1111-4111-8111-111111111111',kind:'habit',source:null,name:'合成钢琴练习',result:'done',note:'合成短练习',email:true,ai:true}],meals:[{key:'22222222-2222-4222-8222-222222222222',kind:'eaten',description:'合成蔬菜与主食',portion:'合成一份',email:true,ai:true}],sleep:{bedAt:'2026-11-01T00:15:00+08:00',wakeAt:'2026-11-01T08:00:00+08:00',email:true,ai:true},targets:{bedMinute:null,wakeMinute:null}};
+const qaSnapshot={version:1,scopeVersion:2,archiveOnly:true,generatedAt:qaReport.generatedAt,fromDate:'2026-11-01',toDateExclusive:'2026-11-02',rangeFrom:'2026-10-26',entries:[{date:'2026-11-01',revision:1,updatedAt:1793534400,record:qaRecord}],current:{asOf:qaReport.generatedAt,pendingTasks:2,todos:[]},reading:{markedRead:3,starred:1}};
 window.fetch=async(input,init={})=>{
  const u=new URL(typeof input==='string'?input:input.url,location.href);
  if(u.origin===location.origin)return actualFetch(input,init);
  if(u.origin!=='https://rin-server.1322589722.workers.dev')throw Error('External network disabled in fixture');
+ window.fixtureCalls.push({path:u.pathname,method:init.method||'GET'});
  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  if(u.pathname==='/user/profile')return reply({id:fixtureOwner,username:'合成验收账号',role:'owner',permission:1,canWrite:true});
  if(u.pathname.startsWith('/config'))return reply({});
  if(u.pathname==='/life/todos'||u.pathname==='/habit')return reply([]);
+ if(u.pathname.startsWith('/life/reports/')){
+  const p=u.pathname.slice('/life/reports'.length),base={ownerId:fixtureOwner};
+  if(p==='/preview')return reply(qaReport);
+  if(p==='/settings')return reply({...base,preferences:{dailyTime:'08:00',weeklyTime:'08:00',weeklyDay:1,revision:1,dailyEnabled:false,weeklyEnabled:false}});
+  if(p==='/status')return reply({...base,deepseekConfigured:true,apiVerified:false,aiEnabled:false,emailEnabled:false,automationEnabled:false,monthlyBudgetFen:1000,reservedMonthlyFen:5,manualAIAvailable:true,schedulerAvailable:true});
+  if(p==='/history')return reply({...base,items:[{id:11,kind:'daily',period_start:1793462400,period_end:1793548800,created_at:1793577600}],nextBefore:null});
+  if(p==='/history/11')return reply({...base,id:11,report:qaReport});
+  if(p==='/history/11/analysis')return reply({...base,reportId:11,state:'none',analysis:null,reason:'checkin-scope-required'});
+  if(p==='/history/11/checkins')return qaMode==='key-off'?reply({code:'KEY_UNAVAILABLE'},503):reply({...base,reportId:11,report:qaReport,details:qaMode==='legacy'?null:{current:qaMode!=='withdrawn'&&qaMode!=='archive',archived:qaMode==='archive',snapshot:qaSnapshot}});
+  if(p==='/jobs'||p==='/mail/deliveries')return reply({...base,items:[]});
+  if(p==='/mail')return reply({...base,storageConfigured:false,deliveryConfigured:false,maskedRecipient:null,verified:false,enabled:false});
+  if(p==='/ai-automation')return reply({...base,enabled:false,revision:0,enabledAt:null,scope:'statistics',configured:true,pricingValid:true,monthlyBudgetFen:1000,reservedMonthlyFen:5});
+ }
  if(u.pathname==='/life/checkins/status')return reply({ownerId:fixtureOwner,configured:new URLSearchParams(location.search).get('qaMode')!=='key-off'});
  if(u.pathname==='/life/checkins')return reply({ownerId:fixtureOwner,items:[],nextBefore:null});
  if(u.pathname.endsWith('/revisions')){const base=u.pathname.replace('/revisions',''),r=JSON.parse(localStorage.getItem('fixture-cloud:'+fixtureOwner+':'+base)||'null');return reply({ownerId:fixtureOwner,date:base.split('/').pop(),items:r?[{revision:r.revision,updatedAt:Math.floor(r.updatedAt),record:r.value}]:[]});}

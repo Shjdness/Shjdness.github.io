@@ -17,7 +17,7 @@ export async function readReportAnalysis(db:D1Database,ownerId:number,saved:Save
   if(saved.report.ownerId!==ownerId)throw Error('Report owner mismatch');
   const result=await db.prepare('SELECT * FROM life_report_analyses WHERE owner_id=? AND report_id=? AND model=? AND prompt_version=1').bind(ownerId,saved.id,REPORT_AI_MODEL).all<Record<string,unknown>>();
   if(!result.success)throw Error('Analysis read unavailable');
-  const row=result.results[0];if(!row)return {...empty};
+  const row=result.results[0];if(!row){const extensions=await db.prepare('SELECT report_id FROM life_report_checkin_snapshots WHERE owner_id=? AND report_id=?').bind(ownerId,saved.id).all();if(!extensions.success)throw Error('Analysis scope unavailable');return {...empty,...(extensions.results.length?{reason:'checkin-scope-required'}:{})};}
   const stored=storedRow(row),analysis=await validateStoredAnalysis(stored,{id:saved.id,ownerId,sha256:saved.sha256});
   // A crash/disconnected request may have reached the provider. Never take over
   // a stale pending call or release its spend reservation for an automatic retry.
@@ -31,6 +31,7 @@ export async function generateReportAnalysis(options:{db:D1Database;ownerId:numb
   const {db,ownerId,saved}=options,now=options.now??new Date();
   const existing=await readReportAnalysis(db,ownerId,saved,now);
   if(existing.state!=='none')return existing;
+  if(existing.reason==='checkin-scope-required')return existing;
   if(!options.enabled||!options.apiKey?.trim())return {...empty,reason:'not-configured'};
   if(!Number.isFinite(now.getTime())||now.getTime()>=REPORT_AI_PRICE_REVIEW_BEFORE)return {...empty,reason:'pricing-review'};
   if(await reportDigest(JSON.stringify(reportSnapshot(ownerId,saved.report)))!==saved.sha256)throw Error('Report digest mismatch');

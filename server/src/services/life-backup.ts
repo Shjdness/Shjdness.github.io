@@ -3,13 +3,14 @@ import Elysia, {t} from 'elysia';
 import {
   appearancePreferences, comments, dailyBasics, feedHashtags, feeds, habitLogs, habits,
   hashtags, lifeDailyNotes, lifeTodos, pomodoroSessions, rssItems, rssSourceGroups,
-  rssSubscriptions, writingTagOptions, lifeReports, lifeReportPreferences, lifeReportAnalyses,lifeCheckins,lifeCheckinRevisions,
+  rssSubscriptions, writingTagOptions, lifeReports, lifeReportPreferences, lifeReportAnalyses,lifeCheckins,lifeCheckinRevisions,lifeReportCheckinSnapshots,
 } from '../db/schema';
 import { setup } from '../setup';
 import { getDB,getEnv } from '../utils/di';
 import {validBackupManifest} from '../utils/backup-manifest';
 import {checkinVault} from '../utils/checkin-vault';
 import {exportCheckinRows} from '../utils/checkin-backup';
+import {exportReportCheckinArchives} from '../utils/report-checkin-backup';
 
 export const BACKUP_FORMAT = 'shjdshy-personal-data';
 export const BACKUP_VERSION = 2;
@@ -38,7 +39,7 @@ export function LifeBackupService() {
     // D1 executes a batch as one transaction: every table belongs to the same snapshot.
     // Keep subqueries in that transaction too; do not fetch IDs in an earlier request.
     const [ownFeeds, ownComments, ownHabits, logs, notes, basics, todos, sessions,
-      subscriptions, groups, items, appearance, ownFeedTags, ownTags, tagOptions, reports, preferences, analyses,checkins,revisions] = await db.batch([
+      subscriptions, groups, items, appearance, ownFeedTags, ownTags, tagOptions, reports, preferences, analyses,checkins,revisions,extensions] = await db.batch([
       db.query.feeds.findMany({ where: eq(feeds.uid, uid) }),
       db.query.comments.findMany({ where: eq(comments.userId, uid) }),
       db.query.habits.findMany({ where: eq(habits.ownerId, uid) }),
@@ -59,12 +60,12 @@ export function LifeBackupService() {
         db.query.lifeReportPreferences.findMany({where:eq(lifeReportPreferences.ownerId,uid)}),
       ]:[]),
       ...(['4','5'].includes(query.version??'')?[db.query.lifeReportAnalyses.findMany({where:eq(lifeReportAnalyses.ownerId,uid)})]:[]),
-      ...(query.version==='5'?[db.query.lifeCheckins.findMany({where:eq(lifeCheckins.ownerId,uid)}),db.query.lifeCheckinRevisions.findMany({where:eq(lifeCheckinRevisions.ownerId,uid)})]:[]),
+      ...(query.version==='5'?[db.query.lifeCheckins.findMany({where:eq(lifeCheckins.ownerId,uid)}),db.query.lifeCheckinRevisions.findMany({where:eq(lifeCheckinRevisions.ownerId,uid)}),db.query.lifeReportCheckinSnapshots.findMany({where:eq(lifeReportCheckinSnapshots.ownerId,uid)})]:[]),
     ]);
     const safeSubscriptions = subscriptions.map(({ websubKey: _key, websubCallback: _callback, ...row }) => row);
-    let checkinData={lifeCheckins:[] as unknown[],lifeCheckinRevisions:[] as unknown[]};
-    if(query.version==='5'&&(checkins.length||revisions.length)){
-      try{const vault=await checkinVault(env.LIFE_CHECKIN_KEY??'',[env.JWT_SECRET,env.REPORT_MAIL_VAULT_KEY??'',env.DEEPSEEK_API_KEY??'',env.REPORT_QQ_SMTP_AUTH_CODE??'']);checkinData={lifeCheckins:await exportCheckinRows(checkins,vault,uid),lifeCheckinRevisions:await exportCheckinRows(revisions,vault,uid)};}
+    let checkinData={lifeCheckins:[] as unknown[],lifeCheckinRevisions:[] as unknown[],lifeReportCheckinArchives:[] as unknown[]};
+    if(query.version==='5'&&(checkins.length||revisions.length||extensions.length)){
+      try{const vault=await checkinVault(env.LIFE_CHECKIN_KEY??'',[env.JWT_SECRET,env.REPORT_MAIL_VAULT_KEY??'',env.DEEPSEEK_API_KEY??'',env.REPORT_QQ_SMTP_AUTH_CODE??'']);checkinData={lifeCheckins:await exportCheckinRows(checkins,vault,uid),lifeCheckinRevisions:await exportCheckinRows(revisions,vault,uid),lifeReportCheckinArchives:await exportReportCheckinArchives(extensions,reports,vault,uid)};}
       catch{set.status=503;return 'Check-in backup decryption unavailable; no partial backup exported';}
     }
     const data = {

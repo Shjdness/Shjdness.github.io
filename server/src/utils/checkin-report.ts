@@ -1,5 +1,6 @@
 import {checkinDate,checkinValue,type Checkin} from './checkin-format';
 import {reportSnapshot,type LifeReportPreview} from './life-report';
+import {reportCheckinsValue,reportCheckinArchiveValue,checkinAIShareableInMail,type ReportCheckins,type ReportCheckinArchive} from './report-checkin-format';
 
 type Entry={date:string;record:Checkin};
 const labels={done:'完成',missed:'明确未完成',unrecorded:'未记录',na:'不适用'};
@@ -36,4 +37,24 @@ export function checkinMailDraft(input:{report:LifeReportPreview;entries:Entry[]
     '完整报告与暂停： https://shjdness.github.io/life/reports（需登录）'];
   const text=lines.join('\n');if(new TextEncoder().encode(text).length>14000)throw Error('Check-in mail exceeds byte budget');
   return {subject:`夏令时电波 · ${days===7?'生活周报':'生活日报'} · ${report.period.fromDate}`,text};
+}
+/** Deterministic frozen-content preview, also used by the future sender. No
+ * mutable source lookup, no model output or extra permission inferred here. */
+export function frozenCheckinMailDraft(input:{report:LifeReportPreview;snapshot:ReportCheckins|ReportCheckinArchive;daily?:LifeReportPreview}){
+ const report=reportSnapshot(input.report.ownerId,input.report),s='sources' in input.snapshot?reportCheckinsValue(input.snapshot,report):reportCheckinArchiveValue(input.snapshot,report);
+ const mail=checkinMailDraft({report,entries:s.entries.filter(e=>e.date>=s.fromDate).map(e=>({date:e.date,record:e.record}))});
+ const chosen=s.entries.flatMap(e=>e.record.items.filter(i=>i.email&&i.kind==='habit'));
+ const habits=`近七天选定习惯：${chosen.filter(i=>i.result==='done').length} 条完成、${chosen.filter(i=>i.result==='missed').length} 条明确未完成、${chosen.filter(i=>i.result==='unrecorded').length} 条未记录、${chosen.filter(i=>i.result==='na').length} 条不适用；不据此推算计划完成率。`;
+ const beds=s.entries.filter(e=>e.record.sleep.email&&e.record.sleep.bedAt).map(e=>e.record.sleep.bedAt!).map(t=>Number(t.slice(11,13))*60+Number(t.slice(14,16))).sort((a,b)=>a-b);
+ let routine='上床时刻记录不足三天，暂不判断规律。';if(beds.length>=3){const gaps=beds.map((n,i)=>i? n-beds[i-1]:n+1440-beds[beds.length-1]);routine=`近七天有 ${beds.length} 天上床时刻，按跨午夜钟表计算的最短覆盖区间约 ${1440-Math.max(...gaps)} 分钟；不据此诊断睡眠质量。`;}
+ const pending=s.current.todos.map(t=>{const remaining=t.deadlineAt===null?null:t.deadlineAt-Math.floor(Date.parse(s.current.asOf)/1000);return `• ${line(t.name,80)}：${remaining===null?'未设置倒计时':remaining<=0?'72小时期限已到':`距期限约 ${Math.ceil(remaining/3600)} 小时`}`;});
+ const late=s.entries.filter(e=>e.date<s.fromDate&&e.updatedAt*1000>=Date.parse(report.period.start)&&e.updatedAt*1000<Date.parse(report.period.end)&&(e.record.items.some(i=>i.email)||e.record.meals.some(m=>m.email)||e.record.sleep.email)).slice(-3).map(e=>e.date);
+ const daily=input.daily?reportSnapshot(report.ownerId,input.daily):null;
+ if(daily&&(report.period.kind!=='weekly'||daily.period.kind!=='daily'||daily.period.end!==report.period.end))throw Error('Invalid weekly appendix');
+ const additions=['','七天记录观察',habits,routine,'','截至快照时值得留意的事',...(pending.length?pending:['没有选进邮件的当前待办标题。']),`当前共有 ${s.current.pendingTasks} 项未完成待办，其他事项请回到站内查看。`,
+ '','阅读与灵感',`本周期标记已读 ${s.reading.markedRead} 篇、收藏 ${s.reading.starred} 篇；这是标记事件，不证明完整阅读，不读取标题或正文。`,
+ ...(late.length?['','补记更新',`${late.join('、')} 的选定记录已补记或更正；仍归原日期，不重复计入当天成果。`]:[]),
+ ...(!checkinAIShareableInMail(s)?['','AI内容范围','部分AI输入只允许站内分析；综合分析不得直接放入邮件。']:[]),
+ ...(daily?['','昨日日报附录（包含在上周范围，不重复相加）',`已记录成果 ${daily.achievementsRecorded} 项，其中完成待办 ${daily.tasksCompleted} 项；专注 ${daily.focus.recordedMinutes} 分钟、${daily.focus.completedSessions} 轮。`]:[])];
+ const at=mail.text.indexOf('\n数据截至 ');const text=(at<0?mail.text:mail.text.slice(0,at))+additions.join('\n')+(at<0?'':mail.text.slice(at));if(new TextEncoder().encode(text).length>14000)throw Error('Frozen mail exceeds byte budget');return {subject:mail.subject,text};
 }

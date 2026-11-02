@@ -1,5 +1,6 @@
 import type {ScheduledController,ExecutionContext} from '@cloudflare/workers-types';
 import {runReportSchedule} from './utils/report-jobs';
+import {optionalCheckinVault} from './utils/checkin-key-guard';
 import {reportMailCallback,REPORT_MAIL_WEBHOOK_PATH,REPORT_MAIL_BREVO_WEBHOOK_PATH} from './utils/report-mail-callback';
 import {runConfiguredReportMail} from './utils/report-mail-schedule';
 import {runConfiguredReportAI} from './utils/report-ai-schedule';
@@ -19,7 +20,7 @@ export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 export default {
   async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
     let failed=false;
-    try{await runReportSchedule(env.DB);}catch{failed=true;}
+    try{await runReportSchedule(env.DB,new Date(),{checkins:await optionalCheckinVault(env)??undefined});}catch{failed=true;}
     try{const ai=await runConfiguredReportAI(env);if(ai.failures)failed=true;}catch{failed=true;}
     try{const mail=await runConfiguredReportMail(env);if(mail.failures)failed=true;}catch{failed=true;}
     if(failed)throw Error('Life report schedule unavailable');

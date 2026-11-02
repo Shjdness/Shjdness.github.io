@@ -32,13 +32,17 @@ export async function previewLifeReportPeriod(db:D1Database,ownerId:number,perio
   reportSnapshot(ownerId,{version:1,ownerId,generatedAt:now.toISOString(),period,coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:0,tasksCompleted:0,ideasCreated:0,focus:{completedSessions:0,recordedMinutes:0,earlySessions:0},habitCompletions:0,daysWithNotes:0,aiEnabled:false,emailEnabled:false});
   const rows = await db.batch<Record<string,number>>(reportQueries(ownerId,period).map(query=>db.prepare(query.sql).bind(...query.args)));
   if(rows.some(row=>!row.success)) throw Error('Report snapshot unavailable');
-  const [todos,focus,habits,notes]=rows.map(row=>row.results[0]);
+  return reportFromAggregateRows(ownerId,period,now,rows.map(row=>row.results[0]));
+}
+
+export function reportFromAggregateRows(ownerId:number,period:ReportWindow,now:Date,rows:Record<string,number>[]):LifeReportPreview{
+  const [todos,focus,habits,notes]=rows;
   if(!todos||!focus||!habits||!notes)throw Error('Incomplete report snapshot');
-  return {
+  return reportSnapshot(ownerId,{
     version:1, ownerId, generatedAt:now.toISOString(), period, coverage:'server-synced-only', mode:'statistics-preview',
     achievementsRecorded:todos.achievements, tasksCompleted:todos.tasks, ideasCreated:todos.ideas,
     focus:{completedSessions:focus.sessions,recordedMinutes:focus.minutes,earlySessions:focus.early},
     habitCompletions:habits.habits,daysWithNotes:notes.notes,aiEnabled:false,emailEnabled:false,
-  };
+  });
 }
 

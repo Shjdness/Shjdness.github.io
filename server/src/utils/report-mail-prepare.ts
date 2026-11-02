@@ -35,7 +35,7 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
   if(analysis?.state==='pending')return {state:'analysis-pending'};
   // Give an opted-in automatic analysis two cron intervals to complete. Missing
   // config, terminal failures/unknown results or a longer delay use statistics.
-  if(analysis?.state==='none'&&options.awaitAutomaticAnalysis&&p.ai_enabled===1&&seconds-job.anchor_at<600){
+  if(analysis?.state==='none'&&analysis.reason!=='checkin-scope-required'&&options.awaitAutomaticAnalysis&&p.ai_enabled===1&&seconds-job.anchor_at<600){
     const consent=await db.prepare('SELECT owner_id FROM life_report_ai_consent WHERE owner_id=? AND scope_version=1 AND enabled_at IS NOT NULL AND enabled_at<=?').bind(ownerId,job.anchor_at).all();
     if(!consent.success)throw Error('AI consent unavailable');if(consent.results.length)return {state:'analysis-pending'};
   }

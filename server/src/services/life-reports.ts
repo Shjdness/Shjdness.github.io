@@ -9,6 +9,9 @@ import {readReportPreferences,reserveReportWrite,updateReportPreferences,updateR
 import {REPORT_AI_MODEL,REPORT_AI_MONTHLY_FEN,REPORT_AI_PRICE_REVIEW_BEFORE} from '../utils/report-ai';
 import {generateReportAnalysis,readReportAnalysis} from '../utils/report-analysis';
 import {readReportAIConsent,setReportAIConsent} from '../utils/report-ai-consent';
+import {optionalCheckinVault} from '../utils/checkin-key-guard';
+import {saveReportWithCheckins,readReportCheckins} from '../utils/report-checkin-snapshot';
+import {archiveReportCheckins} from '../utils/report-checkin-format';
 
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
@@ -91,6 +94,8 @@ export function LifeReportsService() {
       const now=new Date(),reportKind=context.body.kind??'daily',period=reportWindow(reportKind,now);
       const existing=await findReportForPeriod(db,owner,period);
       if(existing)return {ownerId:owner,saved:true,created:false,...existing};
+      const checkins=await optionalCheckinVault(env);
+      if(checkins){const stored=await saveReportWithCheckins(db,checkins,owner,period,now);return {ownerId:owner,saved:true,...stored};}
       if(!await reserveReportWrite(db)){context.set.status=503;return {saved:false,code:'REPORT_WRITE_BUDGET_PAUSED'};}
       const stored=await saveReportSnapshot(db,owner,await previewLifeReport(db,owner,reportKind,now));
       return {ownerId:owner,saved:true,...stored};
@@ -109,6 +114,16 @@ export function LifeReportsService() {
       const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
       const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}
       return {ownerId:owner,reportId:id,...await readReportAnalysis(db,owner,saved)};
+    })
+    .get('/life/reports/history/:id/checkins',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
+      if(!allowBurst(`life-report-details:${owner}`,10)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}
+      const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}
+      const exists=await db.prepare('SELECT report_id FROM life_report_checkin_snapshots WHERE owner_id=? AND report_id=?').bind(owner,id).all();if(!exists.success)throw Error('Report extension unavailable');
+      if(!exists.results.length)return {ownerId:owner,reportId:id,details:null};
+      const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
+      const details=await readReportCheckins(db,vault,owner,saved);return {ownerId:owner,reportId:id,report:saved.report,details:details?{current:details.current,archived:!('sources' in details.snapshot),snapshot:'sources' in details.snapshot?archiveReportCheckins(details.snapshot,saved.report):details.snapshot}:null};
     })
     .post('/life/reports/history/:id/analysis',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';

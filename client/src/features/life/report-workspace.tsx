@@ -3,6 +3,7 @@ import {analysisValue,type ReportAnalysis} from '../../../../server/src/utils/re
 import {getCookie} from 'typescript-cookie';
 import {endpoint} from '../../main';
 import {reportSnapshot,type LifeReportPreview} from '../../../../server/src/utils/life-report';
+import {ReportCheckinPreview} from './report-checkin-preview';
 
 type Preferences={dailyTime:string;weeklyTime:string;weeklyDay:number;revision:number;dailyEnabled:boolean;weeklyEnabled:boolean};
 type Item={id:number;kind:'daily'|'weekly';period_start:number;period_end:number;created_at:number};
@@ -117,18 +118,20 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     {loading&&<p role="status">正在加载历史与设置…</p>}
     {message&&<p role="status">{message}</p>}
     {!loading&&<button type="button" disabled={busy} onClick={()=>void run(async()=>{await load();if(current())setMessage('已重新加载历史与设置。');})}>重新加载历史与设置</button>}
-    <p>历史快照只保留当时已同步的统计，不包含日记或任务正文。</p>
+    <p>基础统计保留原口径；新生活复盘快照只包含选定的打卡、饮食与作息，不包含日记。</p>
     <ul className="life-report-history">{items.map(item=><li key={item.id}><button type="button" disabled={busy} aria-pressed={activeSaved===item.id} onClick={()=>void run(()=>select(item.id))}>{item.kind==='daily'?'日报':'周报'} · {new Date(item.period_start*1000).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})} 起</button></li>)}</ul>
     {!loading&&!items.length&&<p>还没有保存报告，可以先保存一份当前完整周期的快照。</p>}
     {next&&<button type="button" disabled={busy} onClick={()=>void run(()=>history(next))}>查看更多历史</button>}
+    {historical&&activeSaved&&<ReportCheckinPreview key={activeSaved} ownerId={ownerId} token={token} reportId={activeSaved}/>}
     {historical&&activeSaved&&<section className="life-report-analysis" aria-label="统计数字分析">
-      <h3>这份报告的 AI 复盘</h3>
+      <h3>这份报告的数字统计分析</h3>
       <p>只发送成果、待办、专注、习惯与便签天数等统计数字，不发送正文、名称、日期、邮箱或账号。</p>
       {analysis?.state==='succeeded'&&analysis.analysis&&<div><p>{analysis.analysis.summary}</p><h4>观察</h4><ul>{analysis.analysis.observations.map((text,i)=><li key={i}>{text}</li>)}</ul><h4>可选的小行动</h4><ul>{analysis.analysis.actions.map((text,i)=><li key={i}>{text}</li>)}</ul><small>AI 根据有限统计提供参考，可能有误；不会修改你的记录。</small></div>}
       {analysis?.state==='pending'&&<p role="status">请求处理中，或仍在等待确认。请重新读取结果，不会重复提交。</p>}
       {analysis?.state==='unknown'&&<p role="status">上次请求结果未确认，已停止自动重试并保留预算预留。统计报告仍可使用。</p>}
       {analysis?.state==='statistics'&&<p>本次保留统计版；预算已满或已有调用记录，不会重复请求。</p>}
-      {analysis?.state==='none'&&<>
+      {analysis?.state==='none'&&analysis.reason==='checkin-scope-required'&&<p>这份报告包含生活复盘快照，需要对应的生活复盘分析范围；不能通过仅数字授权发起调用。</p>}
+      {analysis?.state==='none'&&analysis.reason!=='checkin-scope-required'&&<>
         <label><input type="checkbox" checked={numericConsent} disabled={busy||!status?.manualAIAvailable} onChange={event=>setNumericConsent(event.target.checked)}/>允许仅用这份报告的统计数字进行本次分析</label>
         <button type="button" disabled={busy||!numericConsent||!status?.manualAIAvailable} onClick={()=>void run(analyze)}>分析这份报告（预算内）</button>
         {analysis.reason&&<p>{analysis.reason==='pricing-review'?'价格需要复核，暂时只保留统计版。':analysis.reason==='write-budget'?'今日写入预算已满，暂时保留统计版。':'尚未调用 AI。'}</p>}

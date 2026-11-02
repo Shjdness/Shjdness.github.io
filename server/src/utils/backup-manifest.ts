@@ -6,7 +6,7 @@ export const BACKUP_TABLES=['feeds','comments','hashtags','feedHashtags','habits
 export const REPORT_BACKUP_TABLES=['lifeReports','lifeReportPreferences'] as const;
 export function validBackupManifest(value:unknown,version:number){
   if(!value||typeof value!=='object'||Array.isArray(value)||![1,2,3,4,5].includes(version))return false;
-  const allowed:readonly string[]=version===5?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES,'lifeReportAnalyses','lifeCheckins','lifeCheckinRevisions','lifeCheckinDraftCopies']:version===4?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES,'lifeReportAnalyses']:version===3?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES]:BACKUP_TABLES;
+  const allowed:readonly string[]=version===5?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES,'lifeReportAnalyses','lifeCheckins','lifeCheckinRevisions','lifeCheckinDraftCopies','lifeReportCheckinArchives']:version===4?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES,'lifeReportAnalyses']:version===3?[...BACKUP_TABLES,...REPORT_BACKUP_TABLES]:BACKUP_TABLES;
   const required=version===1?BACKUP_TABLES.filter(name=>name!=='writingTagOptions'):allowed;
   return required.every(name=>Object.hasOwn(value,name))&&Object.keys(value).every(name=>allowed.includes(name));
 }

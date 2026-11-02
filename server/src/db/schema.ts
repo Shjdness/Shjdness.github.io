@@ -7,6 +7,9 @@ const updated_at = integer("updated_at", { mode: 'timestamp' }).default(sql`(uni
 const checkinFields=()=>({ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),recordDate:text('record_date').notNull(),revision:integer('revision').notNull(),clientKey:text('client_key').notNull(),sealedJson:text('sealed_json').notNull(),contentHmac:text('content_hmac').notNull(),updatedAt:integer('updated_at').notNull()});
 export const lifeCheckins=sqliteTable('life_checkins',checkinFields(),t=>({pk:primaryKey({columns:[t.ownerId,t.recordDate]})}));
 export const lifeCheckinRevisions=sqliteTable('life_checkin_revisions',checkinFields(),t=>({pk:primaryKey({columns:[t.ownerId,t.recordDate,t.revision]})}));
+export const lifeReportCheckinSnapshots=sqliteTable('life_report_checkin_snapshots',{
+ reportId:integer('report_id').primaryKey().references(()=>lifeReports.id,{onDelete:'cascade'}),ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),reportSha256:text('report_sha256').notNull(),version:integer('version').notNull(),outboundEligible:integer('outbound_eligible').notNull().default(0),sealedJson:text('sealed_json').notNull(),contentHmac:text('content_hmac').notNull(),createdAt:integer('created_at').notNull(),
+});
 
 export const feeds = sqliteTable("feeds", {
     id: integer("id").primaryKey(),

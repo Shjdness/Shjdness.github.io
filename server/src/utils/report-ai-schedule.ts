@@ -22,6 +22,7 @@ export async function runReportAISchedule(options:{db:D1Database;apiKey?:string;
       JOIN life_report_ai_consent c ON c.owner_id=j.owner_id AND c.enabled_at IS NOT NULL AND c.scope_version=1 AND c.enabled_at<=j.anchor_at
       LEFT JOIN life_report_analyses a ON a.owner_id=j.owner_id AND a.report_id=j.report_id AND a.model=? AND a.prompt_version=1
       WHERE j.state='ready' AND a.request_key IS NULL AND j.anchor_at>=? AND j.anchor_at<=? AND (j.anchor_at>? OR (j.anchor_at=? AND j.job_key>?))
+      AND NOT EXISTS(SELECT 1 FROM life_report_checkin_snapshots x WHERE x.owner_id=j.owner_id AND x.report_id=j.report_id)
       AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1)
       ORDER BY j.anchor_at,j.job_key LIMIT 1`).bind(seconds,REPORT_AI_MODEL,seconds-86400,seconds,anchor,anchor,key).all<{job_key:string;owner_id:number;report_id:number;anchor_at:number;kind:'daily'|'weekly';period_start:number;period_end:number;enabled_at:number}>();
     if(!rows.success)throw Error('AI queue unavailable');return rows.results[0];

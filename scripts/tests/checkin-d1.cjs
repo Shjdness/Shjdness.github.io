@@ -2,8 +2,8 @@
 const {createRequire}=require('node:module'),path=require('node:path'),fs=require('node:fs'),os=require('node:os'),assert=require('node:assert/strict');
 const local=createRequire(path.resolve('../site/package.json'));
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'checkin-d1-')),compiled=path.join(dir,'helper.cjs');
-local('esbuild').buildSync({stdin:{contents:"export {checkinVault} from './server/src/utils/checkin-vault';export {emptyCheckin} from './server/src/utils/checkin-format';export {saveCheckin,readCheckin} from './server/src/utils/checkin-store';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:compiled});
-const {checkinVault,emptyCheckin,saveCheckin,readCheckin}=require(compiled),{Miniflare,convertV4MiniflareOptions}=local('miniflare');
+local('esbuild').buildSync({stdin:{contents:"export {checkinVault} from './server/src/utils/checkin-vault';export {emptyCheckin} from './server/src/utils/checkin-format';export {saveCheckin,readCheckin} from './server/src/utils/checkin-store';export {saveReportWithCheckins,readReportCheckins} from './server/src/utils/report-checkin-snapshot';export {reportWindow} from './server/src/utils/life-report';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:compiled});
+const {checkinVault,emptyCheckin,saveCheckin,readCheckin,saveReportWithCheckins,readReportCheckins,reportWindow}=require(compiled),{Miniflare,convertV4MiniflareOptions}=local('miniflare');
 (async()=>{
  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("isolated check-in fixture")}}',compatibilityDate:'2024-09-23',d1Databases:{DB:'isolated-checkins'},d1Persist:false}));
  try{
@@ -16,6 +16,19 @@ const {checkinVault,emptyCheckin,saveCheckin,readCheckin}=require(compiled),{Min
   for(let n=2;n<14;n++)await saveCheckin(db,vault,1,date,{value:{...record,items:record.items.map(i=>({...i,note:'next '+n}))},clientKey:crypto.randomUUID(),baseRevision:n});
   assert.equal((await db.prepare('SELECT count(*) AS n FROM life_checkin_revisions').first()).n,10);
   await db.prepare("CREATE TRIGGER fixture_fail BEFORE INSERT ON life_checkin_revisions WHEN NEW.revision=15 BEGIN SELECT RAISE(ABORT,'fixture'); END").run();await assert.rejects(()=>saveCheckin(db,vault,1,date,{value:{...record,items:record.items.map(i=>({...i,note:'fail'}))},clientKey:crypto.randomUUID(),baseRevision:14}));assert.equal((await readCheckin(db,vault,1,date)).revision,14);
-  console.log(JSON.stringify({passed:true,realIsolatedD1:true,samePayloadConcurrent:5,distinctEditsWinning:1,retainedRevisions:10,triggerFailureRolledBack:true,productionWrites:0,externalCalls:0}));
+  await db.prepare('DROP TRIGGER fixture_fail').run();
+  for(const ddl of [
+   'CREATE TABLE life_todos(id INTEGER PRIMARY KEY,owner_id INTEGER,type TEXT,completed INTEGER,completed_at INTEGER,created_at INTEGER,deadline_at INTEGER)',
+   'CREATE TABLE pomodoro_sessions(owner_id INTEGER,completed INTEGER,ended_at INTEGER,focus_minutes INTEGER,completed_early INTEGER)',
+   'CREATE TABLE habit_logs(owner_id INTEGER,completed INTEGER,date TEXT)',
+   'CREATE TABLE life_daily_notes(owner_id INTEGER,date TEXT,content TEXT)',
+   'CREATE TABLE rss_items(owner_id INTEGER,read INTEGER,read_at INTEGER,starred INTEGER,starred_at INTEGER)',
+  ])await db.prepare(ddl).run();
+  for(const file of ['0027-life-reports.sql','0033-report-checkin-snapshots.sql']){const source=fs.readFileSync('server/sql/'+file,'utf8');for(const ddl of source.match(/CREATE TABLE IF NOT EXISTS [\s\S]*?\);/g))await db.prepare(ddl).run();if(file.startsWith('0027'))await db.prepare('CREATE UNIQUE INDEX fixture_report_period ON life_reports(owner_id,kind,period_start,period_end,template_version)').run();}
+  const now=new Date('2026-11-02T00:00:00Z'),confirmed={...record,state:'confirmed',items:record.items.map(i=>({...i,email:true}))};await saveCheckin(db,vault,1,date,{value:confirmed,clientKey:crypto.randomUUID(),baseRevision:14},now.getTime()-1000);
+  const reports=await Promise.all(Array.from({length:5},()=>saveReportWithCheckins(db,vault,1,reportWindow('daily',now),now)));assert.equal(new Set(reports.map(r=>r.id)).size,1);assert.equal(reports.filter(r=>r.created).length,1);assert.equal((await db.prepare('SELECT count(*) AS n FROM life_report_checkin_snapshots').first()).n,1);assert.equal((await readReportCheckins(db,vault,1,reports[0])).current,true);
+  await db.prepare("CREATE TRIGGER fixture_extension_fail BEFORE INSERT ON life_report_checkin_snapshots WHEN NEW.owner_id=2 BEGIN SELECT RAISE(ABORT,'fixture'); END").run();await assert.rejects(()=>saveReportWithCheckins(db,vault,2,reportWindow('daily',now),now));assert.equal((await db.prepare('SELECT count(*) AS n FROM life_reports WHERE owner_id=2').first()).n,0);
+  await saveCheckin(db,vault,1,date,{value:{...confirmed,items:confirmed.items.map(i=>({...i,email:false}))},clientKey:crypto.randomUUID(),baseRevision:15},now.getTime()+1000);assert.equal((await readReportCheckins(db,vault,1,reports[0])).current,false);
+  console.log(JSON.stringify({passed:true,realIsolatedD1:true,samePayloadConcurrent:5,distinctEditsWinning:1,retainedRevisions:10,triggerFailureRolledBack:true,reportRacers:5,combinedSnapshotWins:1,extensionFailureRollsBackParent:true,withdrawalInvalidatesProof:true,productionWrites:0,externalCalls:0}));
  }finally{await mf.dispose();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
