@@ -118,7 +118,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
             </Helmet>
             <Waiting for={feeds.draft.size + feeds.normal.size > 0 || status === 'idle'}>
                 <main className="article-library mb-8">
-                    <aside className="article-library-nav glass-panel">
+                    <aside className="article-library-nav glass-panel mobile-secondary">
                         <strong>文章浏览</strong>
                         <Link href="/blog/timeline"><i className="ri-timeline-view" /><span>时间轴与标签</span></Link>
                         <button type="button" onClick={wanderRandomly} disabled={!wanderPool.length}><i className="ri-shuffle-line" /><span>随机漫游</span></button>
@@ -135,7 +135,7 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
                             </p>
                             {profile?.canWrite && !fixedType &&
                                 <div className="flex flex-row space-x-4">
-                                    <Link href={listState === 'draft' ? '/blog/articles?type=normal' : '/blog/articles?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
+                                    <Link href={listState === 'draft' ? '/blog/articles?type=normal' : '/blog/articles?type=draft'} className={`mobile-secondary text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
                                         {t('draft_bin')}
                                     </Link>
                                 </div>
