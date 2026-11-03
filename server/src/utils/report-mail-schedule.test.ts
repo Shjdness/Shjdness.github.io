@@ -1,5 +1,9 @@
-import {expect,it,vi} from 'vitest';
+import {expect,it,vi,beforeEach,afterEach} from 'vitest';
 import {mailFixture,now,seconds} from './report-mail-fixture';
+// Freeze wall-clock Date too: production admission deliberately compares it with
+// the scenario clock. Otherwise these historical fixtures expire as days pass.
+beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(now);});
+afterEach(()=>vi.useRealTimers());
 import {runReportSchedule} from './report-jobs';
 import {runReportMailSchedule,runConfiguredReportMail} from './report-mail-schedule';
 import type {ReportMailProvider} from './report-mail-delivery';
