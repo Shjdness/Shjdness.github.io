@@ -1,7 +1,9 @@
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
+import {useMobileViewport} from '../hooks/useMobileViewport';
 
 export function HomePage() {
+  const mobile=useMobileViewport();
   return (
     <main className="home-landing">
       <Helmet><title>{process.env.NAME}</title></Helmet>
@@ -11,8 +13,8 @@ export function HomePage() {
         <h1>{process.env.NAME}</h1>
         <p className="home-motto">{process.env.DESCRIPTION}</p>
         <nav className="home-portals" aria-label="网站空间">
-          <Link href="/blog"><span><small>PUBLIC WRITING</small><strong>Blog</strong></span><i className="ri-arrow-right-line" /></Link>
-          <Link href="/life"><span><small>PRIVATE SPACE</small><strong>Life</strong></span><i className="ri-arrow-right-line" /></Link>
+          <Link href={mobile?'/blog/articles':'/blog'}><span><small>PUBLIC WRITING</small><strong>Blog</strong></span><i className="ri-arrow-right-line" /></Link>
+          <Link href={mobile?'/life/todos':'/life'}><span><small>PRIVATE SPACE</small><strong>Life</strong></span><i className="ri-arrow-right-line" /></Link>
         </nav>
       </section>
     </main>

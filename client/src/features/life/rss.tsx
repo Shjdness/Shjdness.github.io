@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
-import { SpaceSwitch } from '../../components/header';
+import { SpaceSwitch, MobileLifeNav } from '../../components/header';
 import { clearLegacyRssCaches, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { usePomodoro } from '../../state/pomodoro';
 import { lifeApi, type RssData, type RssGroup, type RssItem, type RssStorage, type RssSubscription } from './model';
@@ -151,6 +151,7 @@ export function RssView() {
     <div className={`rss-workspace rss-workspace-wide ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
       <aside className="rss-library">
         <div className="rss-space-switch"><SpaceSwitch /></div>
+        <MobileLifeNav />
         <nav className="rss-sidebar-tools" aria-label="RSS 工具">
           <Link href="/life" title="返回 Life"><i className="ri-arrow-left-line" /></Link>
           <button onClick={() => setShowAdd(true)} title="新增订阅"><i className="ri-add-line" /></button>

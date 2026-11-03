@@ -7,6 +7,7 @@ import { Profile, ProfileContext } from "../state/profile";
 import { IconSmall } from "./icon";
 import { Padding } from "./padding";
 import { usePomodoro } from "../state/pomodoro";
+import { useMobileViewport } from "../hooks/useMobileViewport";
 
 
 export function Header({ children }: { children?: React.ReactNode }) {
@@ -32,21 +33,23 @@ export function Header({ children }: { children?: React.ReactNode }) {
     </>;
 }
 
-function NavItem({ title, selected, href, when = true }: { title: string; selected: boolean; href: string; when?: boolean }) {
-    return when ? <Link href={href} aria-current={selected ? "page" : undefined} className="site-nav-link">{title}</Link> : null;
+function NavItem({ title, selected, href, when = true, mobile = true }: { title: string; selected: boolean; href: string; when?: boolean; mobile?: boolean }) {
+    return when ? <Link href={href} aria-current={selected ? "page" : undefined} className={`site-nav-link${mobile ? '' : ' mobile-secondary'}`}>{title}</Link> : null;
 }
 
 export function SpaceSwitch({ onClick }: { onClick?: () => void }) {
     const [location] = useLocation();
+    const mobile=useMobileViewport();
     return <nav className="space-switch" aria-label="网站空间">
-        <Link href="/blog" aria-current={location.startsWith('/blog') ? 'page' : undefined} onClick={onClick}>Blog</Link>
-        <Link href="/life" aria-current={location.startsWith('/life') ? 'page' : undefined} onClick={onClick}>Life</Link>
+        <Link href={mobile?'/blog/articles':'/blog'} aria-current={location.startsWith('/blog') ? 'page' : undefined} onClick={onClick}>Blog</Link>
+        <Link href={mobile?'/life/todos':'/life'} aria-current={location.startsWith('/life') ? 'page' : undefined} onClick={onClick}>Life</Link>
     </nav>;
 }
 
 function NavBar() {
     const profile = useContext(ProfileContext);
     const [location] = useLocation();
+    const mobile=useMobileViewport();
     const isBlog = location.startsWith('/blog');
     const isLife = location.startsWith('/life');
     const knownBlogSections = ['/blog/articles', '/blog/timeline', '/blog/diary', '/blog/memos', '/blog/drafts', '/blog/gallery', '/blog/writing'];
@@ -57,24 +60,29 @@ function NavBar() {
         <>
             {!isBlog && !isLife && <NavItem title="首页" selected={location === "/"} href="/" />}
             {isBlog && <>
-                <NavItem title="Blog 首页" selected={location === '/blog'} href="/blog" />
-                <NavItem title="文章" selected={isArticle} href="/blog/articles" />
+                <NavItem mobile={false} title="Blog 首页" selected={location === '/blog'} href="/blog" />
+                <NavItem title="文章" selected={isArticle||(mobile&&location==='/blog')} href="/blog/articles" />
                 <NavItem title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
                 <NavItem when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
-                <NavItem when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
+                <NavItem mobile={false} when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
                 <NavItem when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
             </>}
             {isLife && <>
-                <NavItem title="总览" selected={location === '/life'} href="/life" />
-                <NavItem title="待办" selected={location === "/life/todos"} href="/life/todos" />
+                <NavItem mobile={false} title="总览" selected={location === '/life'} href="/life" />
+                <NavItem title="待办" selected={location === "/life/todos"||(mobile&&location==='/life')} href="/life/todos" />
                 <NavItem title="习惯" selected={location === '/life/habits'} href="/life/habits" />
                 <NavItem title="日历" selected={location === '/life/calendar'} href="/life/calendar" />
-                <NavItem title="年历" selected={location === '/life/year'} href="/life/year" />
-                <NavItem title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
+                <NavItem mobile={false} title="年历" selected={location === '/life/year'} href="/life/year" />
+                <NavItem mobile={false} title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
                 <NavItem title="RSS" selected={location === '/life/rss'} href="/life/rss" />
             </>}
         </>
     )
+}
+
+/** RSS has its own desktop shell; phones still need the same four Life links. */
+export function MobileLifeNav(){
+    return <nav className="mobile-life-nav" aria-label="页面栏目"><NavBar /></nav>;
 }
 
 function LocalClock() {
