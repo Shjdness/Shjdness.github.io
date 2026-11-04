@@ -49,9 +49,9 @@ export async function sendQueuedMutation(item: { ownerId?:number; entity: string
     return true;
   }
   if (item.entity === 'basic') {
-    const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string };
+    const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string;todoId?:number|null };
     if (item.action === 'create') {
-      const result = await sendApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey }) });
+      const result = await sendApi<{ insertedId: number }>('/life/basics', { method: 'POST', body: JSON.stringify({ date: payload.date, content: payload.content, sortOrder: payload.sortOrder, clientKey: payload.clientKey,todoId:payload.todoId }) });
       if (!result.insertedId || payload.localId === undefined) return false;
       await rememberLocalId('life:basic-id-map', payload.localId, result.insertedId, account);
       return true;

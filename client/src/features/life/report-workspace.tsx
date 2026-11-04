@@ -149,7 +149,7 @@ export function ReportWorkspace({ownerId,token,kind,historical,onSelect}:{ownerI
     {preferences&&<fieldset disabled={busy||loading||!status?.schedulerAvailable} className="life-report-automation"><legend>自动保存统计报告</legend>
       <label><input type="checkbox" checked={automationDraft.dailyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,dailyEnabled:checked}));}}/>自动保存日报</label>
       <label><input type="checkbox" checked={automationDraft.weeklyEnabled} onChange={event=>{const checked=event.target.checked;setAutomationDraft(old=>({...old,weeklyEnabled:checked}));}}/>自动保存周报</label>
-      <p>北京时间每日 05:00 起固定采集昨日已同步记录，周报采集完整上周并合并昨日日报；发送仍按上方时间执行。云端每 5 分钟检查一次，实际采集时刻写入报告。05:00 后的补记不改写已固定报告；未同步的本机记录不在其中。若发送时间早于 05:00，将等待采集完成；已暂停任务不重放。</p>
+      <p>RSS 每日计划北京时间 04:15 刷新。日报 05:00 起等待本轮刷新结束后固定采集，最晚 07:30 截止；刷新失败或延迟时保留已有数据并注明状态。昨日记录仍按 00:00–24:00 归属，周报采集完整上周并合并昨日日报。云端每 5 分钟检查一次，实际采集时刻写入报告；采集后的补记不改写已固定报告，未同步的本机记录不在其中。发送按上方时间执行，早于采集完成则等待；已暂停任务不重放。</p>
       <p>本开关只控制站内统计保存；AI 分析与邮件提醒需要分别明确启用。</p>
       <button type="button" onClick={()=>void run(saveAutomation)}>保存自动生成设置</button>
     </fieldset>}

@@ -155,6 +155,9 @@ export const dailyBasics = sqliteTable("daily_basics", {
     completed: integer("completed").default(0).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     clientKey: text("client_key"),
+    completedAt: integer('completed_at',{mode:'timestamp'}),
+    todoId: integer('todo_id').references(()=>lifeTodos.id,{onDelete:'set null'}),
+    revision: integer('revision').default(0).notNull(),
     createdAt: created_at,
     updatedAt: updated_at,
 }, table => ({

@@ -83,10 +83,11 @@ it('saves only server-generated facts once per complete period and keeps history
     expect(f.sqlite.prepare("SELECT reserved FROM rss_write_budget WHERE day LIKE 'reports:%'").get()).toMatchObject({reserved:8});
   }finally{f.sqlite.close();}
 });
-it('prevents a new manual report before fixed capture, but permits preview/history and saving from 05:00',async()=>{
+it('prevents early/manual RSS bypass, preserves previews, and saves after refresh or deadline',async()=>{
  const f=fixture();vi.useFakeTimers({toFake:['Date']});try{
   vi.setSystemTime(new Date('2026-11-02T20:59:59Z'));const early=await f.request(2,'/history',{kind:'daily'});expect(early.status).toBe(503);expect(await early.json()).toMatchObject({code:'REPORT_CAPTURE_NOT_READY',captureTime:'05:00'});expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get().n).toBe(0);expect((await f.request(2,'/preview?kind=daily')).status).toBe(200);
-  vi.setSystemTime(new Date('2026-11-02T21:00:00Z'));expect((await f.request(2,'/history',{kind:'daily'})).status).toBe(200);expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get().n).toBe(1);
+  vi.setSystemTime(new Date('2026-11-02T21:00:00Z'));const waiting=await f.request(2,'/history',{kind:'daily'});expect(waiting.status).toBe(503);expect(await waiting.json()).toMatchObject({code:'REPORT_RSS_REFRESH_PENDING',captureDeadline:'07:30'});
+  vi.setSystemTime(new Date('2026-11-02T23:30:00Z'));expect((await f.request(2,'/history',{kind:'daily'})).status).toBe(200);expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_reports').get().n).toBe(1);
  }finally{vi.useRealTimers();f.sqlite.close();}
 });
 

@@ -5,6 +5,7 @@ import { setup } from '../setup';
 import { getDB, getEnv } from '../utils/di';
 import { roleForUser } from '../utils/roles';
 import { todoState } from '../utils/todo-state';
+import {createDailyPlan,updateDailyPlan,reorderDailyPlan,validPlanDay} from '../utils/daily-plans';
 
 const dayPattern = '^\\d{4}-\\d{2}-\\d{2}$';
 const monthPattern = '^\\d{4}-\\d{2}$';
@@ -156,28 +157,24 @@ export function LifeService() {
             }, { query: t.Object({ from: t.String({ pattern: dayPattern }), to: t.String({ pattern: dayPattern }) }) })
             .post('/basics', async ({ uid, lifeAccess, set, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-                const content = body.content.trim();
-                if (body.clientKey) {
-                    const existing = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.clientKey, body.clientKey)) });
-                    if (existing) return { insertedId: existing.id };
-                }
-                const duplicate = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, body.date), eq(dailyBasics.content, content)) });
-                if (duplicate) return { insertedId: duplicate.id };
-                const result = await db.insert(dailyBasics).values({ ownerId: uid!, date: body.date, content, sortOrder: body.sortOrder, clientKey: body.clientKey || null }).onConflictDoNothing().returning({ insertedId: dailyBasics.id });
-                if (result[0]) return result[0];
-                const raced = body.clientKey ? await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.clientKey, body.clientKey)) }) : null;
-                const sameContent = raced ?? await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.ownerId, uid!), eq(dailyBasics.date, body.date), eq(dailyBasics.content, content)) });
-                if (sameContent) return { insertedId: sameContent.id };
-                set.status = 409; return 'Today item could not be saved';
-            }, { body: t.Object({ date: t.String({ pattern: dayPattern }), content: t.String({ minLength: 1, maxLength: 240 }), sortOrder: t.Integer({ minimum: 0, maximum: 100 }), clientKey: t.Optional(t.String({ maxLength: 80 })) }) })
+                if(!validPlanDay(body.date)||!body.content.trim()){set.status=400;return '事项日期或内容无效';}
+                const result=await createDailyPlan(getEnv().DB,uid!,body);
+                if('conflict' in result)set.status=409;
+                return result;
+            }, { body: t.Object({ date: t.String({ pattern: dayPattern }), content: t.String({ minLength: 1, maxLength: 240 }), sortOrder: t.Integer({ minimum: 0, maximum: 100 }), clientKey: t.Optional(t.String({ maxLength: 80 })),todoId:t.Optional(t.Union([t.Integer({minimum:1}),t.Null()])) }) })
             .post('/basics/:id', async ({ uid, lifeAccess, set, params, body }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const id = Number(params.id);
-                const existing = await db.query.dailyBasics.findFirst({ where: and(eq(dailyBasics.id, id), eq(dailyBasics.ownerId, uid!)) });
-                if (!existing) { set.status = 404; return 'Today item not found'; }
-                await db.update(dailyBasics).set({ content: body.content?.trim(), completed: body.completed === undefined ? undefined : body.completed ? 1 : 0, sortOrder: body.sortOrder, updatedAt: new Date() }).where(and(eq(dailyBasics.id, id), eq(dailyBasics.ownerId, uid!)));
-                return 'OK';
-            }, { body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 240 })), completed: t.Optional(t.Boolean()), sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 100 })) }) })
+                if(!Number.isSafeInteger(id)||id<1||(body.date!==undefined&&!validPlanDay(body.date))||(body.content!==undefined&&!body.content.trim())){set.status=400;return '事项日期或内容无效';}
+                const result=await updateDailyPlan(getEnv().DB,uid!,id,body);
+                if(!result.saved)set.status=result.missing?404:409;
+                return result;
+            }, { body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 240 })), completed: t.Optional(t.Boolean()), sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 100 })),date:t.Optional(t.String({pattern:dayPattern})),todoId:t.Optional(t.Union([t.Integer({minimum:1}),t.Null()])),baseRevision:t.Optional(t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER})) }) })
+            .post('/basics/:id/reorder',async({uid,lifeAccess,set,params,body})=>{
+                if(!requireLife({uid,lifeAccess,set}))return 'Private Life access is required';
+                const id=Number(params.id);if(!Number.isSafeInteger(id)||id<1){set.status=400;return '事项无效';}
+                return reorderDailyPlan(getEnv().DB,uid!,id,body.direction);
+            },{body:t.Object({direction:t.Union([t.Literal(-1),t.Literal(1)])})})
             .delete('/basics/:id', async ({ uid, lifeAccess, set, params }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
                 const result = await db.delete(dailyBasics).where(and(eq(dailyBasics.id, Number(params.id)), eq(dailyBasics.ownerId, uid!))).returning({ id: dailyBasics.id });

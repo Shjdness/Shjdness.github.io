@@ -4,6 +4,7 @@ import { getCookie } from 'typescript-cookie';
 import { accountIdFromToken, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { usePomodoro } from '../../state/pomodoro';
 import { LifeLayout } from './layout';
+import {DailyBasicsPlanner} from './daily-planner';
 import { CLOUD_REFRESH_EVENT, lifeApi, type LifeTodo, type TodoType } from './model';
 import { ACTION_WINDOW_MS, countdown, TODO_COLUMNS, todoColumn, todosInColumn } from './todo-workspace';
 
@@ -175,6 +176,7 @@ export function TodoView() {
   const [active, setActive] = useState<TodoType>('task');
   const [query, setQuery] = useState('');
   return <LifeLayout section="todos" title="待办与记录" intro="把想法变成行动，把做成的事留下，把日常交给清单。">
+    <DailyBasicsPlanner />
     <div className="todo-workspace">
       <SaveError store={store} />
       <div className="todo-workspace-tools"><span>72 小时从创建开始，超时后仍保留，供你继续推进或重新安排。</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索四栏内容" aria-label="搜索四栏内容" /></div>

@@ -27,7 +27,7 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const prepare=(sql:string)=>{
     let values:unknown[]=[];
     const execute=()=>sqlite.prepare(sql).all(...values);
-    return {bind(...args:unknown[]){values=args;return this;},async all(){return {results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){if(staleReceiptRead && sql==='SELECT value FROM info WHERE key=?'){staleReceiptRead=false;return null;}return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
+    return {bind(...args:unknown[]){values=args;return this;},async all(){return {success:true,results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){if(staleReceiptRead && sql==='SELECT value FROM info WHERE key=?'){staleReceiptRead=false;return null;}return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {success:true,results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
   };
   let afterBatch: (()=>void)|undefined;
   const batch=vi.fn(async(statements:Array<{all:()=>Promise<unknown>}>)=>{

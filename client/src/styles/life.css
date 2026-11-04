@@ -252,6 +252,23 @@
 @media (max-width:720px) { .diary-index-toggle{display:block}.diary-layout{display:block}.diary-index{display:none;position:static;max-height:none;margin-bottom:1rem}.diary-index.open{display:block}.header-clock{display:none} }
 
 /* Daily-use Life surfaces */
+.daily-planner { min-width:0; }
+.daily-planner>nav { display:flex; gap:.45rem; margin-top:.6rem; }
+.daily-planner>nav button { flex:1; padding:.45rem; border:1px solid rgb(148 163 184 / .3); border-radius:.65rem; }
+.daily-planner>nav button[aria-pressed=true] { color:#e11d62; border-color:currentColor; }
+.daily-planner .daily-plan-date,.daily-plan-day>p { font-size:.8rem; margin-top:.5rem; overflow-wrap:anywhere; }
+.daily-planner .daily-plan-day { display:grid; gap:.5rem; }
+.daily-planner .daily-plan-day article { display:block; min-width:0; }
+.daily-plan-main { display:grid; grid-template-columns:1.5rem minmax(0,1fr) 1.5rem; gap:.4rem; }
+.daily-plan-main>span { overflow-wrap:anywhere; }
+.daily-planner .daily-plan-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.4rem; font-size:.75rem; }
+.daily-plan-actions select { flex:1; min-width:0; }
+.daily-plan-day>select { width:100%; min-width:0; }
+.daily-plan-day>form { display:flex; gap:.5rem; }
+.daily-plan-day>form input { flex:1; min-width:0; padding:.6rem; border:1px solid rgb(148 163 184 / .25); border-radius:.65rem; background:transparent; }
+.daily-plan-day>form button { padding:.6rem; border-radius:.65rem; background:#e11d62; color:white; }
+.daily-plan-day button:disabled { opacity:.5; }
+.calendar-detail .daily-planner { margin-top:0; }
 .today-basics { margin-top:1.4rem; padding:1rem; border:1px solid rgb(148 163 184 / .18); border-radius:1.15rem; background:rgb(255 255 255 / .14); }
 .today-basics>header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
 .today-basics>header small { color:#e11d62; font-size:.65rem; font-weight:800; letter-spacing:.16em; }

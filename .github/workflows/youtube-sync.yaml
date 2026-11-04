@@ -3,7 +3,7 @@ name: YouTube Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 0 * * *" # Daily, 08:17 Asia/Shanghai (GitHub may delay schedules).
+    - cron: "15 20 * * *" # Daily, 04:15 Asia/Shanghai (GitHub may delay schedules).
 
 permissions:
   contents: read
@@ -18,14 +18,23 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Claim this Shanghai day's reconciliation
+        id: cycle
+        env:
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
+        run: node scripts/rss-cycle.mjs begin
       - uses: actions/setup-python@v5
+        if: steps.cycle.outputs.admitted == 'true'
         with:
           python-version: '3.12'
       - name: Install metadata extractor
+        if: steps.cycle.outputs.admitted == 'true'
         run: |
           python -B scripts/tests/test_rss_transport.py
           python -m pip install 'yt-dlp==2026.10.21'
       - name: Fetch official YouTube feeds
+        if: steps.cycle.outputs.admitted == 'true'
         env:
           RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
           RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
@@ -34,3 +43,11 @@ jobs:
           node scripts/youtube-sync.mjs
           python scripts/rss-feed-fallback.py
           node scripts/renew-websub.mjs
+      - name: Settle the admitted refresh (including partial failures)
+        if: always() && steps.cycle.outputs.admitted == 'true'
+        env:
+          RSS_SYNC_ENDPOINT: ${{ vars.RSS_SYNC_ENDPOINT }}
+          RSS_SYNC_TOKEN: ${{ secrets.RSS_SYNC_TOKEN }}
+          RSS_CYCLE_DAY: ${{ steps.cycle.outputs.day }}
+          RSS_CYCLE_SUCCEEDED: ${{ job.status == 'success' }}
+        run: node scripts/rss-cycle.mjs finish

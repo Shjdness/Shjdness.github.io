@@ -24,4 +24,12 @@ describe('offline conflict and quota preservation',()=>{
     await expect(sendQueuedMutation({...note,ownerId:2})).rejects.toThrow('账号已切换');
     expect(lifeApi).not.toHaveBeenCalled();
   });
+  it('retains a full-day plan as a stopped conflict instead of deleting or endlessly retrying it',async()=>{
+    const plan:SyncItem={...note,entity:'basic',action:'create',payload:{date:'2026-11-05',content:'local tomorrow plan',localId:-1,sortOrder:0,clientKey:'synthetic-plan'}};
+    vi.mocked(lifeApi).mockRejectedValue(new SyncConflictError({message:'该日期已有三件事'}));
+    const storage={markSyncing:vi.fn(),remove:vi.fn(),markFailed:vi.fn()};
+    await processSyncQueue([plan],true,sendQueuedMutation,storage);
+    expect(storage.remove).not.toHaveBeenCalled();expect(storage.markFailed).toHaveBeenCalledWith(expect.objectContaining({status:'conflict',payload:plan.payload}),expect.any(String));
+    vi.mocked(lifeApi).mockClear();await processSyncQueue([{...plan,status:'conflict'}],true,sendQueuedMutation,storage);expect(lifeApi).not.toHaveBeenCalled();
+  });
 });

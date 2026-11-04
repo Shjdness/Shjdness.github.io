@@ -7,6 +7,7 @@ import {findReportForPeriod,decodeReportRow} from './report-history';
 import {reportDigest} from './report-analysis-format';
 import {reportCheckinsValue,reportCheckinArchiveValue,reportRangeFrom,selectedCheckin,type ReportCheckins,type CheckinSourceProof} from './report-checkin-format';
 import {reserveReportWrite} from './report-settings';
+import {rssCaptureStatement,type RssCaptureStatus} from './rss-daily-cycle';
 type Source={record_date:string;revision:number;sealed_json:string;content_hmac:string;updated_at:number};
 type Saved={id:number;sha256:string;report:LifeReportPreview};
 export type ReportCheckinRow={report_id:number;owner_id:number;report_sha256:string;version:number;outbound_eligible:number;sealed_json:string;content_hmac:string;created_at:number};
@@ -32,7 +33,7 @@ export async function readReportCheckins(db:D1Database,vault:CheckinVault,owner:
 /** No attachment/backfill to old report IDs. Numeric facts, source rows, RSS
  * events and selected current tasks come from one D1 read transaction. A guarded
  * second transaction commits BOTH immutable records or NEITHER. */
-export async function saveReportWithCheckins(db:D1Database,vault:CheckinVault,owner:number,period:ReportWindow,now=new Date()):Promise<Saved&{created?:boolean}>{
+export async function saveReportWithCheckins(db:D1Database,vault:CheckinVault,owner:number,period:ReportWindow,now=new Date(),rss?:RssCaptureStatus):Promise<Saved&{created?:boolean}>{
  const generatedAt=now.toISOString();reportSnapshot(owner,{version:1,ownerId:owner,generatedAt,period,coverage:'server-synced-only',mode:'statistics-preview',achievementsRecorded:0,tasksCompleted:0,ideasCreated:0,focus:{completedSessions:0,recordedMinutes:0,earlySessions:0},habitCompletions:0,daysWithNotes:0,aiEnabled:false,emailEnabled:false});
  const previous=await findReportForPeriod(db,owner,period);if(previous)return previous;
  await checkinKeyGuard(db,vault,true);
@@ -56,5 +57,6 @@ export async function saveReportWithCheckins(db:D1Database,vault:CheckinVault,ow
   db.prepare(`INSERT INTO life_reports(owner_id,kind,period_start,period_end,snapshot_json,snapshot_sha256) SELECT ?,?,?,?,?,? WHERE ${guard.sql} ON CONFLICT(owner_id,kind,period_start,period_end,template_version) DO NOTHING RETURNING id`).bind(owner,period.kind,start,end,json,sha,...guard.args),
   db.prepare('INSERT INTO life_report_checkin_snapshots(report_id,owner_id,report_sha256,version,outbound_eligible,sealed_json,content_hmac,created_at) SELECT id,owner_id,snapshot_sha256,1,1,?,?,? FROM life_reports WHERE owner_id=? AND kind=? AND period_start=? AND period_end=? AND snapshot_sha256=? AND changes()>0').bind(sealed,hmac,Math.floor(now.getTime()/1000),owner,period.kind,start,end,sha),
   db.prepare('SELECT id,kind,period_start,period_end,snapshot_json,snapshot_sha256 FROM life_reports WHERE owner_id=? AND kind=? AND period_start=? AND period_end=? AND template_version=1').bind(owner,period.kind,start,end),
+  ...(rss?[rssCaptureStatement(db,owner,period.kind,start,end,sha,rss)]:[]),
  ]);if(committed.some(r=>!r.success)||!committed[2].results[0])throw Error('Report snapshot not committed');return {...await decodeReportRow(owner,committed[2].results[0]),created:committed[0].results.length===1};
 }

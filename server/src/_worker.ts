@@ -20,7 +20,7 @@ export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 export default {
   async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
     let failed=false;
-    try{await runReportSchedule(env.DB,new Date(),{checkins:await optionalCheckinVault(env)??undefined});}catch{failed=true;}
+    try{await runReportSchedule(env.DB,new Date(),{checkins:await optionalCheckinVault(env)??undefined,waitForRss:true});}catch{failed=true;}
     try{const ai=await runConfiguredReportAI(env);if(ai.failures)failed=true;}catch{failed=true;}
     try{const mail=await runConfiguredReportMail(env);if(mail.failures)failed=true;}catch{failed=true;}
     if(failed)throw Error('Life report schedule unavailable');

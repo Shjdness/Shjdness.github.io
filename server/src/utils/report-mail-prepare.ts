@@ -7,6 +7,7 @@ import {reportMailContent} from './report-mail-format';
 import {reportMailMessage,readReportDelivery} from './report-mail-delivery';
 import {reserveReportWrite} from './report-settings';
 import {reportWindow} from './life-report';
+import {readRssCapture} from './rss-daily-cycle';
 
 /** Freeze one report message per scheduled occurrence. Recipient changes or
  * retries never replace its original message, purpose, admission or outcome. */
@@ -39,7 +40,8 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
     const consent=await db.prepare('SELECT owner_id FROM life_report_ai_consent WHERE owner_id=? AND scope_version=1 AND enabled_at IS NOT NULL AND enabled_at<=?').bind(ownerId,job.anchor_at).all();
     if(!consent.success)throw Error('AI consent unavailable');if(consent.results.length)return {state:'analysis-pending'};
   }
-  const message=reportMailMessage(reportMailContent({report:primary.report,daily:daily?.report,scheduledFor:new Date(job.anchor_at*1000).toISOString(),analysis:analysis?.state==='succeeded'?analysis.analysis??undefined:undefined}));
+  const rss=await readRssCapture(db,ownerId,primary.id,primary.sha256);
+  const message=reportMailMessage(reportMailContent({report:primary.report,daily:daily?.report,scheduledFor:new Date(job.anchor_at*1000).toISOString(),analysis:analysis?.state==='succeeded'?analysis.analysis??undefined:undefined,rss}));
   const json=JSON.stringify(message),digest=await reportDigest(json);
   if(!await reserveReportWrite(db))return {state:'write-budget'};
   const result=await db.prepare(`INSERT INTO life_report_mail_deliveries(delivery_key,owner_id,kind,purpose_key,job_key,contact_revision,fingerprint,provider_identity,state,message_json,message_sha256,created_at,updated_at)

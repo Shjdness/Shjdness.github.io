@@ -1,12 +1,13 @@
 import {reportSnapshot,reportWindow,type LifeReportPreview} from './life-report';
 import {analysisValue,type ReportAnalysis} from './report-analysis-format';
+import {rssStatusValue,type RssCaptureStatus} from './rss-daily-cycle';
 
 const LINK='https://shjdness.github.io/life/reports';
 const escape=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));
 
 /** Pure numeric summary renderer; no recipient/credentials/free-text source
  * fields. Links carry no token, email, owner ID or private report identifier. */
-export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeReportPreview;analysis?:ReportAnalysis;scheduledFor?:string}){
+export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeReportPreview;analysis?:ReportAnalysis;scheduledFor?:string;rss?:RssCaptureStatus}){
   const report=reportSnapshot(input.report.ownerId,input.report);
   const daily=input.daily?reportSnapshot(report.ownerId,input.daily):undefined;
   const reference=new Date(input.scheduledFor??report.generatedAt),expected=reportWindow(report.period.kind,reference);
@@ -15,6 +16,8 @@ export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeRep
   if(daily&&(report.period.kind!=='weekly'||daily.period.kind!=='daily'||daily.period.start!==yesterday.start||daily.period.end!==yesterday.end))throw Error('Combined report period mismatch');
   const dailyOverlaps=Boolean(daily&&Date.parse(daily.period.start)>=Date.parse(report.period.start)&&Date.parse(daily.period.end)<=Date.parse(report.period.end));
   const analysis=input.analysis?analysisValue(input.analysis):undefined;
+  const rss=input.rss?rssStatusValue(input.rss):undefined;
+  const rssLines=!rss?[]:[rss.state==='complete'?`站点 RSS 本轮刷新已完成：${rss.succeeded}/${rss.expected} 个频道。`:rss.state==='partial'?`站点 RSS 本轮流程未完全成功：已确认 ${rss.succeeded}/${rss.expected} 个频道刷新；其余使用已有数据。`:'RSS 本轮刷新未能在采集截止前确认完成，使用已有数据；不代表今日没有更新。'];
   const label=report.period.kind==='weekly'?'生活周报':'生活日报';
   const subject=`夏令时电波 · ${label} · ${report.period.fromDate}`;
   const block=(value:LifeReportPreview,title:string)=>[
@@ -25,7 +28,7 @@ export function reportMailContent(input:{report:LifeReportPreview;daily?:LifeRep
     `新增未来构想：${value.ideasCreated}`,
   ];
   const lines=[...block(report,label),`实际采集快照：${new Date(report.generatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})}（北京时间）`,...(daily?['',...block(daily,dailyOverlaps?'昨日记录（包含在上周统计中，不重复相加）':'昨日记录（与上周统计分别展示）')]:[]),
-    ...(analysis?['','AI 数字复盘（可能有误，仅供参考）',analysis.summary,...analysis.observations.map(s=>`观察：${s}`),...analysis.actions.map(s=>`可选行动：${s}`)]:['','本次为统计版。']),
+    ...rssLines,...(analysis?['','AI 数字复盘（可能有误，仅供参考）',analysis.summary,...analysis.observations.map(s=>`观察：${s}`),...analysis.actions.map(s=>`可选行动：${s}`)]:['','本次为统计版。']),
     '', '只包含已同步记录，不代表完整生活；无记录不等于没有行动。每日执行是记忆清单，不计习惯打卡率。',
     '专注分钟为保存值，不是独立核验用时。', '', `查看报告及暂停提醒：${LINK}（需登录）`];
   const text=lines.join('\n');

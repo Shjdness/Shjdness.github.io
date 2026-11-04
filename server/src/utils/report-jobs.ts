@@ -7,6 +7,7 @@ import {previewLifeReportPeriod} from './report-data';
 import {reserveReportWrite} from './report-settings';
 import type {CheckinVault} from './checkin-vault';
 import {saveReportWithCheckins} from './report-checkin-snapshot';
+import {rssCaptureStatus,type RssCaptureStatus} from './rss-daily-cycle';
 
 export async function listReportJobs(db:D1Database,ownerId:number){
   const rows=await db.prepare('SELECT kind,period_start,period_end,state,attempts,report_id,daily_report_id,error_code,created_at,updated_at FROM life_report_jobs WHERE owner_id=? ORDER BY created_at DESC,job_key LIMIT 10').bind(ownerId).all();
@@ -25,7 +26,7 @@ async function enabledForJob(db:D1Database,job:Job,seconds:number){
 
 /** Only safe, idempotent statistics generation is retried. No AI/provider call
  * or mail submission occurs under this reclaimable generation lease. */
-export async function processReportJob(db:D1Database,job:Job,now=new Date(),options:{checkins?:CheckinVault}={}){
+export async function processReportJob(db:D1Database,job:Job,now=new Date(),options:{checkins?:CheckinVault;rss?:RssCaptureStatus}={}){
   const seconds=Math.floor(now.getTime()/1000),token=crypto.randomUUID();
   if(!await reserveReportWrite(db))return false;
   const claim=await db.prepare(`UPDATE life_report_jobs SET state='generating',attempts=attempts+1,lease_token=?,lease_until=?,updated_at=?
@@ -45,7 +46,7 @@ export async function processReportJob(db:D1Database,job:Job,now=new Date(),opti
     const snapshot=async(kind:ReportKind)=>{
       const window=reportWindow(kind,new Date(job.anchor_at*1000));
       const previous=await findReportForPeriod(db,job.owner_id,window);
-      return previous??(options.checkins?saveReportWithCheckins(db,options.checkins,job.owner_id,window,now):saveReportSnapshot(db,job.owner_id,await previewLifeReportPeriod(db,job.owner_id,window,now)));
+      return previous??(options.checkins?saveReportWithCheckins(db,options.checkins,job.owner_id,window,now,options.rss):saveReportSnapshot(db,job.owner_id,await previewLifeReportPeriod(db,job.owner_id,window,now),options.rss));
     };
     const primary=await snapshot(job.kind),daily=job.include_daily?await snapshot('daily'):null;
     // Pauses/role revocation during computation must prevent a ready delivery.
@@ -61,9 +62,13 @@ export async function processReportJob(db:D1Database,job:Job,now=new Date(),opti
 
 /** One bounded cron tick: keyset-rotate up to 8 enabled owners, process at most
  * 3 queued generations. Existing occurrences and inactive settings cause no writes. */
-export async function runReportSchedule(db:D1Database,now=new Date(),options:{checkins?:CheckinVault}={}){
+export async function runReportSchedule(db:D1Database,now=new Date(),options:{checkins?:CheckinVault;waitForRss?:boolean}={}){
   const seconds=Math.floor(now.getTime()/1000);
   if(!Number.isSafeInteger(seconds)||seconds<0)throw Error('Invalid schedule time');
+  // The actual worker enables this gate. Existing snapshots/AI/mail are not
+  // stalled by it: those continue independently after this function returns.
+  const rss=options.waitForRss?await rssCaptureStatus(db,now):undefined;
+  if(rss?.wait)return {owners:0,queued:0,processed:0};
   const cursorRows=await db.prepare('SELECT owner_cursor FROM life_report_scheduler_state WHERE id=1').all<{owner_cursor:number}>();
   if(!cursorRows.success)throw Error('Report cursor unavailable');
   const cursor=cursorRows.results[0]?.owner_cursor??0;
@@ -103,7 +108,7 @@ export async function runReportSchedule(db:D1Database,now=new Date(),options:{ch
   }
   const pending=await db.prepare(`SELECT * FROM life_report_jobs WHERE attempts<3 AND ((state='queued' AND next_attempt_at<=?) OR (state='generating' AND lease_until<=?)) ORDER BY created_at,job_key LIMIT 3`).bind(seconds,seconds).all<Job>();
   if(!pending.success)throw Error('Report queue unavailable');
-  for(const job of pending.results)if(await processReportJob(db,job,now,options))processed++;
+  for(const job of pending.results)if(await processReportJob(db,job,now,{...options,rss}))processed++;
   // Exhausted abandoned leases are terminal, never an unbounded retry queue.
   const abandoned=await db.prepare("SELECT job_key FROM life_report_jobs WHERE attempts>=3 AND ((state='generating' AND lease_until<=?) OR state='queued') LIMIT 3").bind(seconds).all<{job_key:string}>();
   if(!abandoned.success)throw Error('Report lease read unavailable');

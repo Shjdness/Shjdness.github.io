@@ -10,6 +10,7 @@ import { subscribeWebSub,verifyWebsub,websubSecret } from "./websub";
 import { BodyLimitError,readLimitedBody } from '../../utils/request-body';
 import { historyRoutes } from './history';
 import { rssStorage } from './storage';
+import {cycleRoutes} from './cycle';
 import { isD1QuotaError, WriteBudgetError } from '../../utils/write-budget';
 
 export function RssService() {
@@ -35,7 +36,7 @@ export function RssService() {
     return true;
   };
   return new Elysia({ aot: false }).use(setup()).group("/rss", (group) =>
-    group.use(historyRoutes(db, syncAuthorized))
+    group.use(historyRoutes(db, syncAuthorized)).use(cycleRoutes(syncAuthorized))
       .post('/sync/renew-websub',async({headers,set,body,request})=>{
         if(!syncAuthorized(headers.authorization)){set.status=401;return 'Unauthorized';}
         const where=and(eq(rssSubscriptions.active,1),eq(rssSubscriptions.platform,'youtube'));

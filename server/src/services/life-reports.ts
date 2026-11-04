@@ -17,6 +17,7 @@ import {checkinAIRequest} from '../utils/checkin-ai';
 import {generateCheckinAnalysis,readCheckinAnalysis} from '../utils/checkin-analysis';
 
 import {reportCaptureReady} from '../utils/report-schedule';
+import {rssCaptureStatus} from '../utils/rss-daily-cycle';
 
 import {previewLifeReport} from '../utils/report-data';
 export {previewLifeReport,reportQueries} from '../utils/report-data';
@@ -100,10 +101,12 @@ export function LifeReportsService() {
       const existing=await findReportForPeriod(db,owner,period);
       if(existing)return {ownerId:owner,saved:true,created:false,...existing};
       if(!reportCaptureReady(now)){context.set.status=503;return {ownerId:owner,code:'REPORT_CAPTURE_NOT_READY',captureTime:'05:00'};}
+      const rss=await rssCaptureStatus(db,now);
+      if(rss.wait){context.set.status=503;return {ownerId:owner,code:'REPORT_RSS_REFRESH_PENDING',message:'等待本轮 RSS 刷新，最晚北京时间 07:30 截止；历史报告与预览仍可查看。',captureDeadline:'07:30'};}
       const checkins=await optionalCheckinVault(env);
-      if(checkins){const stored=await saveReportWithCheckins(db,checkins,owner,period,now);return {ownerId:owner,saved:true,...stored};}
+      if(checkins){const stored=await saveReportWithCheckins(db,checkins,owner,period,now,rss);return {ownerId:owner,saved:true,...stored};}
       if(!await reserveReportWrite(db)){context.set.status=503;return {saved:false,code:'REPORT_WRITE_BUDGET_PAUSED'};}
-      const stored=await saveReportSnapshot(db,owner,await previewLifeReport(db,owner,reportKind,now));
+      const stored=await saveReportSnapshot(db,owner,await previewLifeReport(db,owner,reportKind,now),rss);
       return {ownerId:owner,saved:true,...stored};
     },{body:t.Object({kind},{additionalProperties:false})})
     .get('/life/reports/history',async context=>{

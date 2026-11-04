@@ -2,6 +2,7 @@ import {createRequire} from 'node:module';
 import {readFileSync,readdirSync} from 'node:fs';
 import {expect,it,vi} from 'vitest';
 import {runReportSchedule,processReportJob} from './report-jobs';
+import {beginRssCycle,finishRssCycle} from './rss-daily-cycle';
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 const monday=new Date('2026-11-02T00:00:00Z');
 
@@ -17,6 +18,26 @@ function fixture(){
   }} as any;
   return {sqlite,raw};
 }
+
+it('actual RSS gate delays new snapshots through refresh and releases at completion or 07:30 without replay',async()=>{
+ const f=fixture();try{
+  const start=new Date('2026-11-03T20:15:00Z'),five=new Date('2026-11-03T21:00:00Z'),options={waitForRss:true};
+  f.sqlite.exec('UPDATE life_report_preferences SET daily_enabled=1 WHERE owner_id=1');
+  expect(await runReportSchedule(f.raw,five,options)).toMatchObject({queued:0,processed:0});
+  await beginRssCycle(f.raw,'10-1',start);
+  expect(await runReportSchedule(f.raw,five,options)).toMatchObject({queued:0,processed:0});
+  await finishRssCycle(f.raw,'2026-11-04','10-1',true,five);
+  expect(await runReportSchedule(f.raw,five,options)).toMatchObject({queued:1,processed:1});
+  expect(JSON.parse(f.sqlite.prepare('SELECT status_json FROM life_report_rss_captures').get().status_json)).toMatchObject({state:'complete',wait:false});
+  const json=f.sqlite.prepare('SELECT snapshot_json FROM life_reports').get().snapshot_json;
+  expect(await runReportSchedule(f.raw,new Date('2026-11-03T23:30:00Z'),options)).toMatchObject({queued:0,processed:0});
+  expect(f.sqlite.prepare('SELECT snapshot_json FROM life_reports').get().snapshot_json).toBe(json);
+  expect(await runReportSchedule(f.raw,new Date('2026-11-04T23:29:59Z'),options)).toMatchObject({queued:0});
+  expect(await runReportSchedule(f.raw,new Date('2026-11-04T23:30:00Z'),options)).toMatchObject({queued:1,processed:1});
+  expect(f.sqlite.prepare('SELECT count(*) n FROM life_reports').get().n).toBe(2);
+  const captures=f.sqlite.prepare('SELECT status_json FROM life_report_rss_captures ORDER BY report_id').all();expect(captures).toHaveLength(2);expect(JSON.parse(captures[1].status_json)).toMatchObject({state:'missing',wait:false});
+ }finally{f.sqlite.close();}
+});
 
 it('keeps inactive cron ticks read-only and generates one frozen combined Monday occurrence without external calls',async()=>{
   const f=fixture(),fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);

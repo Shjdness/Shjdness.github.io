@@ -1,5 +1,5 @@
 import { endpoint } from '../../main';
-import { accountIdFromToken, currentWritePause, pauseWrites, SyncPauseError } from '../../data/local-first';
+import { accountIdFromToken, currentWritePause, pauseWrites, SyncPauseError,SyncConflictError } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
 import { headersWithAuth } from '../../utils/auth';
 
@@ -7,7 +7,7 @@ export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'p
 export type Habit = { id: number; name: string; description: string; color: string; active: number; clientKey?: string | null };
 export type Log = { habitId: number; date: string; completed: number };
 export type DailyNote = { id?: number; date: string; content: string; updatedAt: Date | string };
-export type DailyBasic = { id: number; date: string; content: string; completed: number; sortOrder: number; clientKey?: string | null };
+export type DailyBasic = { id: number; date: string; content: string; completed: number; sortOrder: number; clientKey?: string | null;todoId?:number|null;completedAt?:Date|string|null;revision?:number };
 export type TodoType = 'task' | 'learn' | 'success' | 'daily';
 export type LifeTodo = { id: number; content: string; type: TodoType; completed: number; clientKey?: string | null; createdAt?: Date | string; updatedAt?: Date | string; deadlineAt?: Date | string | null; completedAt?: Date | string | null; sortOrder?: number; focusMinutes?: number; focusRounds?: number };
 export type PomodoroSession = { id: number; startedAt: Date; endedAt: Date; focusMinutes: number; roundIndex: number; completed: number; taskName?: string; todoId?: number | null; completedEarly?: number };
@@ -48,6 +48,7 @@ export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverri
     const hard=detail?.code==='D1_QUOTA_PAUSED'||/exceeded D1.*daily.*limit/i.test(text);
     const retryAt=detail?.retryAt || Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
     if(hard) {pauseWrites(retryAt,requestOwnerId);throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留',retryAt);}
+    if(response.status===409&&path.startsWith('/life/basics'))throw new SyncConflictError(detail??{message:'每日事项需要核对，原始内容已保留'});
     throw new Error(detail?.message || text || `Request failed: ${response.status}`);
   }
   const body = await response.text();
