@@ -72,3 +72,20 @@
 - 三档缩短明细仍保留所有栏目、准确总数及省略提示，正文UTF8最多14000字节，保护QQ既有32768字节base64线格式上限；HTML仅安全摘要链接，避免复制过大的私密正文。没有改旧提供商大小限制或旧SMTP链路。
 - 11项新定向通过（真实SQLite采集、40+任务截断、账号/日期/周期、RSS不可用、倒计时、周报附录、隐藏字段拒绝、AI-only隔离、未来作息和满负载字节预算），服务端类型通过；随后70文件293项全量通过。没有新UI/生产发信/付费AI；纯模板和本机合成结果不是新版邮件收件验收。
 - 本次新增代码为report-brief-{data,mail}.ts及其测试。下一项优先将这两个模块及已验证RSS摘要接入**同一读取事务与新报告首次提交的加密不可变明细**，新增purpose隔离与归档/备份；随后密文邮件准备和最终撤回校验及scope2自动AI。不要重做采集/模板或继续堆未接线工具。生产仍a2b4685及旧数字邮件。
+
+## 0038 加密固定明细与v5可携归档（已接生成，未接投递）
+
+- 0038草案新增life_report_briefs与独立scope3邮件同意表。事实/RSS分别以report-brief/report-reading目的派生AES-GCM Key，额外report-brief-binding HMAC绑定报告SHA、计划发送时刻、两密文内容指纹与原checkin快照。依然是独立LIFE_CHECKIN_KEY，不复用JWT/SMTP/AI/邮件地址vault。每段有界128KB，不把两段堆入一个超限对象。
+- 已接真实生成路径：Worker作业传固定anchor_at；手动保存按本账号设置推导当天发送时刻。numeric/选定checkin/新facts/RSS来自同一D1读batch；基于原来源guard第二事务首次提交数字/复盘/明细/RSS状态，不向旧报告加内容。相同时间五路竞争仅1份；新明细SQL失败整份回滚。校验/超大/跨日恢复无法形成明细时允许原统计版，RSS不可用显式null，不编零。
+- RSS窗口优先承接此前本账号日报采集秒，无前次时最近24h，最长8日；摘要明确实际区间。抓取首写来源保持0037，补录/更新/未知不混计。
+- 新owner-only GET /life/reports/history/:id/brief只返回严格事实/RSS与固定纯文本预览，不返回HMAC/source证明；有previewOnly=true，不能当已投递。无旧明细的报告不要求新Key；Key缺失/错Key不能吐部分私密数据。checkin撤回后仍能私人回看固定事实，sourcesCurrent=false；outboundEligible仅表示原生生成，**绝非发送许可**。
+- v5增加可选lifeReportBriefArchives（兼容之前草案v5），同一事务读母报告/密文/复盘证明，认证后导出archiveOnly只读事实。排除所有Key/密文/HMAC/范围同意/操作/投递/预算/抓取账本；补上或重算文件checksum不能塞发送资格。部分解密失败v5返回503无部分文件，旧v4仍可导出。口令加密往返、篡改额外资格拒绝已测；没有执行生产恢复。
+- 71文件300项全量、前后端类型、实际API地址Vite构建/diff通过；真实workerd/Miniflare D1探针scripts/tests/report-brief-d1.cjs通过五路1提交、密文无名字、owner/用途绑定、来源撤回及新报告全部回滚，0生产/0外调。真实HTTP新预览匿名/受信403、其他owner404，本人no-store且无证明；真实v5导出及口令往返通过。未开发新前端预览组件/运行生产CI/配置Key/发新邮件。
+
+### 下一有界工作：投递闭环（不要再重做模板或快照）
+
+1. 现有0030投递表CHECK要求report.message_json非空。**不要编辑已发布0030或把私密正文放message_json**；新增0039私密消息侧表，旧字段仅固定不含正文的密文标记，原delivery key/防重/unknown不变。新侧表绑定owner、报告/brief/checkin HMAC、scope3 consent revision/启用时刻，密文report-mail用途绑定delivery key。
+2. prepareReportMail在明确scope3且启用早于采集/anchor时选择新brief；同一事务创建原投递行+密文侧表，来源/邮箱/启用guard重查。已存在旧投递不替换/重开。缺少Key/新scope或明确撤回时保留统计降级；已经准备的敏感消息不得默默换文重发。
+3. submitReportDelivery只在内存解密，final claim与**预算admission**都要重复完整owner/角色/到期/邮箱/日周开关/原job时间窗/独立scope3 epoch+revision及来源guard，阻断claim后撤回、改址或暂停的间隙；旧投递兼容、未知不重试。侧表/同意不进个人备份。
+4. owner设置/API/UI及完整固定报告预览（复用新brief GET），scope3明确与数字AI分开，缺Key也可撤回；然后scope2自动AI持续同意/调度及可共享结果入邮件。注意预填未来作息不能当AI已发生事实，收件范围不等于AI范围。
+5. 完整隔离恢复/整条发送/浏览器/实际main/两CI后，独立Key安全配置与必要本人步骤，真实QQ验收；旧unknown/5分不重放。全任务继续active，线上仍a2b4685，0032–38未发布。

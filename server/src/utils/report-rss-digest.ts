@@ -64,8 +64,14 @@ function bucket(rows:Row[]):RssDigestBucket{
  * contains channel labels/counts, not article titles, URLs, summaries or owner IDs. */
 export async function readRssDigest(db:D1Database,owner:number,from:Date,to:Date):Promise<RssDigest>{
  const query=rssDigestQuery(owner,from,to),rows=await db.prepare(query.sql).bind(...query.args).all<Row>();
- if(!rows.success||rows.results.length>15000||rows.results.some(r=>!['updates','history','unclassified'].includes(r.bucket)))throw Error('RSS discovery summary unavailable');
- return rssDigestValue({version:1,from:query.from,toExclusive:query.toExclusive,updates:bucket(rows.results.filter(r=>r.bucket==='updates')),history:bucket(rows.results.filter(r=>r.bucket==='history')),unclassified:bucket(rows.results.filter(r=>r.bucket==='unclassified'))});
+ if(!rows.success)throw Error('RSS discovery summary unavailable');
+ return rssDigestFromRows(owner,from,to,rows.results);
+}
+/** Shared with the combined report read transaction; never adds another read. */
+export function rssDigestFromRows(owner:number,from:Date,to:Date,input:unknown[]):RssDigest{
+ const query=rssDigestQuery(owner,from,to),rows=input as Row[];
+ if(!Array.isArray(rows)||rows.length>15000||rows.some(r=>!r||!['updates','history','unclassified'].includes(r.bucket)))throw Error('RSS discovery summary unavailable');
+ return rssDigestValue({version:1,from:query.from,toExclusive:query.toExclusive,updates:bucket(rows.filter(r=>r.bucket==='updates')),history:bucket(rows.filter(r=>r.bucket==='history')),unclassified:bucket(rows.filter(r=>r.bucket==='unclassified'))});
 }
 
 /** Plain text; HTML callers must escape it. Missing data is handled separately

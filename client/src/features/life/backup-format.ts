@@ -4,6 +4,7 @@ import {validBackupManifest} from '../../../../server/src/utils/backup-manifest'
 import {validateCheckinBackup,validateCheckinDraftCopies} from '../../../../server/src/utils/checkin-backup';
 import {validateCheckinAnalysisArchives} from '../../../../server/src/utils/checkin-analysis-backup-format';
 import {validateReportCheckinArchives} from '../../../../server/src/utils/report-checkin-backup-format';
+import {validateReportBriefArchives} from '../../../../server/src/utils/report-brief-backup-format';
 export {BACKUP_TABLES,REPORT_BACKUP_TABLES} from '../../../../server/src/utils/backup-manifest';
 
 export type Backup = {
@@ -113,6 +114,6 @@ export async function validateBackup(value: unknown, expectedOwnerId: number): P
       await validateStoredAnalysis({...row,createdAt:time(row.createdAt),updatedAt:time(row.updatedAt)},{id:row.reportId,ownerId:expectedOwnerId,sha256:parent.snapshotSha256 as string});
     }
   }
-  if(backup.version===5){validateCheckinBackup(backup.data.lifeCheckins,backup.data.lifeCheckinRevisions,expectedOwnerId);validateCheckinDraftCopies(backup.data.lifeCheckinDraftCopies,expectedOwnerId);await validateReportCheckinArchives(backup.data.lifeReportCheckinArchives,backup.data.lifeReports,expectedOwnerId);await validateCheckinAnalysisArchives(backup.data.lifeReportCheckinAnalysisArchives,backup.data.lifeReports,backup.data.lifeReportCheckinArchives,expectedOwnerId);}
+  if(backup.version===5){validateCheckinBackup(backup.data.lifeCheckins,backup.data.lifeCheckinRevisions,expectedOwnerId);validateCheckinDraftCopies(backup.data.lifeCheckinDraftCopies,expectedOwnerId);await validateReportCheckinArchives(backup.data.lifeReportCheckinArchives,backup.data.lifeReports,expectedOwnerId);await validateCheckinAnalysisArchives(backup.data.lifeReportCheckinAnalysisArchives,backup.data.lifeReports,backup.data.lifeReportCheckinArchives,expectedOwnerId);await validateReportBriefArchives(backup.data.lifeReportBriefArchives??[],backup.data.lifeReports,expectedOwnerId);}
   return backup;
 }

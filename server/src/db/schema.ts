@@ -147,6 +147,13 @@ export const lifeReportAnalyses = sqliteTable('life_report_analyses', {
     updatedAt: updated_at,
 }, table=>({reportModel:uniqueIndex('life_report_analyses_report_model').on(table.ownerId,table.reportId,table.model,table.promptVersion)}));
 
+export const lifeReportBriefs=sqliteTable('life_report_briefs',{
+    reportId:integer('report_id').primaryKey().references(()=>lifeReports.id,{onDelete:'cascade'}),
+    ownerId:integer('owner_id').notNull().references(()=>users.id,{onDelete:'cascade'}),
+    reportSha256:text('report_sha256').notNull(),version:integer('version').notNull(),outboundEligible:integer('outbound_eligible').default(0).notNull(),scheduledAt:integer('scheduled_at').notNull(),
+    factsSealed:text('facts_sealed').notNull(),factsHmac:text('facts_hmac').notNull(),rssSealed:text('rss_sealed'),rssHmac:text('rss_hmac'),checkinHmac:text('checkin_hmac').notNull(),contentHmac:text('content_hmac').notNull(),createdAt:integer('created_at').notNull(),
+});
+
 export const dailyBasics = sqliteTable("daily_basics", {
     id: integer("id").primaryKey(),
     ownerId: integer("owner_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),

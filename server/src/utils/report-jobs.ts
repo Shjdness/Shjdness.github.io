@@ -46,7 +46,7 @@ export async function processReportJob(db:D1Database,job:Job,now=new Date(),opti
     const snapshot=async(kind:ReportKind)=>{
       const window=reportWindow(kind,new Date(job.anchor_at*1000));
       const previous=await findReportForPeriod(db,job.owner_id,window);
-      return previous??(options.checkins?saveReportWithCheckins(db,options.checkins,job.owner_id,window,now,options.rss):saveReportSnapshot(db,job.owner_id,await previewLifeReportPeriod(db,job.owner_id,window,now),options.rss));
+      return previous??(options.checkins?saveReportWithCheckins(db,options.checkins,job.owner_id,window,now,options.rss,{scheduledFor:new Date(job.anchor_at*1000)}):saveReportSnapshot(db,job.owner_id,await previewLifeReportPeriod(db,job.owner_id,window,now),options.rss));
     };
     const primary=await snapshot(job.kind),daily=job.include_daily?await snapshot('daily'):null;
     // Pauses/role revocation during computation must prevent a ready delivery.

@@ -15,6 +15,9 @@ import {archiveReportCheckins} from '../utils/report-checkin-format';
 import {checkinAIShareableInMail} from '../utils/report-checkin-format';
 import {checkinAIRequest} from '../utils/checkin-ai';
 import {generateCheckinAnalysis,readCheckinAnalysis} from '../utils/checkin-analysis';
+import {readReportBrief} from '../utils/report-brief-snapshot';
+import {briefMailContent} from '../utils/report-brief-mail';
+import {readRssCapture} from '../utils/rss-daily-cycle';
 
 import {reportCaptureReady} from '../utils/report-schedule';
 import {rssCaptureStatus} from '../utils/rss-daily-cycle';
@@ -104,7 +107,11 @@ export function LifeReportsService() {
       const rss=await rssCaptureStatus(db,now);
       if(rss.wait){context.set.status=503;return {ownerId:owner,code:'REPORT_RSS_REFRESH_PENDING',message:'等待本轮 RSS 刷新，最晚北京时间 07:30 截止；历史报告与预览仍可查看。',captureDeadline:'07:30'};}
       const checkins=await optionalCheckinVault(env);
-      if(checkins){const stored=await saveReportWithCheckins(db,checkins,owner,period,now,rss);return {ownerId:owner,saved:true,...stored};}
+      if(checkins){
+        const settings=await readReportPreferences(db,owner),clock=reportKind==='weekly'?settings.weeklyTime:settings.dailyTime;
+        const day=new Date(now.getTime()+8*3600000).toISOString().slice(0,10),scheduledFor=new Date(day+'T'+clock+':00+08:00');
+        const stored=await saveReportWithCheckins(db,checkins,owner,period,now,rss,{scheduledFor});return {ownerId:owner,saved:true,...stored};
+      }
       if(!await reserveReportWrite(db)){context.set.status=503;return {saved:false,code:'REPORT_WRITE_BUDGET_PAUSED'};}
       const stored=await saveReportSnapshot(db,owner,await previewLifeReport(db,owner,reportKind,now),rss);
       return {ownerId:owner,saved:true,...stored};
@@ -133,6 +140,19 @@ export function LifeReportsService() {
       if(!exists.results.length)return {ownerId:owner,reportId:id,details:null};
       const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
       const details=await readReportCheckins(db,vault,owner,saved);return {ownerId:owner,reportId:id,report:saved.report,details:details?{current:details.current,archived:!('sources' in details.snapshot),snapshot:'sources' in details.snapshot?archiveReportCheckins(details.snapshot,saved.report):details.snapshot}:null};
+    })
+    .get('/life/reports/history/:id/brief',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
+      if(!allowBurst(`life-report-brief-read:${owner}`,10)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}
+      const saved=await savedReport(owner,id);if(!saved){context.set.status=404;return 'Report not found';}
+      const exists=await db.prepare('SELECT report_id FROM life_report_briefs WHERE owner_id=? AND report_id=?').bind(owner,id).all();if(!exists.success)throw Error('Brief unavailable');
+      if(!exists.results.length)return {ownerId:owner,reportId:id,details:null};
+      const vault=await optionalCheckinVault(env);if(!vault){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
+      const brief=await readReportBrief(db,vault,owner,saved);if(!brief)throw Error('Brief unavailable');
+      const checkins=await readReportCheckins(db,vault,owner,saved),rssRefresh=await readRssCapture(db,owner,id,saved.sha256);
+      const preview=briefMailContent({context:brief.context,facts:brief.facts,report:saved.report,rss:brief.rss??undefined,rssRefresh,checkins:checkins?.snapshot});
+      return {ownerId:owner,reportId:id,details:{facts:brief.facts,rss:brief.rss,sourcesCurrent:Boolean(checkins?.current),preview:{subject:preview.subject,text:preview.text},previewOnly:true}};
     })
     .get('/life/reports/history/:id/checkin-analysis',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';const id=Number(context.params.id);if(!Number.isSafeInteger(id)||id<1){context.set.status=400;return 'Invalid report id';}
