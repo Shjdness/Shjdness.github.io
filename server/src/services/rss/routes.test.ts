@@ -16,7 +16,7 @@ let service:ReturnType<typeof RssService>;
 beforeEach(()=>{
   const sqlite=new DatabaseSync(':memory:');
   sqlite.exec('CREATE TABLE rss_write_budget(day TEXT PRIMARY KEY,reserved INTEGER NOT NULL DEFAULT 0); CREATE TABLE users(id INTEGER PRIMARY KEY); INSERT INTO users VALUES(1),(2); CREATE TABLE info(key TEXT PRIMARY KEY,value TEXT);');
-  for(const file of ['0006-rss-reader.sql','0012-rss-folo-foundation.sql','0013-rss-source-groups.sql','0015-rss-media-gallery.sql','0017-youtube-deduplicate.sql','0020-rss-canonical-video-id.sql','0025-rss-history.sql']) {
+  for(const file of ['0006-rss-reader.sql','0012-rss-folo-foundation.sql','0013-rss-source-groups.sql','0015-rss-media-gallery.sql','0017-youtube-deduplicate.sql','0020-rss-canonical-video-id.sql','0025-rss-history.sql','0037-rss-discovery-origin.sql']) {
     sqlite.exec(readFileSync(new URL(`../../../sql/${file}`,import.meta.url),'utf8'));
     if(file.startsWith('0006')) sqlite.exec('ALTER TABLE rss_items ADD COLUMN read_at INTEGER; ALTER TABLE rss_items ADD COLUMN starred_at INTEGER;');
     if(file.startsWith('0015')) sqlite.exec("ALTER TABLE rss_subscriptions ADD COLUMN websub_key TEXT DEFAULT '' NOT NULL; ALTER TABLE rss_subscriptions ADD COLUMN websub_callback TEXT DEFAULT '' NOT NULL; ALTER TABLE rss_subscriptions ADD COLUMN websub_lease_expires_at INTEGER;");

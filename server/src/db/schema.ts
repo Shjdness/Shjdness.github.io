@@ -249,6 +249,7 @@ export const rssItems = sqliteTable("rss_items", {
     embedUrl: text("embed_url").default("").notNull(),
     thumbnailUrl: text("thumbnail_url").default("").notNull(),
     publishedPrecision: text("published_precision").default('exact').notNull(),
+    discoveryKind: text('discovery_kind').default('legacy').notNull(),
     publishedAt: integer("published_at", { mode: 'timestamp' }).notNull(),
     read: integer("read").default(0).notNull(),
     starred: integer("starred").default(0).notNull(),

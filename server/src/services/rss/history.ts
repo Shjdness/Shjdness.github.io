@@ -34,8 +34,8 @@ export function historyRoutes(db: DB, authorized: (value?: string) => boolean) {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
       const source = await sourceById(body.subscriptionId);
       if (!source) { set.status=404; return 'Source not found'; }
-      return ingestVideos(getEnv().DB,source,body.videos.map((video:Static<typeof historyVideoSchema>)=>({ ...video, url:'',summary:video.summary || '',author:source.title,embedUrl:'',thumbnailUrl:'',publishedAt:new Date(video.publishedAt*1000) })), 'history');
-    }, { body:t.Object({ subscriptionId:t.Integer({minimum:1}), videos:t.Array(historyVideoSchema,{maxItems:30}) }) })
+      return ingestVideos(getEnv().DB,source,body.videos.map((video:Static<typeof historyVideoSchema>)=>({ ...video, url:'',summary:video.summary || '',author:source.title,embedUrl:'',thumbnailUrl:'',publishedAt:new Date(video.publishedAt*1000) })), body.mode==='daily-fallback'?'fallback':'history');
+    }, { body:t.Object({ subscriptionId:t.Integer({minimum:1}), videos:t.Array(historyVideoSchema,{maxItems:30}),mode:t.Optional(t.Literal('daily-fallback')) }) })
     .post('/sync/history-state', async ({headers,set,body}) => {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
       const source=await sourceById(body.subscriptionId);

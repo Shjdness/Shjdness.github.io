@@ -6,7 +6,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 function database() {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(`CREATE TABLE rss_write_budget(day TEXT PRIMARY KEY,reserved INTEGER NOT NULL DEFAULT 0); CREATE TABLE rss_items(id INTEGER PRIMARY KEY,owner_id INTEGER,subscription_id INTEGER,external_id TEXT,title TEXT,url TEXT,summary TEXT,author TEXT,embed_url TEXT,thumbnail_url TEXT,published_at INTEGER,published_precision TEXT,read INTEGER DEFAULT 0,starred INTEGER DEFAULT 0,created_at INTEGER,updated_at INTEGER,UNIQUE(owner_id,external_id));
+  sqlite.exec(`CREATE TABLE rss_write_budget(day TEXT PRIMARY KEY,reserved INTEGER NOT NULL DEFAULT 0); CREATE TABLE rss_items(id INTEGER PRIMARY KEY,owner_id INTEGER,subscription_id INTEGER,external_id TEXT,title TEXT,url TEXT,summary TEXT,author TEXT,embed_url TEXT,thumbnail_url TEXT,published_at INTEGER,published_precision TEXT,discovery_kind TEXT NOT NULL DEFAULT 'legacy',read INTEGER DEFAULT 0,starred INTEGER DEFAULT 0,created_at INTEGER,updated_at INTEGER,UNIQUE(owner_id,external_id));
     CREATE TABLE rss_sync_runs(id INTEGER PRIMARY KEY,owner_id INTEGER,source_id INTEGER,kind TEXT,added INTEGER,updated INTEGER,unchanged INTEGER,rows_read INTEGER,rows_written INTEGER,size_before INTEGER,size_after INTEGER,created_at INTEGER);`);
   const prepare = (sql: string) => {
     let bindings: any[]=[];
@@ -48,5 +48,15 @@ describe('RSS ingestion against real SQLite SQL',()=>{
     expect(sample.backend).toMatchObject({usedBytes:32768,limitBytes:null,measured:true});
     expect(sample.rssBytes).toBeGreaterThan(video.title.length+video.summary.length);
     expect(sample.items).toBe(1);
+  });
+  it('keeps first-discovery origin/time across historical and feed retries, preserving flags',async()=>{
+    const {db,sqlite}=database(),source={id:1,ownerId:1};
+    await ingestVideos(db,source,[video],'history');
+    sqlite.exec('UPDATE rss_items SET read=1,starred=1,created_at=123');
+    await ingestVideos(db,source,[{...video,title:'fresh official title'}],'feed');
+    expect(sqlite.prepare('SELECT discovery_kind,created_at,read,starred FROM rss_items').get()).toMatchObject({discovery_kind:'history',created_at:123,read:1,starred:1});
+    await ingestVideos(db,source,[{...video,externalId:'lmnopqrstuv'}],'fallback');
+    await ingestVideos(db,source,[{...video,externalId:'lmnopqrstuv',title:'push corrected'}],'push');
+    expect(sqlite.prepare("SELECT discovery_kind FROM rss_items WHERE external_id='lmnopqrstuv'").get().discovery_kind).toBe('fallback');
   });
 });

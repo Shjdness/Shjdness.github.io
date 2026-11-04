@@ -54,7 +54,7 @@ def main():
                             'publishedPrecision':'exact' if entry.get('release_timestamp') else 'estimated' if timestamp else 'unknown'}
             if not accessible:
                 raise RuntimeError('No accessible recent metadata')
-            result = history.api('/sync/history-batch',{'subscriptionId':source['id'],'videos':list(videos.values())})
+            result = history.api('/sync/history-batch',{'subscriptionId':source['id'],'videos':list(videos.values()),'mode':'daily-fallback'})
             # A successful bounded fallback does not mark historical coverage complete.
             history.api('/sync/error',{'subscriptionId':source['id'],'error':''})
             print(f"FALLBACK source={source['id']} added={result['added']} changed={result['updated']} skipped={result['unchanged']}",flush=True)

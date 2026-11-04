@@ -28,7 +28,7 @@ export function videoValues(video: VideoRecord, existing?: Stored, history = fal
   return incoming;
 }
 
-export async function ingestVideos(db: D1Database, source: { id: number; ownerId: number }, input: VideoRecord[], kind: 'feed' | 'history' | 'push' = 'feed') {
+export async function ingestVideos(db: D1Database, source: { id: number; ownerId: number }, input: VideoRecord[], kind: 'feed' | 'history' | 'push' | 'fallback' = 'feed') {
   const unique = [...new Map(input.filter(video => VIDEO_ID.test(video.externalId)).map(video => [video.externalId, video])).values()];
   if (unique.length > 30) throw Error('At most 30 videos per ingestion batch');
   const snapshot = await db.prepare('SELECT 1 AS ok').all();
@@ -41,14 +41,14 @@ export async function ingestVideos(db: D1Database, source: { id: number; ownerId
   const now = Math.floor(Date.now() / 1000);
   for (const video of unique) {
     const old = previous.get(video.externalId);
-    const values = videoValues(video, old, kind === 'history');
+    const values = videoValues(video, old, kind === 'history'||kind==='fallback');
     if (old && contentFields.every(key => old[key] === values[key])) { unchanged++; continue; }
     if (old) updated++; else added++;
-    statements.push(db.prepare(`INSERT INTO rss_items (owner_id,subscription_id,external_id,${contentFields.join(',')},created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,external_id) DO UPDATE SET
+    statements.push(db.prepare(`INSERT INTO rss_items (owner_id,subscription_id,external_id,${contentFields.join(',')},created_at,updated_at,discovery_kind)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,external_id) DO UPDATE SET
       ${contentFields.map(key => `${key}=excluded.${key}`).join(',')},updated_at=excluded.updated_at
       WHERE ${contentFields.map(key => `rss_items.${key} IS NOT excluded.${key}`).join(' OR ')}`)
-      .bind(source.ownerId, old?.subscription_id ?? source.id, video.externalId, ...contentFields.map(key => values[key]), now, now));
+      .bind(source.ownerId, old?.subscription_id ?? source.id, video.externalId, ...contentFields.map(key => values[key]), now, now,kind));
   }
   let sizeAfter = Number(snapshot.meta.size_after || 0);
   await reserveRssWrites(db, statements.length, kind === 'history');

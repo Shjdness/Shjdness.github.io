@@ -39,6 +39,7 @@ class TransportTests(unittest.TestCase):
             with patch.dict(os.environ,{'RSS_SYNC_FAILURE_FILE':str(failures)}),patch.object(module.history,'api',side_effect=api),patch.object(module.time,'time',return_value=2000000000):
                 module.main()
             self.assertEqual([len(batch['videos']) for batch in batches],[1,2])
+            self.assertTrue(all(batch['mode']=='daily-fallback' for batch in batches))
             self.assertEqual(batches[0]['videos'][0]['publishedPrecision'],'estimated')
 
     def test_existing_plaintext_success_and_json_contracts(self):
