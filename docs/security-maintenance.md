@@ -625,3 +625,9 @@ RSS阶段6721696已推；随后实现同批读取的owner明细采集与严格�
 用户已确认全部日报/周报模板、每日三件事提前两日、RSS04:15刷新→05:00起等完成→最晚07:30截止→08:00QQ的方案。已创建本聊天长期目标；不重建此前已删除的小时自动化。权威实施清单在同级site-reports/docs/daily-brief-task-2026-11-04.md，分支feature/life-reports bcea56b已推且干净。
 
 本轮已实现RSS认证日周期/防重复抓取/结算/有界等待/不可变采集状态、三日期预定/待办关联/移动排序/实际完成时间/原子三项上限/离线冲突保留，0035/36草案。67文件275项、前后端类型、最终实际构建与合成手机/半屏页面通过（细节见功能树）。新增CI能力门仅本机YAML解析，未部署。下一步必须继续新模板加密明细与owner隔离RSS分类/补录标识、密文敏感邮件准备与最终准入、scope2自动AI/恢复/完整发布及真实QQ收件，不重复已验收组件。LIFE_CHECKIN_KEY尚未配置，旧unknown/5分保留。线上仍a2b4685、RSS08:17和原05:00/08:00数字报告，不将分支测试称上线。无生产内容改写/真实费用/新邮件。本轮末周用量显示100%但普通仍允许，保存检查点不用重置券/购买。main未跟踪旧方案不覆盖，纯文档随下次实质发布推送。
+
+## 2026-11-05 a98b99d邮件阶段已上线，待本人Secret交接
+
+main a98b99d已发布，Worker41946853569/Pages41946853444均Success、316项CI；实际main类型/构建同过。0032–39冻结，后续0040。线上首页/新index/life200、新私密brief-mail/brief/mail/v5backup匿名403且no-store、reportPrivateMailV1=true，证据outputs/daily-brief-2026-11-04/private-mail-{live,pages-live}.json。没有新外发费用或新QQ收件验收。scope2自动AI和固定明细预览UI待续，不能以发布称全部完成。
+
+独立LIFE_CHECKIN_KEY确实未配置，现有Cloudflare登录有效，tab8已交接生产Secret空白值表单；用户本人输入/提交新Key期间不可读表单/截图。已提供本机prepare-life-key.cmd安全生成/复制/DPAPI副本工具，代理未执行或读Key/剪贴板；异步等待“日报加密密钥已配置”答复。配置后继续owner-only布尔状态、明细许可/计划/正常新报告QQ真实收件，旧数字邮件与unknown不重放。主目录同名本机方案已保留原始SHA和outputs保护副本，目前是本机doc修改，绝不stage/覆盖；详见daily-brief-task最新检查点。

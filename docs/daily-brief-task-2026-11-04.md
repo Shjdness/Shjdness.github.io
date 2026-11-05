@@ -97,3 +97,12 @@
 - owner-only brief-mail GET/POST及设置已接，无默认勾选，数字邮件许可不自动升级；CAS防旧标签覆盖，重复启用不改epoch，缺Key/维护中可撤回。设置不外调，不开AI/邮件/计划。StrictMode验收修复旧卸载GET误报；实际组件合成浏览器手机360无溢出、初始0写/0外调、独立勾选启用1写/0外调、Key丢失可撤回和账号切换通过，console无warn/error。截图outputs/daily-brief-2026-11-04/brief-consent-mobile.png；不是生产收件验收。
 - 73文件316项全量、前后端类型及实际Vite构建通过；真实workerd D1五路准备1侧表/五路提交1模拟准入/unknown不重发/来源撤回及回滚通过。Pages等reportPrivateMailV1后发布，新增私有路由匿名403上线检查。未调用真实AI/SMTP，0032–39尚未上线。
 - 用户本轮明确优先确保发信；邮件与事实降级阶段可独立发布，AI持续scope2与新明细预览UI尚待续作，不因此重放旧5分unknown。发布后仍需独立LIFE_CHECKIN_KEY安全配置、明确明细许可及正常新报告实际QQ收件，不能把上述模拟称上线成功。旧数字邮件保持原设置。个人备份永不导出/恢复密文队列、scope3或外调账本。
+
+## 2026-11-05 邮件阶段正式发布与配置交接
+
+- main/feature 已合并到 a98b99d 并推送。实际main双端类型/73文件316项/非缓存Vite构建通过；Worker41946853569、Pages41946853444均Success，CI均316项。0032–0039现已发布冻结，新增迁移从0040起，不能修改已上线SQL。现阶段完整邮件可独立运行/统计降级，scope2持续自动AI和固定明细预览UI仍未完成，不因此标完整目标完成。
+- 2026-11-05T01:17Z匿名只读：首页/index-CDKSXjpi.js/life-BsNZH75f.js均200；reportPrivateMailV1/dailyPlansV1=true、captureTime05:00；brief-mail/history brief/mail/v5backup全403且private/no-store。证据outputs/daily-brief-2026-11-04/private-mail-{live,pages-live}.json及private-mail-pages-ci.png。日RSS改04:15，生成器05:00等刷新完成最晚07:30，08:00发送规则已发布；未改本人开关/收件人，未触发新邮件或AI。
+- 主目录原未跟踪方案与功能树同名不同内容：安全移存outputs/daily-brief-2026-11-04/main-untracked-plan-preserved-2026-11-05.md后快进main，再恢复原文件，SHA256仍FD16E1B6DC6502EBD370BDB90AEC434E18CB68AD9D1C63B9A1AEFE10F4F750A3。它现在表现为main该文档本机修改，**不得stage/覆盖/提交**。功能树该文档保持分支版本。
+- Cloudflare现有登录可用，仅按DOM计数确认LIFE_CHECKIN_KEY不存在，没有读取Secret值。已把生产添加变量表单准备为LIFE_CHECKIN_KEY、Secret已勾选、值为空；IAB tab8交接并保持可见。不要在用户输入期间读该表单/截图，等待用户完成部署答复。新凭据输入/提交由本人完成，不用旧JWT/SMTP/AI Key。
+- 已异步请求用户双击本机outputs/daily-brief-2026-11-04/prepare-life-key.cmd，输入YES后工具生成32随机字节base64、复制到剪贴板并存当前Windows账户DPAPI副本；用户只在Cloudflare粘贴/部署，并另存本人密码管理器，完成后回工具回车清空剪贴板。脚本仅语法解析通过，**代理没有执行/生成Key/读取剪贴板**；不要聊天粘贴Key或截图。保护文件若存在只复制原Key，不覆盖或轮换。
+- 当前唯一真实发信验收仍是旧数字邮件历史收件，新版未实际发送。待本人配置结束后无需重复询问普通下一步：只读状态验证Key可用、沿已授权Shjdness当前会话明确允许新明细邮件，核对原日报/周报/QQ开关与08:00，优先等正常新采集报告；不向旧已发或unknown补内容/重发，不造虚假生产记录，不退款旧5分。首封新版实际收到前保持目标未完成。
