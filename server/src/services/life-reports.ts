@@ -19,6 +19,7 @@ import {readReportBrief} from '../utils/report-brief-snapshot';
 import {briefMailContent} from '../utils/report-brief-mail';
 import {readRssCapture} from '../utils/rss-daily-cycle';
 import {readBriefConsent,setBriefConsent} from '../utils/report-brief-consent';
+import {readSelectedAIConsent,setSelectedAIConsent} from '../utils/selected-ai-consent';
 
 import {reportCaptureReady} from '../utils/report-schedule';
 import {rssCaptureStatus} from '../utils/rss-daily-cycle';
@@ -62,6 +63,20 @@ export function LifeReportsService() {
       const preferences=await readReportPreferences(db,owner);
       return {ownerId:owner,preferences,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled};
     })
+    .get('/life/reports/selected-ai',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      const month=new Date(Date.now()+8*3600000).toISOString().slice(0,7),budget=await db.prepare('SELECT reserved_fen FROM life_report_ai_budget WHERE month=?').bind(month).all<{reserved_fen:number}>();
+      if(!budget.success)throw Error('AI budget unavailable');
+      return {...await readSelectedAIConsent(db,owner),scope:'selected',configured:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Boolean(await optionalCheckinVault(env)),paused:env.REPORT_OUTBOUND_PAUSED==='true',pricingValid:Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE,model:REPORT_AI_MODEL,monthlyBudgetFen:REPORT_AI_MONTHLY_FEN,reservedMonthlyFen:budget.results[0]?.reserved_fen??0};
+    })
+    .post('/life/reports/selected-ai',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      if(context.body.enabled){
+        if(!allowBurst(`life-report-selected-ai:${owner}`,8)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}
+        if(env.REPORT_OUTBOUND_PAUSED==='true'||!env.DEEPSEEK_API_KEY?.trim()||Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE||!await optionalCheckinVault(env)){context.set.status=503;return {ownerId:owner,code:'AI_NOT_AVAILABLE'};}
+      }
+      const result=await setSelectedAIConsent({db,owner,...context.body});if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;return result;
+    },{body:t.Object({enabled:t.Boolean(),baseRevision:t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER}),allowSelectedAnalysis:t.Optional(t.Literal(true))},{additionalProperties:false})})
     .get('/life/reports/brief-mail',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       return {...await readBriefConsent(db,owner),configured:Boolean(await optionalCheckinVault(env)),paused:env.REPORT_OUTBOUND_PAUSED==='true'};

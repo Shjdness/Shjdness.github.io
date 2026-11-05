@@ -34,7 +34,8 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
   const primary=await load(job.report_id),daily=job.include_daily?await load(job.daily_report_id!):null;
   const expected=reportWindow(job.kind,new Date(job.anchor_at*1000));
   if(primary.report.period.kind!==job.kind||primary.report.period.start!==expected.start||primary.report.period.end!==expected.end||job.period_start*1000!==Date.parse(expected.start)||job.period_end*1000!==Date.parse(expected.end))throw Error('Mail report binding mismatch');
-  const privateMail=options.checkinVault?await preparePrivateReportMail(db,options.checkinVault,ownerId,key,primary,job.anchor_at):null;
+  const privateMail=options.checkinVault?await preparePrivateReportMail(db,options.checkinVault,ownerId,key,primary,job.anchor_at,now):null;
+  if(privateMail?.pending)return {state:'analysis-pending'};
   if(privateMail){
     if(!await reserveReportWrite(db))return {state:'write-budget'};
     const guard=privateMail.guard;

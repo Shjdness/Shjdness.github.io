@@ -78,7 +78,7 @@ jobs:
           done
           for attempt in $(seq 1 36); do
             capabilities="$(curl --fail --silent --max-time 15 "$API_URL/reliability/capabilities" || true)"
-            if echo "$capabilities" | grep -Fq '"lifeCheckinsV1":true' && echo "$capabilities" | grep -Fq '"reportBackupV5":true' && echo "$capabilities" | grep -Fq '"reportCheckinSnapshotsV1":true' && echo "$capabilities" | grep -Fq '"reportSelectedAIV2":true' && echo "$capabilities" | grep -Fq '"reportRssCaptureV1":true' && echo "$capabilities" | grep -Fq '"reportPrivateMailV1":true' && echo "$capabilities" | grep -Fq '"dailyPlansV1":true' && echo "$capabilities" | grep -Fq '"reportFixedCaptureV1":true'; then break; fi
+            if echo "$capabilities" | grep -Fq '"lifeCheckinsV1":true' && echo "$capabilities" | grep -Fq '"reportBackupV5":true' && echo "$capabilities" | grep -Fq '"reportCheckinSnapshotsV1":true' && echo "$capabilities" | grep -Fq '"reportSelectedAIV2":true' && echo "$capabilities" | grep -Fq '"reportRssCaptureV1":true' && echo "$capabilities" | grep -Fq '"reportSelectedAutomationV1":true' && echo "$capabilities" | grep -Fq '"reportPrivateMailV1":true' && echo "$capabilities" | grep -Fq '"dailyPlansV1":true' && echo "$capabilities" | grep -Fq '"reportFixedCaptureV1":true'; then break; fi
             if [ "$attempt" = 36 ]; then echo 'Life check-in migration/API not ready' >&2; exit 1; fi
             sleep 10
           done

@@ -60,7 +60,7 @@ export function ReportMailSettings({ownerId,token}:{ownerId:number;token:string}
   });
   return <section className="life-report-explanation life-report-workspace life-report-mail" aria-labelledby="report-mail-title">
     <header><h2 id="report-mail-title">邮件提醒</h2><button type="button" disabled={busy} onClick={()=>void run(load)}>刷新邮件状态</button></header>
-    <p>先保存并验证邮箱，再明确启用。邮件只含统计与已有数字分析，不发送日记正文或任务名称；验证和发送均不会因打开此页自动触发。</p>
+    <p>先保存并验证邮箱，再明确启用。默认使用统计版；在下方单独允许完整明细后，邮件可包含计划与任务名称、选定打卡饮食作息及可分享的 AI 分析。不包含日记正文；打开本页不会触发验证或发送。</p>
     {state&&!state.storageConfigured&&<p>邮件配置尚未就绪，当前无法保存新地址或发送邮件。</p>}
     {state?.feedbackMode==='manual'&&<p>QQ 邮箱通道：服务已受理只表示 QQ 服务器接受提交，不代表收件箱已收到。此通道没有自动送达或退信回调，需查收邮件；未收到时先核对收件箱、垃圾箱及发件邮箱退信，可在这里暂停。</p>}
     {state&&<p>收件地址：{state.maskedRecipient??(state.contactRevision?'配置暂不可读取':'尚未配置')} · {state.verified?'已验证':'未验证'} · {state.enabled?'提醒已启用':'提醒已关闭'}{state.pausedReason?' · 退信或收件人反馈后暂停':''}</p>}

@@ -4,7 +4,7 @@ import type {LifeReportPreview} from './life-report';
 import {reportCheckinsValue,type ReportCheckins} from './report-checkin-format';
 export const CHECKIN_AI_REQUEST_BYTES=12000;
 export const CHECKIN_AI_OUTPUT_TOKENS=2048;
-// Verified 2026-11-02 at official /zh-cn/quick_start/pricing/: peak uncached
+// Verified 2026-11-05 at official /zh-cn/quick_start/pricing/: peak uncached
 // input 2 CNY/M, output 8 CNY/M. Conservative byte-token upper bound plus
 // 500 framing tokens: 12500*2/1e6+2048*8/1e6=0.041384 CNY < existing 0.05
 // reservation. Price expiry is shared; no web/search/tools or hidden thinking.

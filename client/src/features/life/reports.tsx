@@ -58,7 +58,7 @@ export function LifeReportsView(){
   return <LifeLayout section="reports" title="复盘与提醒" intro="回看已记录的进展，让下一步更容易开始。">
     <div className="life-reports">
       <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
-      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 仅在保存报告后明确选择时分析统计数字；邮件提醒需在下方验证并单独启用。</p>
+      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 只分析单独允许的范围：统计数字或选定生活记录；邮件提醒需验证并单独启用，完整明细与自动 AI 分别授权。</p>
       {loading&&!historical&&<p role="status">正在读取已同步记录…</p>}
       {error&&!historical&&<p role="alert">{error}</p>}
       {report&&<>
@@ -75,7 +75,8 @@ export function LifeReportsView(){
       <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
       <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token!}/>
       <ReportBriefSettings key={'brief-'+token} ownerId={owner} token={token!}/>
-      <ReportAISettings key={'auto-ai-'+token} ownerId={owner} token={token!}/>
+      <ReportAISettings key={'selected-ai-'+token} ownerId={owner} token={token!} selected/>
+      <details className="life-report-explanation"><summary>仅数字分析（兼容设置）</summary><ReportAISettings key={'auto-ai-'+token} ownerId={owner} token={token!}/></details>
       <details className="life-report-explanation"><summary>统计范围</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p></details>
     </div>
   </LifeLayout>;

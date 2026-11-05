@@ -15,7 +15,9 @@ export function checkinAIInput(report:LifeReportPreview,value:ReportCheckins|Rep
  for(const e of [...s.entries].sort((a,b)=>a.date.localeCompare(b.date))){const day=(end-Date.parse(e.date+'T00:00:00Z'))/86400000;
   for(const i of e.record.items.filter(i=>i.ai)){const module=i.kind==='habit'?'habits':'checkins',ref=(module==='habits'?'H':'C')+(out[module].length+1);out[module].push({ref,day,name:i.name,result:i.result,note:i.note});}
   for(const m of e.record.meals.filter(m=>m.ai))out.diet.push({ref:'D'+(out.diet.length+1),day,kind:m.kind,description:m.description,portion:m.portion});
-  const sleep=e.record.sleep;if(sleep.ai&&(sleep.bedAt||sleep.wakeAt)){const offset=(v:string|null)=>v===null?null:(Date.parse(v.slice(0,10)+'T00:00:00Z')-Date.parse(e.date+'T00:00:00Z'))/86400000;out.routine.push({ref:'R'+(out.routine.length+1),day,bedMinute:minute(sleep.bedAt),wakeMinute:minute(sleep.wakeAt),bedDayOffset:offset(sleep.bedAt),wakeDayOffset:offset(sleep.wakeAt),targetBedMinute:e.record.targets.bedMinute,targetWakeMinute:e.record.targets.wakeMinute});}
+  const sleep=e.record.sleep,occurred=(v:string|null)=>v!==null&&Date.parse(v)<=Date.parse(r.generatedAt)?v:null;
+  const bed=occurred(sleep.bedAt),wake=occurred(sleep.wakeAt);
+  if(sleep.ai&&(sleep.bedAt||sleep.wakeAt)){const offset=(v:string|null)=>v===null?null:(Date.parse(v.slice(0,10)+'T00:00:00Z')-Date.parse(e.date+'T00:00:00Z'))/86400000;out.routine.push({ref:'R'+(out.routine.length+1),day,bedMinute:minute(bed),wakeMinute:minute(wake),bedDayOffset:offset(bed),wakeDayOffset:offset(wake),targetBedMinute:e.record.targets.bedMinute,targetWakeMinute:e.record.targets.wakeMinute});}
  }return out;
 }
 export type CheckinAIAnalysis={version:1;summary:string;modules:Record<CheckinAIModule,{status:'observed'|'insufficient';observations:Array<{text:string;evidence:string[]}>;actions:string[]}>};
@@ -28,6 +30,7 @@ const plain=(v:unknown,max:number)=>{if(typeof v!=='string'||!v.trim()||v.length
 export function checkinAIAnalysis(value:unknown,input:CheckinAIInput):CheckinAIAnalysis{
  const v=obj(value,['version','summary','modules']);if(v.version!==1)return fail();const modules=obj(v.modules,[...CHECKIN_AI_MODULES]),result={} as CheckinAIAnalysis['modules'];
  for(const module of CHECKIN_AI_MODULES){const m=obj(modules[module],['status','observations','actions']),refs=new Set(input[module].map(i=>i.ref));
+  if(module==='routine'&&m.status==='observed'&&!input.routine.some(r=>r.bedMinute!==null||r.wakeMinute!==null))return fail();
   if(!['observed','insufficient'].includes(String(m.status))||!Array.isArray(m.observations)||m.observations.length>2||!Array.isArray(m.actions)||m.actions.length>2||refs.size===0&&(m.status!=='insufficient'||m.observations.length||m.actions.length)||m.status==='observed'&&!m.observations.length)return fail();
   result[module]={status:m.status as 'observed'|'insufficient',observations:m.observations.map(o=>{const p=obj(o,['text','evidence']);if(!Array.isArray(p.evidence)||p.evidence.length<1||p.evidence.length>4||new Set(p.evidence).size!==p.evidence.length||p.evidence.some(ref=>typeof ref!=='string'||!refs.has(ref)))return fail();return {text:plain(p.text,180),evidence:p.evidence as string[]};}),actions:m.actions.map(a=>plain(a,120))};
  }return {version:1,summary:plain(v.summary,240),modules:result};

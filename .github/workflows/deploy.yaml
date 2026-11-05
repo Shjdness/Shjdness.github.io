@@ -110,6 +110,8 @@ jobs:
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportRssCaptureV1":true'
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"dailyPlansV1":true'
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportPrivateMailV1":true'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "$API_URL/reliability/capabilities" | grep -Fq '"reportSelectedAutomationV1":true'
+          test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/selected-ai")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/brief-mail")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/history/1/brief")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/history/1/checkin-analysis")" = "403"

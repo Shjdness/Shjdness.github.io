@@ -6,6 +6,8 @@ import {decodeReportRow} from './report-history';
 import {generateReportAnalysis} from './report-analysis';
 import {reserveReportWrite} from './report-settings';
 import {reportWindow} from './life-report';
+import {optionalCheckinVault} from './checkin-key-guard';
+import {runSelectedAISchedule} from './selected-ai-schedule';
 
 /** At most one primary analysis per tick; a weekly email's daily appendix is
  * statistics only. Manual and scheduled calls share the same immutable result,
@@ -43,4 +45,9 @@ export async function runReportAISchedule(options:{db:D1Database;apiKey?:string;
   }
   return {processed:1,failures};
 }
-export const runConfiguredReportAI=(env:Env)=>env.REPORT_OUTBOUND_PAUSED==='true'?Promise.resolve({processed:0,failures:0}):runReportAISchedule({db:env.DB,apiKey:env.DEEPSEEK_API_KEY});
+export async function runConfiguredReportAI(env:Env){
+ if(env.REPORT_OUTBOUND_PAUSED==='true'||!env.DEEPSEEK_API_KEY?.trim()||Date.now()>=REPORT_AI_PRICE_REVIEW_BEFORE)return {processed:0,failures:0};
+ const vault=await optionalCheckinVault(env);
+ if(vault){const selected=await runSelectedAISchedule({db:env.DB,vault,apiKey:env.DEEPSEEK_API_KEY});if(selected.processed)return selected;}
+ return runReportAISchedule({db:env.DB,apiKey:env.DEEPSEEK_API_KEY});
+}

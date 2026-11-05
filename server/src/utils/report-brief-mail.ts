@@ -4,6 +4,8 @@ import {reportMailMessage} from './report-mail-delivery';
 import {reportSnapshot,type LifeReportPreview} from './life-report';
 import {reportCheckinsValue,reportCheckinArchiveValue,type ReportCheckins,type ReportCheckinArchive} from './report-checkin-format';
 import {rssStatusValue,type RssCaptureStatus} from './rss-daily-cycle';
+import {checkinAIInput,checkinAIAnalysis,type CheckinAIAnalysis} from './checkin-ai-format';
+import {checkinAIShareableInMail} from './report-checkin-format';
 
 const ROOT='https://shjdness.github.io';
 const text=(s:string,max:number)=>{const clean=s.replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu,' ').replace(/\s+/g,' ').trim();return clean.length>max?clean.slice(0,max-1)+'…':clean;};
@@ -21,7 +23,7 @@ function listLines<T>(list:BriefList<T>,limit:number,render:(value:T)=>string,em
  if(list.total>shown.length)lines.push(`另 ${list.total-shown.length} 项，请在站内查看；总计 ${list.total} 项。`);
  return lines;
 }
-type Input={context:BriefContext;facts:BriefFacts;report:LifeReportPreview;rss?:RssDigest;rssRefresh?:RssCaptureStatus;checkins?:ReportCheckins|ReportCheckinArchive};
+type Input={context:BriefContext;facts:BriefFacts;report:LifeReportPreview;rss?:RssDigest;rssRefresh?:RssCaptureStatus;checkins?:ReportCheckins|ReportCheckinArchive;analysis?:CheckinAIAnalysis};
 
 /** New fixed-template preview/sender renderer. No live source lookup or AI call.
  * Private names are only mail facts. This pure function supplies no send consent:
@@ -32,6 +34,8 @@ export function briefMailContent(input:Input){
  const rss=input.rss?rssDigestValue(input.rss):null,refresh=input.rssRefresh?rssStatusValue(input.rssRefresh):null;
  if(rss&&Date.parse(rss.toExclusive)>Date.parse(facts.capturedAt))throw Error('RSS discovery extends beyond capture');
  const selected=input.checkins?('sources'in input.checkins?reportCheckinsValue(input.checkins,report):reportCheckinArchiveValue(input.checkins,report)):null;
+ if(input.analysis&&(!selected||!checkinAIShareableInMail(selected)))throw Error('AI result is not shareable in mail');
+ const analysis=input.analysis&&selected?checkinAIAnalysis(input.analysis,checkinAIInput(report,selected)):null;
  const weekly=report.period.kind==='weekly',subject=`夏令时电波 · ${weekly?'生活周报':'生活日报'} · ${facts.today.date}`;
  const build=(limit:number,labelMax:number)=>{
   const lines=[`${weekly?'本周安排':'今日日报'} ${date(facts.today.date)}`,`数据采集：${clock(facts.capturedAt)}（北京时间）`,'', '一、今日三件事',
@@ -71,7 +75,11 @@ export function briefMailContent(input:Input){
   };
   review(facts.review,weekly?`上周复盘 ${facts.review.fromDate} 至 ${facts.review.toDateExclusive} 前`:`昨日复盘 ${date(facts.review.fromDate)}`,limit);
   if(facts.yesterday){const overlaps=facts.yesterday.fromDate>=facts.review.fromDate&&facts.yesterday.toDateExclusive<=facts.review.toDateExclusive;review(facts.yesterday,`昨日日报附录 ${date(facts.yesterday.fromDate)}（${overlaps?'包含在上周统计中，不重复相加':'与上周分别展示，不相加'}）`,Math.min(3,limit));}
-  lines.push('','AI 复盘与建议','本次未附可用于邮件的 AI 分析，以上事实不受影响。',
+  const aiLines=analysis?[text(analysis.summary,limit>2?160:100),...(['habits','checkins','diet','routine'] as const).map(module=>{
+   const part=analysis.modules[module],label={habits:'习惯',checkins:'打卡',diet:'饮食',routine:'作息'}[module];
+   return `- ${label}：${part.status==='insufficient'?'记录不足，暂不判断。':part.observations[0]?text(part.observations[0].text,limit>2?120:80):'暂无足够观察。'}${part.actions[0]?' 可选一步：'+text(part.actions[0],limit>2?100:60):''}`;
+  }),'AI 建议仅基于选定记录，可能不准确；不是医学或营养诊断，不替代本人判断。']:['本次未附可用于邮件的 AI 分析，以上事实不受影响。'];
+  lines.push('','AI 复盘与建议',...aiLines,
    '',`明日预告 ${date(facts.tomorrow.date)}`,...listLines(facts.tomorrow.priorities,3,p=>`- ${text(p.name,labelMax)}`,'- 明日尚未安排三件事。'),
    '', '只含已同步数据；采集后的补记不会改写本封快照。旧完成事项缺少实际完成时间时不推算归属。每日执行是记忆清单，不计习惯打卡率。',
    `完整报告／暂停提醒：${ROOT}/life/reports`, `安排事项：${ROOT}/life/todos`, `记录习惯：${ROOT}/life/habits`);

@@ -8,6 +8,8 @@ import {briefMailContent} from './report-brief-mail';
 import {reportMailMessage,type MailAdmissionGuard} from './report-mail-delivery';
 import {reportDigest} from './report-analysis-format';
 import {readRssCapture} from './rss-daily-cycle';
+import {readCheckinAnalysis} from './checkin-analysis';
+import {checkinAIShareableInMail} from './report-checkin-format';
 type Saved={id:number;sha256:string;report:LifeReportPreview};
 export const PRIVATE_MAIL_MARKER='{"version":2,"private":true}';
 type Binding={version:1;reportId:number;reportSha:string;briefHmac:string;checkinHmac:string;consentRevision:number;enabledAt:number;anchor:number};
@@ -24,17 +26,24 @@ function privateGuard(owner:number,vault:CheckinVault,b:Binding,source:MailAdmis
 }
 
 /** New consent must predate capture. A numeric consent is never an upgrade. */
-export async function preparePrivateReportMail(db:D1Database,vault:CheckinVault,owner:number,key:string,saved:Saved,anchor:number){
+export async function preparePrivateReportMail(db:D1Database,vault:CheckinVault,owner:number,key:string,saved:Saved,anchor:number,now=new Date()){
  const consent=await db.prepare('SELECT revision,enabled_at FROM life_report_brief_consent WHERE owner_id=? AND scope_version=3 AND enabled_at IS NOT NULL AND enabled_at<=?').bind(owner,Math.min(anchor,Math.floor(Date.parse(saved.report.generatedAt)/1000))).all<{revision:number;enabled_at:number}>();
  if(!consent.success)throw Error('Brief consent unavailable');if(!consent.results[0])return null;
  await checkinKeyGuard(db,vault);
  const brief=await readReportBrief(db,vault,owner,saved),selected=await readReportCheckins(db,vault,owner,saved);
  if(!brief?.outboundEligible||brief.context.scheduledFor.getTime()/1000!==anchor||!selected?.current||!('sources' in selected.snapshot))return null;
  const b:Binding={version:1,reportId:saved.id,reportSha:saved.sha256,briefHmac:brief.contentHmac,checkinHmac:brief.checkinHmac,consentRevision:consent.results[0].revision,enabledAt:consent.results[0].enabled_at,anchor};
- const message=reportMailMessage(briefMailContent({context:brief.context,facts:brief.facts,report:saved.report,rss:brief.rss??undefined,rssRefresh:await readRssCapture(db,owner,saved.id,saved.sha256),checkins:selected.snapshot}));
+ let analysis:Awaited<ReturnType<typeof readCheckinAnalysis>>['analysis']=null;
+ if(checkinAIShareableInMail(selected.snapshot)){
+  try{const view=await readCheckinAnalysis(db,vault,owner,saved,now);
+   if(view.state==='pending'&&now.getTime()/1000-anchor<60)return {pending:true as const};
+   if(view.state==='succeeded')analysis=view.analysis;
+  }catch{/* Damaged/missing AI results never prevent a facts-only email. */}
+ }
+ const message=reportMailMessage(briefMailContent({context:brief.context,facts:brief.facts,report:saved.report,rss:brief.rss??undefined,rssRefresh:await readRssCapture(db,owner,saved.id,saved.sha256),checkins:selected.snapshot,analysis:analysis??undefined}));
  const payload={binding:b,message},sealed=await vault.sealPayload(owner,'report-mail',key,payload),hmac=await vault.payloadDigest(owner,'report-mail',key,payload);
  const source=checkinSourceGuard(owner,selected.snapshot.rangeFrom,selected.snapshot.toDateExclusive,selected.snapshot.sources);
- return {message,digest:await reportDigest(JSON.stringify(message)),sealed,hmac,reportId:saved.id,guard:privateGuard(owner,vault,b,source)};
+ return {pending:false as const,message,digest:await reportDigest(JSON.stringify(message)),sealed,hmac,reportId:saved.id,guard:privateGuard(owner,vault,b,source)};
 }
 
 /** Decrypt only in memory and re-derive live guards. No archive can supply proofs. */

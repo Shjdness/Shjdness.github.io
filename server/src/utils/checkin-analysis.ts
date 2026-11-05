@@ -10,7 +10,7 @@ import {reserveReportWrite} from './report-settings';
 type Saved={id:number;sha256:string;report:LifeReportPreview};
 export type CheckinAnalysisView={state:'none'|'pending'|'succeeded'|'statistics'|'unknown';analysis:CheckinAIAnalysis|null;reason:string|null};
 const empty:CheckinAnalysisView={state:'none',analysis:null,reason:null};
-/** Owner-only orchestrator, not yet attached to any paid HTTP/cron entry. Reads
+/** Owner-only manual/explicitly-consented automatic orchestrator. Reads
  * do not retry pending/unknown work. Results never enter the numeric JSON table. */
 export async function readCheckinAnalysis(db:D1Database,vault:CheckinVault,owner:number,saved:Saved,now=new Date()):Promise<CheckinAnalysisView>{
  if(owner!==saved.report.ownerId||await reportDigest(JSON.stringify(reportSnapshot(owner,saved.report)))!==saved.sha256)throw Error('Report binding mismatch');
@@ -24,16 +24,23 @@ export async function readCheckinAnalysis(db:D1Database,vault:CheckinVault,owner
  if(r.sealed_json!==null||r.result_hmac!==null||!['pending','statistics','unknown'].includes(String(r.state))||(r.state==='pending'?r.reason!==null:!['budget-or-scope','unavailable','interrupted'].includes(String(r.reason))))throw Error('Invalid check-in analysis state');
  if(r.state==='pending'&&now.getTime()/1000-Number(r.updated_at)>=60)return {...empty,state:'unknown',reason:'interrupted'};return {state:r.state as CheckinAnalysisView['state'],analysis:null,reason:r.reason as string|null};
 }
-/** scope2Approved is a single explicit action, never the old numeric toggle.
- * Automatic scope2 consent and job eligibility must be added before cron wiring.
+/** scope2Approved is an explicit action, never the old numeric toggle.
+ * Scheduled calls additionally bind the independent consent epoch and revision.
  * The current source+owner+extension guard is repeated in claim AND admission. */
-export async function generateCheckinAnalysis(options:{db:D1Database;vault:CheckinVault;owner:number;saved:Saved;scope2Approved:boolean;enabled:boolean;apiKey?:string;now?:Date;timeoutMs?:number;fetcher?:(url:string,init:RequestInit)=>Promise<Response>}):Promise<CheckinAnalysisView>{
+export async function generateCheckinAnalysis(options:{db:D1Database;vault:CheckinVault;owner:number;saved:Saved;scope2Approved:boolean;enabled:boolean;apiKey?:string;scheduled?:{jobKey:string;consentedAt:number;revision:number};now?:Date;timeoutMs?:number;fetcher?:(url:string,init:RequestInit)=>Promise<Response>}):Promise<CheckinAnalysisView>{
  const {db,vault,owner,saved}=options,now=options.now??new Date(),existing=await readCheckinAnalysis(db,vault,owner,saved,now);if(existing.state!=='none'||existing.reason)return existing;
  if(!options.enabled||!options.scope2Approved||!options.apiKey?.trim())return {...empty,reason:'not-approved'};if(!Number.isFinite(now.getTime())||now.getTime()>=REPORT_AI_PRICE_REVIEW_BEFORE)return {...empty,reason:'pricing-review'};
  const extension=await readReportCheckins(db,vault,owner,saved);if(!extension?.current||!('sources' in extension.snapshot))return {...empty,reason:'scope-changed'};const snapshot=extension.snapshot,prepared=checkinAIRequest(saved.report,snapshot);if(prepared.body===null)return {...empty,reason:prepared.reason};
  const key=await reportAIRequestKey({id:saved.id,ownerId:owner,sha256:saved.sha256}),hmac=await vault.payloadDigest(owner,'report-snapshot',saved.sha256,snapshot),source=checkinSourceGuard(owner,snapshot.rangeFrom,snapshot.toDateExclusive,snapshot.sources),seconds=Math.floor(now.getTime()/1000),token=crypto.randomUUID();
- const guard=`EXISTS(SELECT 1 FROM users u JOIN life_reports r ON r.owner_id=u.id JOIN life_report_checkin_snapshots s ON s.report_id=r.id AND s.owner_id=u.id WHERE u.id=? AND u.permission=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>?) AND r.id=? AND r.snapshot_sha256=? AND s.outbound_eligible=1 AND s.report_sha256=r.snapshot_sha256 AND s.content_hmac=?) AND ${source.sql} AND NOT EXISTS(SELECT 1 FROM life_report_analyses WHERE owner_id=? AND report_id=?)`;
- const values=(at:number)=>[owner,at,saved.id,saved.sha256,hmac,...source.args,owner,saved.id];
+ const scheduled=options.scheduled;
+ if(scheduled&&(!/^[a-f0-9]{64}$/.test(scheduled.jobKey)||!Number.isSafeInteger(scheduled.revision)||scheduled.revision<1||!Number.isSafeInteger(scheduled.consentedAt)))throw Error('Invalid automatic analysis binding');
+ const automatic=scheduled?` AND EXISTS(SELECT 1 FROM life_report_jobs j JOIN life_report_preferences p ON p.owner_id=j.owner_id
+   JOIN life_report_selected_ai_consent c ON c.owner_id=j.owner_id JOIN life_report_checkin_snapshots x ON x.report_id=j.report_id AND x.owner_id=j.owner_id
+   WHERE j.owner_id=? AND j.job_key=? AND j.report_id=? AND j.state='ready' AND j.anchor_at>=? AND j.anchor_at<=?
+   AND c.scope_version=2 AND c.revision=? AND c.enabled_at=? AND c.enabled_at<=x.created_at AND c.enabled_at<=j.anchor_at
+   AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1))`:'';
+ const guard=`EXISTS(SELECT 1 FROM users u JOIN life_reports r ON r.owner_id=u.id JOIN life_report_checkin_snapshots s ON s.report_id=r.id AND s.owner_id=u.id WHERE u.id=? AND u.permission=1 AND (u.access_expires_at IS NULL OR u.access_expires_at>?) AND r.id=? AND r.snapshot_sha256=? AND s.outbound_eligible=1 AND s.report_sha256=r.snapshot_sha256 AND s.content_hmac=?) AND ${source.sql} AND NOT EXISTS(SELECT 1 FROM life_report_analyses WHERE owner_id=? AND report_id=?)${automatic}`;
+ const values=(at:number)=>[owner,at,saved.id,saved.sha256,hmac,...source.args,owner,saved.id,...(scheduled?[owner,scheduled.jobKey,saved.id,at-86400,at+86400,scheduled.revision,scheduled.consentedAt]:[])];
  if(!await reserveReportWrite(db))return {...empty,reason:'write-budget'};
  const claim=await db.prepare(`INSERT INTO life_report_checkin_analyses(request_key,owner_id,report_id,report_sha256,snapshot_hmac,scope_version,claim_token,state,created_at,updated_at) SELECT ?,?,?,?,?,2,?,'pending',?,? WHERE ${guard} AND NOT EXISTS(SELECT 1 FROM life_report_ai_reservations WHERE request_key=?) ON CONFLICT DO NOTHING RETURNING request_key`).bind(key,owner,saved.id,saved.sha256,hmac,token,seconds,seconds,...values(seconds),key).all();if(!claim.success)throw Error('Check-in claim unconfirmed');if(!claim.results.length)return readCheckinAnalysis(db,vault,owner,saved,now);
  const result=await analyzeCheckinReport({...options,report:saved.report,snapshot,enabled:true,reserve:async()=>{

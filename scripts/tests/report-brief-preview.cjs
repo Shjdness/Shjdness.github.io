@@ -1,19 +1,19 @@
 // Loopback-only actual React component + synthetic backend. No real tokens/data.
 const http=require('node:http'),path=require('node:path'),{createRequire}=require('node:module');
-const local=createRequire(path.resolve('../site/package.json'));
+const local=createRequire(path.resolve('../site/package.json')),aiMode=process.argv.includes('--ai');
 (async()=>{
  const bundle=await local('esbuild').build({stdin:{resolveDir:process.cwd(),sourcefile:'brief-preview.tsx',loader:'tsx',contents:`
 import React,{StrictMode,useState} from 'react';import {createRoot} from 'react-dom/client';
-import {ReportBriefSettings} from './client/src/features/life/report-brief-settings';
+import {ReportBriefSettings} from './client/src/features/life/report-brief-settings';import {ReportAISettings} from './client/src/features/life/report-ai-settings';
 let writes=0;const owners=new Map();const stats=()=>{document.getElementById('counts').textContent='设置写入 '+writes+'；AI/邮件外调 0';};
 window.fetch=async(url,options={})=>{
- if(!String(url).endsWith('/life/reports/brief-mail'))throw Error('External access blocked');
+ if(!String(url).endsWith('/life/reports/${aiMode?'selected-ai':'brief-mail'}'))throw Error('External access blocked');
  const owner=Number(String(options.headers.Authorization).includes('fixture-2')?2:1);
- const state=owners.get(owner)||{ownerId:owner,scopeVersion:3,enabled:false,revision:0,enabledAt:null,configured:true,paused:false};
+ const state=owners.get(owner)||{ownerId:owner,scopeVersion:${aiMode?2:3},scope:'selected',pricingValid:true,monthlyBudgetFen:1000,reservedMonthlyFen:5,enabled:false,revision:0,enabledAt:null,configured:true,paused:false};
  if(options.method==='POST'){const value=JSON.parse(options.body);if(value.baseRevision!==state.revision)return Response.json({}, {status:409});writes++;state.enabled=value.enabled;state.revision++;state.enabledAt=value.enabled?123:null;owners.set(owner,state);stats();return Response.json({...state,saved:true});}
  return Response.json(state);
 };
-function App(){const [owner,setOwner]=useState(1);document.cookie='token=fixture-'+owner+'; Path=/';return <><nav><button onClick={()=>setOwner(n=>n===1?2:1)}>切换合成账号</button><button onClick={()=>{const s=owners.get(owner);if(s){s.configured=false;owners.set(owner,s);}document.getElementById('key').textContent='模拟 Key 已丢失';}}>模拟 Key 丢失</button><span id="key"/></nav><p id="counts">设置写入 0；AI/邮件外调 0</p><ReportBriefSettings key={owner} ownerId={owner} token={'fixture-'+owner}/></>}
+function App(){const [owner,setOwner]=useState(1);document.cookie='token=fixture-'+owner+'; Path=/';return <><nav><button onClick={()=>setOwner(n=>n===1?2:1)}>切换合成账号</button><button onClick={()=>{const s=owners.get(owner);if(s){s.configured=false;owners.set(owner,s);}document.getElementById('key').textContent='模拟 Key 已丢失';}}>模拟 Key 丢失</button><span id="key"/></nav><p id="counts">设置写入 0；AI/邮件外调 0</p>${aiMode?"<ReportAISettings key={owner} ownerId={owner} token={'fixture-'+owner} selected/>":"<ReportBriefSettings key={owner} ownerId={owner} token={'fixture-'+owner}/>"}</>}
 createRoot(document.getElementById('root')).render(<StrictMode><App/></StrictMode>);
 `},bundle:true,nodePaths:[path.resolve('client/node_modules')],write:false,format:'iife',platform:'browser',jsx:'automatic',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'only-endpoint',setup(build){build.onResolve({filter:/^\.\.\/\.\.\/main$/},()=>({path:'endpoint',namespace:'fixture'}));build.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"export const endpoint='https://fixture.invalid';",loader:'js'}));}}]});
  const js=bundle.outputFiles[0].contents;
