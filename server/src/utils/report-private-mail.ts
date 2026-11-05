@@ -40,7 +40,10 @@ export async function preparePrivateReportMail(db:D1Database,vault:CheckinVault,
    if(view.state==='succeeded')analysis=view.analysis;
   }catch{/* Damaged/missing AI results never prevent a facts-only email. */}
  }
- const message=reportMailMessage(briefMailContent({context:brief.context,facts:brief.facts,report:saved.report,rss:brief.rss??undefined,rssRefresh:await readRssCapture(db,owner,saved.id,saved.sha256),checkins:selected.snapshot,analysis:analysis??undefined}));
+ const input={context:brief.context,facts:brief.facts,report:saved.report,rss:brief.rss??undefined,rssRefresh:await readRssCapture(db,owner,saved.id,saved.sha256),checkins:selected.snapshot};
+ let message:ReturnType<typeof reportMailMessage>;
+ try{message=reportMailMessage(briefMailContent({...input,analysis:analysis??undefined}));}
+ catch(error){if(!analysis)throw error;message=reportMailMessage(briefMailContent(input));} // AI formatting/size never stalls a valid facts message.
  const payload={binding:b,message},sealed=await vault.sealPayload(owner,'report-mail',key,payload),hmac=await vault.payloadDigest(owner,'report-mail',key,payload);
  const source=checkinSourceGuard(owner,selected.snapshot.rangeFrom,selected.snapshot.toDateExclusive,selected.snapshot.sources);
  return {pending:false as const,message,digest:await reportDigest(JSON.stringify(message)),sealed,hmac,reportId:saved.id,guard:privateGuard(owner,vault,b,source)};
