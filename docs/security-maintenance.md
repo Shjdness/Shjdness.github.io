@@ -631,3 +631,7 @@ RSS阶段6721696已推；随后实现同批读取的owner明细采集与严格�
 main a98b99d已发布，Worker41946853569/Pages41946853444均Success、316项CI；实际main类型/构建同过。0032–39冻结，后续0040。线上首页/新index/life200、新私密brief-mail/brief/mail/v5backup匿名403且no-store、reportPrivateMailV1=true，证据outputs/daily-brief-2026-11-04/private-mail-{live,pages-live}.json。没有新外发费用或新QQ收件验收。scope2自动AI和固定明细预览UI待续，不能以发布称全部完成。
 
 独立LIFE_CHECKIN_KEY确实未配置，现有Cloudflare登录有效，tab8已交接生产Secret空白值表单；用户本人输入/提交新Key期间不可读表单/截图。已提供本机prepare-life-key.cmd安全生成/复制/DPAPI副本工具，代理未执行或读Key/剪贴板；异步等待“日报加密密钥已配置”答复。配置后继续owner-only布尔状态、明细许可/计划/正常新报告QQ真实收件，旧数字邮件与unknown不重放。主目录同名本机方案已保留原始SHA和outputs保护副本，目前是本机doc修改，绝不stage/覆盖；详见daily-brief-task最新检查点。
+
+## 2026-11-05 完整邮件运行时激活
+
+本人已完成独立LIFE_CHECKIN_KEY部署；代理未读Secret/剪贴板/保护文件，仅由owner报表设置验证运行时准入。已按既有授权勾选并保存scope3完整明细邮件，页面确认启用；原08:00日报/周一08:00周报、云端生成/QQ验证及提醒开关均有效，旧数字AI仍关闭。未创建/改写/补发历史报告，旧unknown/5分不动。预计首个新正常完整报告为11月6日05:00起固定采集、最晚07:30、08:00计划发送；仍需新报告实际收件才算新模板验收。截图brief-mail-enabled-live.png，细节见daily-brief-task最新段。scope2持续AI/新预览UI未完成，目标保持未完成；不重建已删除自动化。
