@@ -74,3 +74,7 @@ Brevo发送API的尖括号Message-ID与回调的无括号形式归一化为同�
 新增provider=qq-smtp，使用固定smtp.qq.com:465隐式TLS。独立授权码绑定为REPORT_QQ_SMTP_AUTH_CODE，唯一收件白名单为REPORT_MAIL_TO；配置值仅进Worker Secret，不写仓库或同库明文。无需第三方邮件API或回调Secret。报告地址仍须owner验证，代码不因配置自动开启用户计划。QQ SMTP接收后的250仅表示受理；没有已接入的送达/退信回调，不自动读取个人邮箱，未知结果不重发。收件邮箱或发件人改变会生成新的provider identity，旧queued不挪用。首次启用与无秘密操作步骤见life-reports-activation.md。
 
 SMTP会话有独立12秒上限、外层15秒截止与abort关闭套接字、累计响应32KiB/单行512字节/每回复64行界限；只允许EHLO→AUTH LOGIN→单发件/单收件→DATA，最后250才记录受理。正文UTF-8 base64与安全折叠Subject防SMTP命令和邮件头注入，不输出原始服务端文本或凭据。此通道不能冒充支持Resend/Brevo反馈回调。
+
+## 新版明细邮件与个人恢复边界
+
+0039的life_report_private_messages与0038的life_report_brief_consent属于操作与授权记录，不进个人备份。恢复归档不能生成密文队列、同意、发送资格或新delivery key；旧unknown、发送准入和预算必须保全。准备后的密文固定原scope3 revision/启用时刻及采集来源；撤回后重新同意也不会恢复旧消息。Key丢失时已准备明细暂停，禁止以修改message_json或替换内容重发。新的未准备任务在没有明细许可时可使用原统计版。

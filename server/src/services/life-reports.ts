@@ -18,6 +18,7 @@ import {generateCheckinAnalysis,readCheckinAnalysis} from '../utils/checkin-anal
 import {readReportBrief} from '../utils/report-brief-snapshot';
 import {briefMailContent} from '../utils/report-brief-mail';
 import {readRssCapture} from '../utils/rss-daily-cycle';
+import {readBriefConsent,setBriefConsent} from '../utils/report-brief-consent';
 
 import {reportCaptureReady} from '../utils/report-schedule';
 import {rssCaptureStatus} from '../utils/rss-daily-cycle';
@@ -61,6 +62,20 @@ export function LifeReportsService() {
       const preferences=await readReportPreferences(db,owner);
       return {ownerId:owner,preferences,automationEnabled:preferences.dailyEnabled||preferences.weeklyEnabled};
     })
+    .get('/life/reports/brief-mail',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      return {...await readBriefConsent(db,owner),configured:Boolean(await optionalCheckinVault(env)),paused:env.REPORT_OUTBOUND_PAUSED==='true'};
+    })
+    .post('/life/reports/brief-mail',async context=>{
+      const owner=authorize(context);if(!owner)return 'Owner access is required';
+      if(context.body.enabled){
+        if(!allowBurst(`life-report-brief-setting:${owner}`,8)){context.set.status=429;return {ownerId:owner,code:'RATE_LIMIT'};}
+        if(env.REPORT_OUTBOUND_PAUSED==='true'||!await optionalCheckinVault(env)){context.set.status=503;return {ownerId:owner,code:'CHECKIN_KEY_UNAVAILABLE'};}
+      }
+      const result=await setBriefConsent({db,owner,...context.body});
+      if(!result.saved)context.set.status=result.reason==='write-budget'?503:409;
+      return result;
+    },{body:t.Object({enabled:t.Boolean(),baseRevision:t.Integer({minimum:0,maximum:Number.MAX_SAFE_INTEGER}),allowNamedMail:t.Optional(t.Literal(true))},{additionalProperties:false})})
     .get('/life/reports/ai-automation',async context=>{
       const owner=authorize(context);if(!owner)return 'Owner access is required';
       const consent=await readReportAIConsent(db,owner);

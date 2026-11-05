@@ -89,3 +89,11 @@
 3. submitReportDelivery只在内存解密，final claim与**预算admission**都要重复完整owner/角色/到期/邮箱/日周开关/原job时间窗/独立scope3 epoch+revision及来源guard，阻断claim后撤回、改址或暂停的间隙；旧投递兼容、未知不重试。侧表/同意不进个人备份。
 4. owner设置/API/UI及完整固定报告预览（复用新brief GET），scope3明确与数字AI分开，缺Key也可撤回；然后scope2自动AI持续同意/调度及可共享结果入邮件。注意预填未来作息不能当AI已发生事实，收件范围不等于AI范围。
 5. 完整隔离恢复/整条发送/浏览器/实际main/两CI后，独立Key安全配置与必要本人步骤，真实QQ验收；旧unknown/5分不重放。全任务继续active，线上仍a2b4685，0032–38未发布。
+
+## 2026-11-05 0039密文邮件队列与独立许可（待发布）
+
+- 新0039操作侧表life_report_private_messages，仅保存report-mail用途、owner+原delivery key绑定的密文和HMAC；冻结0030不改，旧message_json只存固定非敏感标记。prepare/cron/submit已真实接线，新正文只在内存解密；统计邮件兼容，原任务key不变，已发/unknown不替换或重放。
+- 明细许可scope3需早于采集及发送anchor，revision/epoch固定进密文；来源、母报告/brief/checkin指纹、加密Key proof、角色/到期、邮箱版本、日周开关及24h窗口在claim和原子预算admission重查。claim后撤回/改址/角色变化/来源新添/资格撤回都拦截且不预留发送次数；侧表失败整份准备回滚。受理后变化不能撤回，unknown保留账本且不重试。
+- owner-only brief-mail GET/POST及设置已接，无默认勾选，数字邮件许可不自动升级；CAS防旧标签覆盖，重复启用不改epoch，缺Key/维护中可撤回。设置不外调，不开AI/邮件/计划。StrictMode验收修复旧卸载GET误报；实际组件合成浏览器手机360无溢出、初始0写/0外调、独立勾选启用1写/0外调、Key丢失可撤回和账号切换通过，console无warn/error。截图outputs/daily-brief-2026-11-04/brief-consent-mobile.png；不是生产收件验收。
+- 73文件316项全量、前后端类型及实际Vite构建通过；真实workerd D1五路准备1侧表/五路提交1模拟准入/unknown不重发/来源撤回及回滚通过。Pages等reportPrivateMailV1后发布，新增私有路由匿名403上线检查。未调用真实AI/SMTP，0032–39尚未上线。
+- 用户本轮明确优先确保发信；邮件与事实降级阶段可独立发布，AI持续scope2与新明细预览UI尚待续作，不因此重放旧5分unknown。发布后仍需独立LIFE_CHECKIN_KEY安全配置、明确明细许可及正常新报告实际QQ收件，不能把上述模拟称上线成功。旧数字邮件保持原设置。个人备份永不导出/恢复密文队列、scope3或外调账本。

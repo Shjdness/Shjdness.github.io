@@ -2,7 +2,7 @@
 const {createRequire}=require('node:module'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const local=createRequire(path.resolve('../site/package.json')),{DatabaseSync}=require('node:sqlite'),{Miniflare,convertV4MiniflareOptions}=local('miniflare');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'private-brief-d1-')),compiled=path.join(temp,'helper.cjs');
-local('esbuild').buildSync({stdin:{contents:"export {checkinVault} from './server/src/utils/checkin-vault';export {emptyCheckin} from './server/src/utils/checkin-format';export {saveCheckin} from './server/src/utils/checkin-store';export {saveReportWithCheckins,readReportCheckins} from './server/src/utils/report-checkin-snapshot';export {readReportBrief} from './server/src/utils/report-brief-snapshot';export {reportWindow} from './server/src/utils/life-report';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:compiled});
+local('esbuild').buildSync({stdin:{contents:"export {checkinVault} from './server/src/utils/checkin-vault';export {emptyCheckin} from './server/src/utils/checkin-format';export {saveCheckin} from './server/src/utils/checkin-store';export {saveReportWithCheckins,readReportCheckins} from './server/src/utils/report-checkin-snapshot';export {readReportBrief} from './server/src/utils/report-brief-snapshot';export {reportWindow} from './server/src/utils/life-report';export {prepareReportMail} from './server/src/utils/report-mail-prepare';export {submitReportDelivery} from './server/src/utils/report-mail-delivery';export {reportMailVault} from './server/src/utils/report-mail-vault';export {saveReportRecipient} from './server/src/utils/report-mail-contacts';export {setBriefConsent} from './server/src/utils/report-brief-consent';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',outfile:compiled});
 const {checkinVault,emptyCheckin,saveCheckin,saveReportWithCheckins,readReportCheckins,readReportBrief,reportWindow}=require(compiled);
 (async()=>{
  const sqlite=new DatabaseSync(':memory:');for(const name of fs.readdirSync('server/sql').filter(s=>s.endsWith('.sql')).sort()){sqlite.exec(fs.readFileSync('server/sql/'+name,'utf8'));if(name==='0002.sql')sqlite.exec('ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0');}
@@ -25,6 +25,29 @@ const {checkinVault,emptyCheckin,saveCheckin,saveReportWithCheckins,readReportCh
   await db.prepare("CREATE TRIGGER brief_test_abort BEFORE INSERT ON life_report_briefs BEGIN SELECT RAISE(ABORT,'synthetic transaction stop'); END").run();
   const next=new Date(now.getTime()+86400000);await assert.rejects(()=>saveReportWithCheckins(db,vault,1,reportWindow('daily',next),next,undefined,{scheduledFor:next}));
   assert.equal((await db.prepare('SELECT count(*) n FROM life_reports').first()).n,1);assert.equal((await db.prepare('SELECT count(*) n FROM life_report_checkin_snapshots').first()).n,1);assert.equal((await db.prepare('SELECT count(*) n FROM life_report_brief_consent').first()).n,0);
-  console.log('Real D1 private brief: 5 captures / 1 commit; names encrypted; owner/purpose binding; withdrawal and full rollback; 0 sends/AI calls');
+  // Fresh occurrence for real D1 encrypted queue/claim/admission concurrency.
+  // Local mock provider only; no SMTP/HTTP provider is imported or configured.
+  await db.prepare('DROP TRIGGER brief_test_abort').run();
+  const {prepareReportMail,submitReportDelivery,reportMailVault,saveReportRecipient,setBriefConsent}=require(compiled);
+  const live=new Date(Math.floor(Date.now()/1000)*1000),sec=Math.floor(live.getTime()/1000),owner=2,mailVault=await reportMailVault(btoa(String.fromCharCode(...Array.from({length:32},(_,i)=>i+1))));
+  await db.prepare("INSERT INTO life_report_preferences(owner_id,email_enabled,daily_enabled) VALUES(2,1,1)").run();
+  await saveReportRecipient({db,ownerId:owner,email:'fixture@example.invalid',baseRevision:0,vault:mailVault,now:live});
+  await db.prepare('UPDATE life_report_preferences SET email_enabled=1 WHERE owner_id=2').run();
+  await db.prepare('UPDATE life_report_mail_contacts SET verified_at=?,enabled_at=? WHERE owner_id=2').bind(sec-60,sec-60).run();
+  await setBriefConsent({db,owner,enabled:true,baseRevision:0,allowNamedMail:true,now:new Date(live.getTime()-60000)});
+  await db.prepare("INSERT INTO life_todos(owner_id,content,type,completed) VALUES(2,'synthetic encrypted queued task','task',0)").run();
+  const current=await saveReportWithCheckins(db,vault,owner,reportWindow('daily',live),live,undefined,{scheduledFor:live});
+  const job='f'.repeat(64);
+  await db.prepare("INSERT INTO life_report_jobs(job_key,owner_id,kind,period_start,period_end,anchor_at,include_daily,state,report_id) VALUES(?,2,'daily',?,?,?,0,'ready',?)").bind(job,Date.parse(current.report.period.start)/1000,Date.parse(current.report.period.end)/1000,sec,current.id).run();
+  const options={db,ownerId:owner,jobKey:job,providerIdentity:'mock-private',checkinVault:vault,now:live};
+  const prepared=await Promise.all(Array.from({length:5},()=>prepareReportMail(options)));assert.ok(prepared.every(r=>r.key===prepared[0].key));
+  assert.equal((await db.prepare('SELECT count(*) n FROM life_report_private_messages').first()).n,1);
+  assert.equal(JSON.stringify(await db.prepare('SELECT * FROM life_report_private_messages').first()).includes('synthetic encrypted'),false);
+  let submissions=0;const provider={identity:'mock-private',async submit(message){submissions++;assert.ok(message.text.includes('synthetic encrypted queued task'));return {state:'unknown'};}};
+  await Promise.all(Array.from({length:5},()=>submitReportDelivery({db,ownerId:owner,key:prepared[0].key,vault:mailVault,checkinVault:vault,provider,now:live})));
+  assert.equal(submissions,1);assert.equal((await db.prepare('SELECT count(*) n FROM life_report_mail_admissions').first()).n,1);
+  await setBriefConsent({db,owner,enabled:false,baseRevision:1,now:live});
+  assert.equal((await prepareReportMail(options)).state,'unknown');assert.equal(submissions,1);
+  console.log('Real D1: 5 captures / 1 commit; encrypted facts + message; 5 preparations / 1 sidecar; 5 submits / 1 mock admission; unknown retained; withdrawal/rollback; 0 external sends/AI');
  }finally{await mf.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

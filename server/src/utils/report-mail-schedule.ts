@@ -6,11 +6,13 @@ import {prepareReportMail} from './report-mail-prepare';
 import {reportMailConfiguration} from './report-mail-config';
 import {reserveReportWrite} from './report-settings';
 import {REPORT_AI_PRICE_REVIEW_BEFORE} from './report-ai';
+import type {CheckinVault} from './checkin-vault';
+import {optionalCheckinVault} from './checkin-key-guard';
 
 /** No reclaimable generation lease wraps this external side effect. Every send
  * has its own irrevocable claim, fixed message and retained admission receipt.
  * Rotate at most three candidates to avoid one damaged snapshot starving peers. */
-export async function runReportMailSchedule(options:{db:D1Database;vault:MailVault;provider:ReportMailProvider;awaitAutomaticAnalysis?:boolean;now?:Date}){
+export async function runReportMailSchedule(options:{db:D1Database;vault:MailVault;checkinVault?:CheckinVault|null;provider:ReportMailProvider;awaitAutomaticAnalysis?:boolean;now?:Date}){
   const {db,vault,provider}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000),started=Date.now();
   if(!Number.isSafeInteger(seconds)||seconds<0)throw Error('Invalid mail schedule time');
   const previous=await db.prepare('SELECT after_anchor,after_key FROM life_report_mail_scheduler_state WHERE id=1').all<{after_anchor:number;after_key:string}>();
@@ -32,8 +34,8 @@ export async function runReportMailSchedule(options:{db:D1Database;vault:MailVau
   for(const job of jobs){
     if(Date.now()-started>=28000)break;
     try{
-      const prepared=await prepareReportMail({db,ownerId:job.owner_id,jobKey:job.job_key,providerIdentity:provider.identity,includeAnalysis:true,awaitAutomaticAnalysis:options.awaitAutomaticAnalysis,now});
-      if('key' in prepared&&prepared.state==='queued')await submitReportDelivery({db,ownerId:job.owner_id,key:prepared.key,vault,provider,now,timeoutMs:Math.max(1,Math.min(15000,30000-(Date.now()-started)))});
+      const prepared=await prepareReportMail({db,ownerId:job.owner_id,jobKey:job.job_key,providerIdentity:provider.identity,checkinVault:options.checkinVault,includeAnalysis:true,awaitAutomaticAnalysis:options.awaitAutomaticAnalysis,now});
+      if('key' in prepared&&prepared.state==='queued')await submitReportDelivery({db,ownerId:job.owner_id,key:prepared.key,vault,checkinVault:options.checkinVault,provider,now,timeoutMs:Math.max(1,Math.min(15000,30000-(Date.now()-started)))});
     }catch{failures++;} // Never log a private message/recipient or reset a claim.
     processed++;
   }
@@ -50,5 +52,5 @@ export async function runConfiguredReportMail(env:Env){
   if(env.REPORT_OUTBOUND_PAUSED==='true'||env.REPORT_MAIL_ENABLED!=='true')return {processed:0,failures:0};
   const config=await reportMailConfiguration(env);
   if(!config.vault||!config.provider)return {processed:0,failures:0};
-  return runReportMailSchedule({db:env.DB,vault:config.vault,provider:config.provider,awaitAutomaticAnalysis:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE});
+  return runReportMailSchedule({db:env.DB,vault:config.vault,checkinVault:await optionalCheckinVault(env),provider:config.provider,awaitAutomaticAnalysis:Boolean(env.DEEPSEEK_API_KEY?.trim())&&Date.now()<REPORT_AI_PRICE_REVIEW_BEFORE});
 }

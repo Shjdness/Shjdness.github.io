@@ -3,10 +3,23 @@ import {reportDigest} from './report-analysis-format';
 import {readMailContact,reportMailOwner,type MailVault} from './report-mail-contacts';
 import {reportVerificationToken} from './report-mail-vault';
 import {reserveReportWrite} from './report-settings';
+import type {CheckinVault} from './checkin-vault';
+import {PRIVATE_MAIL_MARKER,openPrivateReportMail} from './report-private-mail';
 
 export type ReportMailMessage={subject:string;text:string;html:string};
 export type ReportMailProvider={identity:string;submit:(message:ReportMailMessage&{to:string;deliveryKey:string},signal:AbortSignal)=>Promise<{state:'accepted';id:string}|{state:'rejected'}|{state:'unknown'}>};
-type Delivery={delivery_key:string;owner_id:number;kind:'verification'|'report';contact_revision:number;fingerprint:string;provider_identity:string;provider_id:string|null;state:string;message_json:string|null;message_sha256:string;created_at:number;updated_at:number};
+type Delivery={delivery_key:string;owner_id:number;kind:'verification'|'report';job_key:string|null;contact_revision:number;fingerprint:string;provider_identity:string;provider_id:string|null;state:string;message_json:string|null;message_sha256:string;created_at:number;updated_at:number};
+/** Internal fixed-SQL permission predicate, never accepted from an HTTP body. */
+export type MailAdmissionGuard={sql:string;args:Array<string|number|null>};
+function deliveryGuard(row:Delivery,owner:number,seconds:number):MailAdmissionGuard{
+ return {sql:`EXISTS(SELECT 1 FROM users WHERE id=? AND permission=1 AND (access_expires_at IS NULL OR access_expires_at>?))
+   AND EXISTS(SELECT 1 FROM life_report_mail_contacts c WHERE c.owner_id=? AND c.revision=? AND c.fingerprint=? AND c.paused_reason IS NULL
+     AND (?='verification' OR (c.verified_at IS NOT NULL AND EXISTS(SELECT 1 FROM life_report_preferences p WHERE p.owner_id=c.owner_id AND p.email_enabled=1))))
+   AND (?='verification' OR EXISTS(SELECT 1 FROM life_report_jobs j JOIN life_report_preferences p ON p.owner_id=j.owner_id
+     WHERE j.job_key=? AND j.owner_id=? AND j.state='ready' AND j.anchor_at>=(SELECT enabled_at FROM life_report_mail_contacts WHERE owner_id=j.owner_id)
+       AND j.anchor_at>=? AND j.anchor_at<=? AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1)))`,
+   args:[owner,seconds,owner,row.contact_revision,row.fingerprint,row.kind,row.kind,row.job_key,owner,seconds-86400,seconds]};
+}
 
 export function reportMailMessage(value:unknown):ReportMailMessage{
   const v=value as ReportMailMessage;
@@ -23,28 +36,31 @@ export async function readReportDelivery(db:D1Database,ownerId:number,key:string
 
 /** UTC infrastructure quota: site<=100 accepted submissions/day, verification
  * <=3 and reports<=2 per owner/day. Unknown calls retain durable reservations. */
-export async function reserveMailSubmission(db:D1Database,ownerId:number,key:string,kind:'verification'|'report',now=new Date()){
+export async function reserveMailSubmission(db:D1Database,ownerId:number,key:string,kind:'verification'|'report',now=new Date(),currentGuard?:()=>MailAdmissionGuard){
   const day=now.toISOString().slice(0,10),own=`mail:${day}:${ownerId}:${kind}`,global=`mail:${day}:site`,cap=kind==='verification'?3:2;
   const old=await db.prepare('SELECT request_key FROM life_report_mail_admissions WHERE request_key=?').bind(key).all();
   if(!old.success)throw Error('Mail quota read unavailable');if(old.results.length)return 'existing' as const;
+  const guard=currentGuard?.()??{sql:'1=1',args:[]};
   const result=await db.batch([
     db.prepare('INSERT INTO life_report_mail_budget(bucket,reserved) VALUES(?,0) ON CONFLICT DO NOTHING').bind(own),
     db.prepare('INSERT INTO life_report_mail_budget(bucket,reserved) VALUES(?,0) ON CONFLICT DO NOTHING').bind(global),
     db.prepare(`INSERT INTO life_report_mail_admissions(request_key,owner_bucket,global_bucket,created_at)
-      SELECT ?,a.bucket,b.bucket,? FROM life_report_mail_budget a,life_report_mail_budget b WHERE a.bucket=? AND b.bucket=? AND a.reserved<? AND b.reserved<100
-      ON CONFLICT(request_key) DO NOTHING RETURNING request_key`).bind(key,Math.floor(now.getTime()/1000),own,global,cap),
+      SELECT ?,a.bucket,b.bucket,? FROM life_report_mail_budget a,life_report_mail_budget b WHERE a.bucket=? AND b.bucket=? AND a.reserved<? AND b.reserved<100 AND (${guard.sql})
+      ON CONFLICT(request_key) DO NOTHING RETURNING request_key`).bind(key,Math.floor(now.getTime()/1000),own,global,cap,...guard.args),
     db.prepare('UPDATE life_report_mail_budget SET reserved=reserved+1 WHERE bucket=? AND changes()>0').bind(own),
     db.prepare('UPDATE life_report_mail_budget SET reserved=reserved+1 WHERE bucket=? AND changes()>0').bind(global),
   ]);
   if(result.some(row=>!row.success))throw Error('Mail quota unconfirmed');
   if(result[2].results.length===1)return 'admitted' as const;
   const existing=await db.prepare('SELECT request_key FROM life_report_mail_admissions WHERE request_key=?').bind(key).all();
-  if(!existing.success)throw Error('Mail quota read unavailable');return existing.results.length?'existing' as const:'budget' as const;
+  if(!existing.success)throw Error('Mail quota read unavailable');if(existing.results.length)return 'existing' as const;
+  if(currentGuard){const allowed=await db.prepare('SELECT 1 AS ok WHERE '+guard.sql).bind(...guard.args).all();if(!allowed.success)throw Error('Mail permission read unavailable');if(!allowed.results.length)return 'disabled' as const;}
+  return 'budget' as const;
 }
 
 /** Deliberately no lease takeover or automatic resend. A response lost after
  * acceptance leaves submitting/unknown until a verified callback/reconciliation. */
-export async function submitReportDelivery(options:{db:D1Database;ownerId:number;key:string;vault:MailVault;provider:ReportMailProvider;verificationMessage?:ReportMailMessage;now?:Date;timeoutMs?:number}){
+export async function submitReportDelivery(options:{db:D1Database;ownerId:number;key:string;vault:MailVault;checkinVault?:CheckinVault|null;provider:ReportMailProvider;verificationMessage?:ReportMailMessage;now?:Date;timeoutMs?:number}){
   const {db,ownerId,provider,vault,key}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000);
   if(!await reportMailOwner(db,ownerId,seconds))throw Error('Owner access required');
   const rows=await db.prepare('SELECT * FROM life_report_mail_deliveries WHERE owner_id=? AND delivery_key=?').bind(ownerId,key).all<Delivery>();
@@ -54,27 +70,27 @@ export async function submitReportDelivery(options:{db:D1Database;ownerId:number
   if(!/^[A-Za-z0-9_-]{1,64}$/.test(provider.identity)||row.provider_identity!==provider.identity)return stop('configuration-changed');
   const contact=await readMailContact(db,ownerId);
   if(!contact||contact.fingerprint!==row.fingerprint||contact.revision!==row.contact_revision||contact.paused_reason)return stop('recipient-changed');
-  let to:string,message:ReportMailMessage;
+  let to:string,message:ReportMailMessage,privatePermission:MailAdmissionGuard|undefined;
   try{
     to=await vault.open(ownerId,contact.email_sealed);
     if(await vault.fingerprint(ownerId,to)!==row.fingerprint)throw Error();
-    message=reportMailMessage(row.kind==='verification'?options.verificationMessage:JSON.parse(row.message_json??'null'));
+    if(row.kind==='report'&&row.message_json===PRIVATE_MAIL_MARKER){
+      if(!options.checkinVault||!row.job_key)throw Error();
+      const opened=await openPrivateReportMail(db,options.checkinVault,ownerId,key,row.job_key);message=opened.message;privatePermission=opened.guard;
+    }else message=reportMailMessage(row.kind==='verification'?options.verificationMessage:JSON.parse(row.message_json??'null'));
     if(await reportDigest(JSON.stringify(message))!==row.message_sha256)throw Error();
   }catch{return stop('configuration-changed');}
   if(!await reserveReportWrite(db))return {state:'queued',providerAccepted:false,errorCode:'write-budget'};
   const claimSeconds=Math.max(seconds,Math.floor(Date.now()/1000));
+  const currentGuard=(at:number)=>{const base=deliveryGuard(row,ownerId,at);return privatePermission?{sql:`(${base.sql}) AND (${privatePermission.sql})`,args:[...base.args,...privatePermission.args]}:base;};
+  const allowed=currentGuard(claimSeconds);
   const claim=await db.prepare(`UPDATE life_report_mail_deliveries SET state='submitting',updated_at=? WHERE owner_id=? AND delivery_key=? AND state='queued'
-    AND EXISTS(SELECT 1 FROM users WHERE id=? AND permission=1 AND (access_expires_at IS NULL OR access_expires_at>?))
-    AND EXISTS(SELECT 1 FROM life_report_mail_contacts c WHERE c.owner_id=? AND c.revision=? AND c.fingerprint=? AND c.paused_reason IS NULL
-      AND (?='verification' OR (c.verified_at IS NOT NULL AND EXISTS(SELECT 1 FROM life_report_preferences p WHERE p.owner_id=c.owner_id AND p.email_enabled=1))))
-    AND (?='verification' OR EXISTS(SELECT 1 FROM life_report_jobs j JOIN life_report_preferences p ON p.owner_id=j.owner_id
-      WHERE j.job_key=life_report_mail_deliveries.job_key AND j.owner_id=? AND j.state='ready' AND j.anchor_at>=(SELECT enabled_at FROM life_report_mail_contacts WHERE owner_id=j.owner_id) AND j.anchor_at>=? AND j.anchor_at<=? AND ((j.kind='daily' AND p.daily_enabled=1) OR (j.kind='weekly' AND p.weekly_enabled=1)) AND (j.include_daily=0 OR p.daily_enabled=1)))
-    RETURNING delivery_key`).bind(claimSeconds,ownerId,key,ownerId,claimSeconds,ownerId,row.contact_revision,row.fingerprint,row.kind,row.kind,ownerId,claimSeconds-86400,claimSeconds).all();
+    AND (${allowed.sql}) RETURNING delivery_key`).bind(claimSeconds,ownerId,key,...allowed.args).all();
   if(!claim.success)throw Error('Mail claim unconfirmed');if(!claim.results.length)return stop('disabled');
-  let outcome:{state:'accepted';id:string}|{state:'rejected'}|{state:'unknown'}={state:'unknown'};
+  let outcome:{state:'accepted';id:string}|{state:'rejected'}|{state:'unknown'}|{state:'paused'}={state:'unknown'};
   try{
-    const admission=await reserveMailSubmission(db,ownerId,key,row.kind,now);
-    if(admission!=='admitted')outcome={state:admission==='existing'?'unknown':'rejected'};
+    const admission=await reserveMailSubmission(db,ownerId,key,row.kind,now,()=>currentGuard(Math.max(seconds,Math.floor(Date.now()/1000))));
+    if(admission!=='admitted')outcome={state:admission==='existing'?'unknown':admission==='disabled'?'paused':'rejected'};
     else{
       const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
       const deadline=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('Mail deadline'));},Math.max(1,Math.min(options.timeoutMs??15000,15000)));});
@@ -85,7 +101,7 @@ export async function submitReportDelivery(options:{db:D1Database;ownerId:number
     }
   }catch{outcome={state:'unknown'};}
   const result=await db.prepare(`UPDATE life_report_mail_deliveries SET state=?,provider_id=?,error_code=?,updated_at=?
-    WHERE owner_id=? AND delivery_key=? AND state='submitting' RETURNING delivery_key`).bind(outcome.state,outcome.state==='accepted'?outcome.id:null,outcome.state==='accepted'?null:outcome.state==='rejected'?'rejected':'unavailable',Math.max(claimSeconds,Math.floor(Date.now()/1000)),ownerId,key).all();
+    WHERE owner_id=? AND delivery_key=? AND state='submitting' RETURNING delivery_key`).bind(outcome.state,outcome.state==='accepted'?outcome.id:null,outcome.state==='accepted'?null:outcome.state==='paused'?'disabled':outcome.state==='rejected'?'rejected':'unavailable',Math.max(claimSeconds,Math.floor(Date.now()/1000)),ownerId,key).all();
   if(!result.success)throw Error('Mail outcome save unconfirmed');
   return readReportDelivery(db,ownerId,key,now);
 }

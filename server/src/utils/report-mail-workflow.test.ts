@@ -92,6 +92,35 @@ it('freezes one numeric report message, excludes source text and reuses it witho
   }finally{f.sqlite.close();}
 });
 
+it.each([
+ "UPDATE life_report_preferences SET email_enabled=0 WHERE owner_id=1",
+ "UPDATE life_report_mail_contacts SET revision=revision+1 WHERE owner_id=1",
+ "UPDATE users SET permission=2 WHERE id=1",
+ "UPDATE life_report_preferences SET weekly_enabled=0 WHERE owner_id=1",
+])('blocks a permission change between claim and quota admission: %s',async(change)=>{
+ const f=await verifiedFixture();try{
+  await runReportSchedule(f.raw,now);
+  const job=f.sqlite.prepare('SELECT job_key FROM life_report_jobs WHERE owner_id=1').get().job_key;
+  const prepared=await prepareReportMail({db:f.raw,ownerId:1,jobKey:job,providerIdentity:f.provider.identity,now});
+  if(!('key' in prepared))throw Error('Missing prepared mail key');
+  const batch=f.raw.batch.bind(f.raw);let intercepted=false;
+  f.raw.batch=async(statements:any)=>{
+   // Submission's first batch is the quota admission, after the durable claim.
+   expect(f.sqlite.prepare("SELECT state FROM life_report_mail_deliveries WHERE kind='report'").get().state).toBe('submitting');
+   intercepted=true;f.sqlite.exec(change);f.raw.batch=batch;
+   return batch(statements);
+  };
+  const result=await submitReportDelivery({db:f.raw,ownerId:1,key:prepared.key,vault:f.vault,provider:f.provider,now});
+  expect(intercepted).toBe(true);expect(result).toMatchObject({state:'paused',errorCode:'disabled'});
+  expect(f.sent).toHaveLength(1);
+  expect(f.sqlite.prepare('SELECT count(*) AS n FROM life_report_mail_admissions WHERE request_key=?').get(prepared.key).n).toBe(0);
+  expect(f.sqlite.prepare("SELECT coalesce(sum(reserved),0) AS n FROM life_report_mail_budget WHERE bucket LIKE '%:report'").get().n).toBe(0);
+  const retry=submitReportDelivery({db:f.raw,ownerId:1,key:prepared.key,vault:f.vault,provider:f.provider,now});
+  if(change.startsWith('UPDATE users'))await expect(retry).rejects.toThrow('Owner access required');else await retry;
+  expect(f.sent).toHaveLength(1);
+ }finally{f.sqlite.close();}
+});
+
 it('does not backfill old occurrences after enabling or resuming email, and does not reset the cutoff on unchanged retries',async()=>{
   const f=await verifiedFixture(false);try{
     await runReportSchedule(f.raw,now);const old=f.sqlite.prepare('SELECT job_key FROM life_report_jobs').get().job_key;

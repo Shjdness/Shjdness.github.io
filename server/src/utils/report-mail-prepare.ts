@@ -8,10 +8,12 @@ import {reportMailMessage,readReportDelivery} from './report-mail-delivery';
 import {reserveReportWrite} from './report-settings';
 import {reportWindow} from './life-report';
 import {readRssCapture} from './rss-daily-cycle';
+import type {CheckinVault} from './checkin-vault';
+import {preparePrivateReportMail,PRIVATE_MAIL_MARKER} from './report-private-mail';
 
 /** Freeze one report message per scheduled occurrence. Recipient changes or
  * retries never replace its original message, purpose, admission or outcome. */
-export async function prepareReportMail(options:{db:D1Database;ownerId:number;jobKey:string;providerIdentity:string;includeAnalysis?:boolean;awaitAutomaticAnalysis?:boolean;now?:Date}){
+export async function prepareReportMail(options:{db:D1Database;ownerId:number;jobKey:string;providerIdentity:string;checkinVault?:CheckinVault|null;includeAnalysis?:boolean;awaitAutomaticAnalysis?:boolean;now?:Date}){
   const {db,ownerId,jobKey,providerIdentity}=options,now=options.now??new Date(),seconds=Math.floor(now.getTime()/1000);
   if(!/^[a-f0-9]{64}$/.test(jobKey)||!/^[A-Za-z0-9_-]{1,64}$/.test(providerIdentity))throw Error('Invalid mail preparation');
   if(!await reportMailOwner(db,ownerId,seconds))throw Error('Owner access required');
@@ -32,6 +34,24 @@ export async function prepareReportMail(options:{db:D1Database;ownerId:number;jo
   const primary=await load(job.report_id),daily=job.include_daily?await load(job.daily_report_id!):null;
   const expected=reportWindow(job.kind,new Date(job.anchor_at*1000));
   if(primary.report.period.kind!==job.kind||primary.report.period.start!==expected.start||primary.report.period.end!==expected.end||job.period_start*1000!==Date.parse(expected.start)||job.period_end*1000!==Date.parse(expected.end))throw Error('Mail report binding mismatch');
+  const privateMail=options.checkinVault?await preparePrivateReportMail(db,options.checkinVault,ownerId,key,primary,job.anchor_at):null;
+  if(privateMail){
+    if(!await reserveReportWrite(db))return {state:'write-budget'};
+    const guard=privateMail.guard;
+    const rows=await db.batch([
+      db.prepare(`INSERT INTO life_report_mail_deliveries(delivery_key,owner_id,kind,purpose_key,job_key,contact_revision,fingerprint,provider_identity,state,message_json,message_sha256,created_at,updated_at)
+        SELECT ?,?,'report',?,?,?,?,?,'queued',?,?,?,? WHERE (${guard.sql})
+        AND EXISTS(SELECT 1 FROM users WHERE id=? AND permission=1 AND (access_expires_at IS NULL OR access_expires_at>?))
+        AND EXISTS(SELECT 1 FROM life_report_mail_contacts c JOIN life_report_preferences p ON p.owner_id=c.owner_id
+          WHERE c.owner_id=? AND c.revision=? AND c.fingerprint=? AND c.verified_at IS NOT NULL AND c.enabled_at IS NOT NULL AND c.enabled_at<=? AND c.paused_reason IS NULL
+          AND p.email_enabled=1 AND ((?='weekly' AND p.weekly_enabled=1) OR (?='daily' AND p.daily_enabled=1)) AND (?=0 OR p.daily_enabled=1))
+        ON CONFLICT DO NOTHING RETURNING delivery_key`).bind(key,ownerId,jobKey,jobKey,contact.revision,contact.fingerprint,providerIdentity,PRIVATE_MAIL_MARKER,privateMail.digest,seconds,seconds,...guard.args,ownerId,seconds,ownerId,contact.revision,contact.fingerprint,job.anchor_at,job.kind,job.kind,job.include_daily),
+      db.prepare(`INSERT INTO life_report_private_messages(delivery_key,owner_id,report_id,sealed_json,content_hmac)
+        SELECT delivery_key,owner_id,?,?,? FROM life_report_mail_deliveries WHERE delivery_key=? AND owner_id=? AND changes()>0`).bind(privateMail.reportId,privateMail.sealed,privateMail.hmac,key,ownerId),
+    ]);
+    if(rows.some(r=>!r.success))throw Error('Private mail preparation unconfirmed');
+    const stored=await readReportDelivery(db,ownerId,key,now);return stored?{key,...stored}:{state:'disabled'};
+  }
   const analysis=options.includeAnalysis?await readReportAnalysis(db,ownerId,primary,now):null;
   if(analysis?.state==='pending')return {state:'analysis-pending'};
   // Give an opted-in automatic analysis two cron intervals to complete. Missing
