@@ -175,6 +175,7 @@ export function TodoView() {
   const now = useMinuteClock();
   const [active, setActive] = useState<TodoType>('task');
   const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState<Partial<Record<TodoType, boolean>>>({});
   return <LifeLayout section="todos" title="待办与记录">
     <DailyBasicsPlanner />
     <div className="todo-workspace">
@@ -183,10 +184,14 @@ export function TodoView() {
       <nav className="todo-workspace-tabs" aria-label="清单栏目">{TODO_COLUMNS.map(column => <button key={column.type} aria-pressed={active === column.type} onClick={() => setActive(column.type)}>{column.title}<span>{todosInColumn(store.items, column.type).length}</span></button>)}</nav>
       <div className="todo-columns">{TODO_COLUMNS.map(column => {
         const items = todosInColumn(store.items, column.type, query);
-        return <section key={column.type} className={`todo-column todo-column--${column.type}`} data-active={active === column.type}>
+        const searching = Boolean(query.trim());
+        const showingAll = searching || Boolean(expanded[column.type]);
+        const visible = showingAll ? items : items.slice(0, 5);
+        return <section key={column.type} className={`todo-column todo-column--${column.type}`} data-active={active === column.type} data-expanded={showingAll}>
           <header><div><h2>{column.title}</h2><span>{todosInColumn(store.items, column.type).length}</span></div></header>
           <AddTodo type={column.type} store={store} />
-          <div className="todo-entries">{items.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} />)}</div>
+          <div className="todo-entries" id={`todo-list-${column.type}`}>{visible.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} />)}</div>
+          {!searching && items.length > 5 && <button type="button" className="todo-show-all" aria-controls={`todo-list-${column.type}`} aria-expanded={showingAll} onClick={() => setExpanded(current => ({...current, [column.type]: !current[column.type]}))}>{showingAll ? '收起' : `查看全部 ${items.length} 条`}</button>}
           {!items.length && <p className="todo-empty">{store.loading ? '正在读取…' : query ? '没有匹配内容' : '暂无记录'}</p>}
         </section>;
       })}</div>

@@ -16,6 +16,8 @@
 [data-color-mode="dark"] .todo-column-compose > button { color:#122237; }
 .todo-column-compose > button:disabled { opacity:.42; }
 .todo-entries { display:grid; gap:.75rem; margin-top:.8rem; }
+.todo-column[data-expanded="true"] .todo-entries { max-height:min(65vh,42rem); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.todo-show-all { display:block; width:100%; margin-top:.8rem; padding:.6rem; border:1px solid var(--surface-edge); border-radius:.7rem; background:var(--surface-input); color:var(--accent); font-size:.8rem; }
 .todo-entry { min-width:0; padding:.8rem; border:1px solid var(--surface-edge); border-radius:.9rem; background:var(--surface-inner); }
 .todo-entry > textarea { display:block; width:100%; min-width:0; min-height:2.6rem; resize:none; overflow:hidden; background:transparent; color:var(--ink); font-size:.88rem; line-height:1.65; overflow-wrap:anywhere; }
 .todo-entry-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-top:.65rem; }
