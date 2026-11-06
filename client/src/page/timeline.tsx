@@ -89,7 +89,6 @@ export function TimelinePage() {
                         <div className="heatmap-heading">
                             <div>
                                 <h2>{t('heatmap.title')}</h2>
-                                <p>{t('heatmap.subtitle')}</p>
                             </div>
                             <select value={heatmapYear} onChange={(event) => setHeatmapYear(Number(event.target.value))} aria-label={t('heatmap.year')}>
                                 {years.map(year => <option key={year} value={year}>{year}</option>)}

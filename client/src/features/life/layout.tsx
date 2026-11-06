@@ -11,9 +11,9 @@ export function LifeDenied() {
   return <main className="life-page"><section className="life-panel life-denied"><p className="life-kicker">PRIVATE LIFE</p><h1>这里是私人生活空间</h1><p>登录本身不等于私人访问权限。此区域仅向 Owner 与受信任账户开放。</p><Link className="life-link" href="/">返回公开首页</Link></section></main>;
 }
 
-export function LifeLayout({ section: _section, title, intro, children }: { section: LifeSection; title: string; intro: string; children: React.ReactNode }) {
+export function LifeLayout({ section: _section, title, children }: { section: LifeSection; title: string; children: React.ReactNode }) {
   return <main className="life-page"><Helmet><title>{title} - {process.env.NAME}</title></Helmet><section className="life-panel life-section">
-    <div className="life-title-row"><div><p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1></div>{_section!=='check-in'&&<LifeSyncStatus />}</div><p className="life-intro">{intro}</p><SyncConflicts />{children}
+    <div className="life-title-row"><div><p className="life-kicker">PRIVATE LIFE</p><h1>{title}</h1></div>{_section!=='check-in'&&<LifeSyncStatus />}</div><SyncConflicts />{children}
   </section></main>;
 }
 

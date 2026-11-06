@@ -6,7 +6,6 @@
 .blog-home>header,.diary-page>header { margin-bottom:1.5rem; padding:clamp(1.2rem,4vw,2.2rem); border:1px solid rgb(255 255 255 / .25); border-radius:1.5rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .72)); backdrop-filter:blur(var(--glass-blur)); }
 .blog-home>header>p,.diary-page>header>p { color:#e11d62; font-size:.7rem; font-weight:800; letter-spacing:.22em; }
 .blog-home>header h1,.diary-page>header h1 { font-size:clamp(2rem,6vw,3.4rem); font-weight:800; }
-.blog-home>header span,.diary-page>header span { color:#64748b; }
 .diary-index-toggle { display:none; width:100%; margin-bottom:.8rem; padding:.72rem .9rem; border:1px solid rgb(148 163 184 / .2); border-radius:.85rem; background:rgb(255 255 255 / .12); color:#e11d62; font-weight:700; }
 .diary-layout { display:grid; grid-template-columns:minmax(9rem,12rem) minmax(0,1fr); align-items:start; gap:1rem; }
 .diary-index { position:sticky; top:6rem; max-height:calc(100vh - 8rem); overflow:auto; padding:1rem; border:1px solid rgb(148 163 184 / .18); border-radius:1rem; background:rgb(255 255 255 / calc(var(--glass-opacity) * .62)); backdrop-filter:blur(var(--glass-blur)); }
@@ -84,10 +83,6 @@
   font-weight: 700;
 }
 
-.heatmap-heading p {
-  color: rgb(100 116 139);
-  font-size: 0.72rem;
-}
 
 .heatmap-heading select,
 .gallery-filters select {

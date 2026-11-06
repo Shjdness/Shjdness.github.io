@@ -250,11 +250,6 @@ textarea:focus {
   font-weight: 500;
 }
 
-.gallery-subtitle {
-  margin-top: 0.9rem;
-  color: rgb(71 85 105);
-  font-size: 0.95rem;
-}
 
 .gallery-back {
   display: inline-flex;
@@ -464,8 +459,7 @@ textarea:focus {
   color: #e8f0fb;
 }
 
-[data-color-mode="dark"] .gallery-heading h1 span,
-[data-color-mode="dark"] .gallery-subtitle {
+[data-color-mode="dark"] .gallery-heading h1 span {
   color: #b8c6d8;
 }
 

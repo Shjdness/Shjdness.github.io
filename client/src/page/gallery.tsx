@@ -173,7 +173,6 @@ export function GalleryPage() {
           <div>
             <p className="gallery-kicker">VISUAL ARCHIVE</p>
             <h1>影集 <span>Gallery</span></h1>
-            <p className="gallery-subtitle">沿时间倒序，收藏那些曾在这里出现的画面。</p>
           </div>
           <Link href="/blog/timeline" className="gallery-back">
             <i className="ri-arrow-left-line" aria-hidden="true" />

@@ -17,7 +17,7 @@ export function LifeCheckinView(){
   const [date,setDate]=useState(shanghaiDate());
   const owner=profile?.role==='owner'&&accountIdFromToken(token)===profile.id?profile.id:null;
   if(!owner||!token)return <LifeDenied/>;
-  return <LifeLayout section="check-in" title="生活复盘" intro="记下打卡、饮食与作息。可以只填一部分，日记保持独立。">
+  return <LifeLayout section="check-in" title="生活复盘">
     <div className="checkin-toolbar"><label>记录日期（北京时间）<input type="date" value={date} max={shanghaiDate()} min="2000-01-01" onChange={e=>{try{const next=checkinDate(e.target.value);if(next<=shanghaiDate())setDate(next);}catch{}}}/></label><Link href="/life/reports">报告与邮件 →</Link><Link href="/life">返回 Life</Link></div>
     <CheckinEditor key={token+date} owner={owner} token={token} date={date}/>
   </LifeLayout>;

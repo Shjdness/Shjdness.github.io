@@ -62,8 +62,7 @@
   font-weight: 800;
 }
 
-.life-panel > p:not(.life-kicker),
-.life-intro {
+.life-panel > p:not(.life-kicker) {
   margin-top: 0.65rem;
   color: rgb(71 85 105);
   line-height: 1.75;
@@ -155,7 +154,6 @@
 }
 
 [data-color-mode="dark"] .life-panel > p:not(.life-kicker),
-[data-color-mode="dark"] .life-intro,
 [data-color-mode="dark"] .life-card span small {
   color: #b7c5d8;
 }

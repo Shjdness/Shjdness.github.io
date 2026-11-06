@@ -1,11 +1,11 @@
 import type { LifeTodo, TodoType } from './model';
 
 export const ACTION_WINDOW_MS = 72 * 60 * 60 * 1000;
-export const TODO_COLUMNS: { type: TodoType; title: string; intro: string; placeholder: string }[] = [
-  { type: 'task', title: '待办', intro: '给决定做的事 72 小时，先迈出第一步。', placeholder: '接下来要推进的具体事情' },
-  { type: 'learn', title: '未来构想', intro: '收藏好奇、想法和可能性，准备好时再开始。', placeholder: '想尝试、了解或创造什么？' },
-  { type: 'success', title: '成功的事汇总', intro: '记下自己做成的事，小小的进展也算数。', placeholder: '我做成了什么？采取了什么行动？' },
-  { type: 'daily', title: '每日执行', intro: '每天看一眼的固定清单，辅助记忆，不打卡。', placeholder: '例如：起床后叠被子；晚饭后练琴' },
+export const TODO_COLUMNS: { type: TodoType; title: string; placeholder: string }[] = [
+  { type: 'task', title: '待办', placeholder: '接下来要推进的具体事情' },
+  { type: 'learn', title: '未来构想', placeholder: '想尝试、了解或创造什么？' },
+  { type: 'success', title: '成功的事汇总', placeholder: '我做成了什么？采取了什么行动？' },
+  { type: 'daily', title: '每日执行', placeholder: '例如：起床后叠被子；晚饭后练琴' },
 ];
 export function todoColumn(item: Pick<LifeTodo, 'type' | 'completed'>): TodoType {
   return item.type === 'success' || (item.completed === 1 && item.type !== 'daily') ? 'success' : item.type;

@@ -83,7 +83,6 @@ export function DiaryPage() {
           <header>
             <p>PRIVATE JOURNAL</p>
             <h1>日记</h1>
-            <span>私人日记按日期由近到远排列。</span>
           </header>
           {tagNames.length > 0 && (
             <div className="inline-tag-filter">

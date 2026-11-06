@@ -27,7 +27,7 @@ export function LifeOverview() {
     load(); const handler = () => load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler);
   }, []);
   const summary = overview?.summary || { habits: 0, completed: 0, focusMinutes: 0, rounds: 0, unread: 0 };
-  return <LifeLayout section="life" title="Life" intro="习惯、专注、阅读与时间，在这里汇成同一条生活轨迹。">
+  return <LifeLayout section="life" title="Life">
     <div className="life-home-layout"><section className="life-home-todos"><header><h2>待办</h2><Link href="/life/todos">四栏工作台</Link></header><TodoBoard /></section><div className="life-home-side">
     <LifeReportsEntry />
     <DailyBasicsPlanner />

@@ -7,7 +7,6 @@
 .todo-column > header > div { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
 .todo-column h2 { font-size:1.04rem; font-weight:800; }
 .todo-column > header span { padding:.15rem .48rem; border-radius:999px; background:var(--surface-input); font-size:.72rem; }
-.todo-column > header p { min-height:3.2em; margin-top:.5rem; color:var(--ink-muted); font-size:.75rem; line-height:1.6; }
 .todo-column--task h2 { color:var(--accent); }
 .todo-column--success h2 { color:#187054; }
 [data-color-mode="dark"] .todo-column--success h2 { color:#83dcbb; }
@@ -49,5 +48,4 @@
   .todo-workspace-tabs button { flex:none; padding:.5rem .65rem; border:1px solid var(--surface-edge); border-radius:999px; color:var(--ink-muted); font-size:.75rem; }
   .todo-workspace-tabs button[aria-pressed="true"] { color:var(--accent); background:rgb(225 29 98 / .1); }
   .todo-workspace-tabs button span { margin-left:.4rem; font-size:.65rem; }
-  .todo-column > header p { min-height:0; }
 }

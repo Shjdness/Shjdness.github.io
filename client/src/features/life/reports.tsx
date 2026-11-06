@@ -15,7 +15,7 @@ import {ReportBriefSettings} from './report-brief-settings';
 export function LifeReportsEntry(){
   const profile=useContext(ProfileContext);
   if(profile?.role!=='owner'||accountIdFromToken(getCookie('token'))!==profile.id)return null;
-  return <section className="life-reports-entry"><div><small>REVIEW</small><h2>复盘与提醒</h2><p>回看昨日与上周，记住已经做成的事。</p></div><Link className="life-link" href="/life/check-in">记录今天 →</Link><Link className="life-link" href="/life/reports">报告和邮件 →</Link></section>;
+  return <section className="life-reports-entry"><div><small>REVIEW</small><h2>复盘与提醒</h2></div><Link className="life-link" href="/life/check-in">记录今天 →</Link><Link className="life-link" href="/life/reports">报告和邮件 →</Link></section>;
 }
 
 export function LifeReportsView(){
@@ -55,7 +55,7 @@ export function LifeReportsView(){
   if(!owner)return <LifeDenied/>;
   const historical=Boolean(selected&&selected.token===token);
   const report=selected&&selected.token===token?selected.report:result&&result.token===token&&result.kind===kind?result.report:null;
-  return <LifeLayout section="reports" title="复盘与提醒" intro="回看已记录的进展，让下一步更容易开始。">
+  return <LifeLayout section="reports" title="复盘与提醒">
     <div className="life-reports">
       <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
       <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 只分析单独允许的范围：统计数字或选定生活记录；邮件提醒需验证并单独启用，完整明细与自动 AI 分别授权。</p>
@@ -70,7 +70,7 @@ export function LifeReportsView(){
           <Metric value={report.daysWithNotes} label="有日历便签的天数" detail="只统计非空便签，不展示或分析正文"/>
           <Metric value={report.ideasCreated} label="新增未来构想" detail="按当前仍在构想栏的记录统计"/>
         </div>
-        <section className="life-report-explanation"><h2>给下一步留一点空间</h2><p>{report.achievementsRecorded>0?'已经记录的每一件小成果，都值得留下。可以回看其中一件，再选择接下来最容易开始的一步。':'这个周期没有新增的已记录成果。这不代表你没有行动，可以先记下一件最近做成的小事。'}</p><div><Link href="/life/todos">回到四栏工作台</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
+        <section className="life-report-explanation"><div><Link href="/life/todos">回到四栏工作台</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
       </>}
       <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
       <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token!}/>

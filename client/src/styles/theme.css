@@ -54,7 +54,7 @@ html[data-color-mode] .site-shell :is(.life-home-todos, .today-basics, .life-sum
   box-shadow: inset 0 1px 0 var(--surface-sheen);
 }
 html[data-color-mode] .site-shell :is(.t-primary, .life-panel, .home-landing h1, .home-portals strong, .dark\:text-white) { color: var(--ink); }
-html[data-color-mode] .site-shell :is(.t-secondary, .text-neutral-500, .text-gray-400, .home-motto, .home-portals small, .life-intro, .life-panel > p:not(.life-kicker), .blog-home > header span, .diary-page > header span, .life-summary-grid span) { color: var(--ink-muted) !important; }
+html[data-color-mode] .site-shell :is(.t-secondary, .text-neutral-500, .text-gray-400, .home-motto, .home-portals small, .life-panel > p:not(.life-kicker), .life-summary-grid span) { color: var(--ink-muted) !important; }
 /* Native popup menus do not reliably inherit a translucent select background.
    Keep every form control themed before hover/focus, including portaled dialogs.
    Monaco's hidden input area and non-text inputs retain their native behavior. */

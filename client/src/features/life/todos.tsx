@@ -167,7 +167,7 @@ export function TodoBoard() {
   const store = useTodos();
   const now = useMinuteClock();
   const items = todosInColumn(store.items, 'task');
-  return <div className="todo-compact"><p className="todo-compact-hint">{items.length} 件待办 · 按截止时间排列</p><SaveError store={store} /><AddTodo store={store} type="task" compact /><div className="todo-entries">{items.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} compact />)}</div>{!items.length && <p className="todo-empty">{store.loading ? '正在读取清单…' : '这里暂时没有待办。构想、成功记录和每日执行可在四栏工作台查看。'}</p>}</div>;
+  return <div className="todo-compact"><p className="todo-compact-hint">{items.length} 件待办 · 按截止时间排列</p><SaveError store={store} /><AddTodo store={store} type="task" compact /><div className="todo-entries">{items.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} compact />)}</div>{!items.length && <p className="todo-empty">{store.loading ? '正在读取清单…' : '暂无待办'}</p>}</div>;
 }
 
 export function TodoView() {
@@ -175,7 +175,7 @@ export function TodoView() {
   const now = useMinuteClock();
   const [active, setActive] = useState<TodoType>('task');
   const [query, setQuery] = useState('');
-  return <LifeLayout section="todos" title="待办与记录" intro="把想法变成行动，把做成的事留下，把日常交给清单。">
+  return <LifeLayout section="todos" title="待办与记录">
     <DailyBasicsPlanner />
     <div className="todo-workspace">
       <SaveError store={store} />
@@ -184,10 +184,10 @@ export function TodoView() {
       <div className="todo-columns">{TODO_COLUMNS.map(column => {
         const items = todosInColumn(store.items, column.type, query);
         return <section key={column.type} className={`todo-column todo-column--${column.type}`} data-active={active === column.type}>
-          <header><div><h2>{column.title}</h2><span>{todosInColumn(store.items, column.type).length}</span></div><p>{column.intro}</p></header>
+          <header><div><h2>{column.title}</h2><span>{todosInColumn(store.items, column.type).length}</span></div></header>
           <AddTodo type={column.type} store={store} />
           <div className="todo-entries">{items.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} />)}</div>
-          {!items.length && <p className="todo-empty">{store.loading ? '正在读取…' : query ? '没有匹配内容' : column.type === 'success' ? '每一件做成的小事，都值得留下。' : '从第一条记录开始。'}</p>}
+          {!items.length && <p className="todo-empty">{store.loading ? '正在读取…' : query ? '没有匹配内容' : '暂无记录'}</p>}
         </section>;
       })}</div>
     </div>
