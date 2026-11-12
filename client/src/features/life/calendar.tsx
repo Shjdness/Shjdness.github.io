@@ -1,17 +1,72 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
-import { getCached, getSyncQueue, setCached, withTimeout } from '../../data/local-first';
-import { client } from '../../main';
-import { headersWithAuth } from '../../utils/auth';
-import { addDays, CLOUD_REFRESH_EVENT, isoDay, monthNow, READ_TIMEOUT, type CalendarData, type DailyBasic, type DailyNote, type Habit, type Log, type PomodoroSession, type RssActivity } from './model';
+import { accountIdFromToken, getCached, getSyncQueue, setCached } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
+import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, monthNow, type CalendarData, type DailyBasic, type DailyNote, type Habit, type Log, type PomodoroSession, type RssActivity } from './model';
 import { mergePendingBasics, mergePendingHabitData } from './sync';
 import { LifeLayout } from './layout';
 import {DailyBasicsPlanner} from './daily-planner';
 
 export function CalendarView({ year }: { year: boolean }) {
+  return year ? <YearView /> : <MonthView />;
+}
+
+function MonthView() {
   const [month, setMonth] = useState(() => new URLSearchParams(window.location.search).get('month') || monthNow()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [sessions, setSessions] = useState<PomodoroSession[]>([]); const [notes, setNotes] = useState<DailyNote[]>([]); const [basics, setBasics] = useState<DailyBasic[]>([]); const [focused, setFocused] = useState<number | null>(null); const [selected, setSelected] = useState(() => { const requested = new URLSearchParams(window.location.search).get('month') || monthNow(); return requested === monthNow() ? isoDay() : `${requested}-01`; });
-  useEffect(() => { const key = `life:calendar:${month}`; const apply = (value: CalendarData) => { setHabits(value.habits); setLogs(value.logs); setSessions(value.sessions); setNotes(value.notes || []); setBasics(value.basics || []); }; const load = async () => { const cached = await getCached<CalendarData>(key); if (cached) apply(cached.value); const [yearNumber, monthNumber] = month.split('-').map(Number); const start = new Date(yearNumber, monthNumber - 1, 1); const end = new Date(yearNumber, monthNumber, 1); try { const { data } = await withTimeout<any>(client.life.calendar.get({ query: { month, start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT); if (data && typeof data !== 'string') { const merged = await mergePendingHabitData({ habits: data.habits as Habit[], logs: data.logs as Log[], notes: (data.notes || []) as DailyNote[] }, cached ? { habits: cached.value.habits, logs: cached.value.logs, notes: cached.value.notes || [] } : null); const basics: DailyBasic[] = []; for (const day of Array.from({ length: new Date(yearNumber, monthNumber, 0).getDate() }, (_, index) => `${month}-${String(index + 1).padStart(2, '0')}`)) basics.push(...await mergePendingBasics(day, (data.basics || []) as DailyBasic[], cached?.value.basics || [])); const sessions = [...data.sessions as PomodoroSession[]]; for (const queued of (await getSyncQueue()).filter(item => item.entity === 'pomodoro' && item.action === 'create')) { const payload = queued.payload as { startedAt: string; endedAt: string; focusMinutes: number; roundIndex: number; completed: boolean; taskName?: string; completedEarly?: boolean }; if (payload.startedAt.startsWith(month) && !sessions.some(value => new Date(value.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) sessions.push({ ...payload, id: -(queued.id || Date.now()), startedAt: new Date(payload.startedAt), endedAt: new Date(payload.endedAt), completed: payload.completed ? 1 : 0, completedEarly: payload.completedEarly ? 1 : 0 }); } const next = { habits: merged.habits, logs: merged.logs, sessions, notes: merged.notes, basics }; apply(next); await setCached(key, next); } } catch {} }; void load(); const handler = () => { void load(); }; window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, [month]);
-  if (year) return <YearView />;
+  useEffect(() => {
+    const key = `life:calendar:${month}`;
+    const [yearNumber, monthNumber] = month.split('-').map(Number);
+    const start = new Date(yearNumber, monthNumber - 1, 1);
+    const end = new Date(yearNumber, monthNumber, 1);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
+    const query = new URLSearchParams({ month, start: start.toISOString(), end: end.toISOString() });
+    let version = 0, active = true;
+    const load = async () => {
+      const token = getCookie('token'), ownerId = accountIdFromToken(token);
+      const request = ++version;
+      const current = () => active && version === request && getCookie('token') === token;
+      if (!ownerId) return;
+      const apply = (value: CalendarData) => {
+        if (!current()) return;
+        setHabits(value.habits);
+        setLogs(value.logs.filter(log => log.date.startsWith(month)));
+        setSessions(value.sessions);
+        setNotes((value.notes || []).filter(note => note.date.startsWith(month)));
+        setBasics(value.basics || []);
+      };
+      try {
+        const cached = await getCached<CalendarData>(key, ownerId);
+        if (!current()) return;
+        if (cached) {
+          const local = await mergePendingHabitData({ ...cached.value, notes: cached.value.notes || [] }, cached.value, ownerId);
+          apply({ ...cached.value, ...local });
+        }
+        if (!current()) return;
+        const data = await lifeApi<CalendarData>(`/life/calendar?${query}`);
+        if (!current() || !Array.isArray(data?.habits) || !Array.isArray(data?.logs)) return;
+        const merged = await mergePendingHabitData({ ...data, notes: data.notes || [] }, cached?.value ?? null, ownerId);
+        const basics: DailyBasic[] = [];
+        for (let day = 1; day <= new Date(yearNumber, monthNumber, 0).getDate() && current(); day++) {
+          basics.push(...await mergePendingBasics(`${month}-${String(day).padStart(2, '0')}`, data.basics || [], cached?.value.basics || []));
+        }
+        if (!current()) return;
+        const sessions = [...data.sessions];
+        for (const queued of (await getSyncQueue(ownerId)).filter(item => item.entity === 'pomodoro' && item.action === 'create')) {
+          const payload = queued.payload as { startedAt: string; endedAt: string; focusMinutes: number; roundIndex: number; completed: boolean; taskName?: string; completedEarly?: boolean };
+          if (payload.startedAt.startsWith(month) && !sessions.some(value => new Date(value.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) {
+            sessions.push({ ...payload, id: -(queued.id || Date.now()), startedAt: new Date(payload.startedAt), endedAt: new Date(payload.endedAt), completed: Number(payload.completed), completedEarly: Number(Boolean(payload.completedEarly)) });
+          }
+        }
+        if (!current()) return;
+        const next = { ...merged, logs: merged.logs.filter(log => log.date.startsWith(month)), notes: merged.notes.filter(note => note.date.startsWith(month)), sessions, basics };
+        apply(next);
+        await setCached(key, next, ownerId);
+      } catch { /* Keep the cached calendar when the cloud is unavailable. */ }
+    };
+    void load();
+    window.addEventListener(CLOUD_REFRESH_EVENT, load);
+    return () => { active = false; window.removeEventListener(CLOUD_REFRESH_EVENT, load); };
+  }, [month]);
   const activeHabits = habits.filter(habit => habit.active);
   const activeHabitIds = new Set(activeHabits.map(habit => habit.id));
   const first = new Date(`${month}-01T00:00:00`); const dayCount = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(); const blanks = (first.getDay() + 6) % 7; const days = Array.from({ length: dayCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`); const done = (date: string) => logs.filter(log => log.date === date && log.completed && activeHabitIds.has(log.habitId) && (!focused || log.habitId === focused)).length; const focusFor = (date: string) => sessions.filter(session => isoDay(new Date(session.startedAt)) === date && session.completed); const chosenSessions = focusFor(selected); const chosenLogs = logs.filter(log => log.date === selected && log.completed && activeHabitIds.has(log.habitId));
@@ -24,20 +79,31 @@ function YearView() {
   const [year, setYear] = useState(new Date().getFullYear()); const [snapshot, setSnapshot] = useState<YearSnapshot>({ activity: {}, habits: [], logs: [], sessions: [], rss: [], basics: [] });
   useEffect(() => {
     const key = `life:year:v2:${year}`;
-    const load = () => {
-      void getCached<YearSnapshot>(key).then(cached => cached && setSnapshot(cached.value));
-      const start = new Date(year, 0, 1); const end = new Date(year + 1, 0, 1);
-      void withTimeout<any>(client.life.year.get({ query: { year: String(year), start: start.toISOString(), end: end.toISOString() }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT).then(({ data }) => {
-        if (!data || typeof data === 'string') return;
+    let version = 0, active = true;
+    const load = async () => {
+      const token = getCookie('token'), ownerId = accountIdFromToken(token);
+      const request = ++version;
+      const current = () => active && version === request && getCookie('token') === token;
+      if (!ownerId) return;
+      try {
+        const cached = await getCached<YearSnapshot>(key, ownerId);
+        if (!current()) return;
+        if (cached) setSnapshot(cached.value);
+        const start = new Date(year, 0, 1), end = new Date(year + 1, 0, 1);
+        const query = new URLSearchParams({ year: String(year), start: start.toISOString(), end: end.toISOString() });
+        const data = await lifeApi<Omit<YearSnapshot, 'activity'>>(`/life/year?${query}`);
+        if (!current() || !Array.isArray(data?.logs)) return;
         const activity: Record<string, number> = {}; const logs = data.logs as Log[]; const sessions = data.sessions as PomodoroSession[]; const rss = data.rss as RssActivity[]; const basics = (data.basics || []) as DailyBasic[];
         logs.forEach(log => { if (log.completed) activity[log.date] = (activity[log.date] || 0) + 1; });
         sessions.forEach(session => { if (session.completed) { const date = isoDay(new Date(session.startedAt)); activity[date] = (activity[date] || 0) + 1; } });
         rss.forEach(item => { [item.readAt, item.starredAt].forEach(value => { if (value) { const date = isoDay(new Date(value)); activity[date] = (activity[date] || 0) + 1; } }); });
         basics.forEach(item => { if (item.completed) activity[item.date] = (activity[item.date] || 0) + 1; });
-        const next = { activity, habits: data.habits || [], logs, sessions, rss, basics }; setSnapshot(next); void setCached(key, next);
-      }).catch(() => undefined);
+        const next = { activity, habits: data.habits || [], logs, sessions, rss, basics }; setSnapshot(next); await setCached(key, next, ownerId);
+      } catch { /* Keep the cached year when the cloud is unavailable. */ }
     };
-    load(); const handler = () => load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler);
+    void load();
+    window.addEventListener(CLOUD_REFRESH_EVENT, load);
+    return () => { active = false; window.removeEventListener(CLOUD_REFRESH_EVENT, load); };
   }, [year]);
   const start = new Date(year, 0, 1); const cells = Array.from({ length: 371 }, (_, index) => { const date = addDays(start, index - ((start.getDay() + 6) % 7)); return date.getFullYear() === year ? isoDay(date) : ''; });
   const completedLogs = snapshot.logs.filter(log => log.completed); const completedSessions = snapshot.sessions.filter(session => session.completed); const completedBasics = snapshot.basics.filter(item => item.completed);

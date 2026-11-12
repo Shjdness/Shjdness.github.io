@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
-import { client } from '../../main';
-import { getCached, setCached, withTimeout } from '../../data/local-first';
-import { headersWithAuth } from '../../utils/auth';
-import { addDays, CLOUD_REFRESH_EVENT, isoDay, mondayOf, READ_TIMEOUT, type LifeOverviewData } from './model';
+import { getCookie } from 'typescript-cookie';
+import { accountIdFromToken, getCached, setCached } from '../../data/local-first';
+import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, type LifeOverviewData } from './model';
 import { LifeLayout } from './layout';
 import { TodoBoard } from "./todos";
 import { LifeBackupButton } from './backup';
@@ -17,14 +16,26 @@ export function LifeOverview() {
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = addDays(dayStart, 1);
     const key = `life:overview:${isoDay(dayStart)}:${isoDay(start)}`;
-    const load = () => {
-      void getCached<LifeOverviewData>(key).then(cached => cached && setOverview(cached.value));
-      void withTimeout<any>(client.life.overview.get({
-        query: { dayStart: dayStart.toISOString(), dayEnd: dayEnd.toISOString(), weekStart: isoDay(start), weekEnd: isoDay(end), day: isoDay(dayStart) },
-        headers: headersWithAuth(),
-      }) as Promise<any>, READ_TIMEOUT).then(({ data }) => { if (data && typeof data !== 'string') { const next = data as LifeOverviewData; setOverview(next); void setCached(key, next); } }).catch(() => undefined);
+    let active = true, version = 0;
+    const load = async () => {
+      const token = getCookie('token'), ownerId = accountIdFromToken(token);
+      const request = ++version;
+      const current = () => active && version === request && getCookie('token') === token;
+      if (!ownerId) return;
+      try {
+        const cached = await getCached<LifeOverviewData>(key, ownerId);
+        if (!current()) return;
+        if (cached) setOverview(cached.value);
+        const query = new URLSearchParams({ dayStart: dayStart.toISOString(), dayEnd: dayEnd.toISOString(), weekStart: isoDay(start), weekEnd: isoDay(end), day: isoDay(dayStart) });
+        const data = await lifeApi<LifeOverviewData>(`/life/overview?${query}`);
+        if (!current() || !data?.summary) return;
+        setOverview(data);
+        await setCached(key, data, ownerId);
+      } catch { /* Keep the cached overview when the cloud is unavailable. */ }
     };
-    load(); const handler = () => load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler);
+    void load();
+    window.addEventListener(CLOUD_REFRESH_EVENT, load);
+    return () => { active = false; window.removeEventListener(CLOUD_REFRESH_EVENT, load); };
   }, []);
   const summary = overview?.summary || { habits: 0, completed: 0, focusMinutes: 0, rounds: 0, unread: 0 };
   return <LifeLayout section="life" title="Life">

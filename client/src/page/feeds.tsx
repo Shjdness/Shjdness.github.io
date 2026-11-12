@@ -11,6 +11,8 @@ import { tryInt } from "../utils/int"
 import { useTranslation } from "react-i18next";
 import { useAlert, useConfirm } from "../components/dialog";
 import { Cache } from "../utils/cache";
+import { getCookie } from "typescript-cookie";
+import { writingAccountId } from "../utils/writing-access";
 
 type FeedsData = {
     size: number,
@@ -44,13 +46,18 @@ export function FeedsPage({ fixedType }: { fixedType?: FeedType } = {}) {
     const { showAlert, AlertUI } = useAlert()
     const { showConfirm, ConfirmUI } = useConfirm()
     const deleteDraft = (id: string) => {
+        const token = getCookie('token');
+        const ownerId = writingAccountId(profile, token);
+        if (ownerId === null) return;
         showConfirm('删除草稿', '这篇草稿将从云端永久删除，其他设备也无法再继续编辑。确定删除吗？', async () => {
+            if (getCookie('token') !== token) return;
             const { error } = await client.feed({ id: Number(id) }).delete(null, { query: { draftOnly: '1' }, headers: headersWithAuth() })
             if (error) {
                 showAlert(typeof error.value === 'string' ? error.value : '删除失败，请稍后重试')
                 return
             }
-            Cache.with(Number(id)).clear()
+            Cache.forAccount(ownerId, Number(id)).clear()
+            if (getCookie('token') !== token) return;
             setFeeds(current => {
                 const data = current.draft.data.filter(item => String(item.id) !== id)
                 return { ...current, draft: { ...current.draft, data, size: data.length } }

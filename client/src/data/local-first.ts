@@ -27,9 +27,8 @@ export function accountIdFromToken(token?: string) {
 
 const currentAccountId = () => accountIdFromToken(getCookie('token'));
 export const accountStorageKey = (key: string, ownerId: number) => `account:${ownerId}:${key}`;
-const scopedCacheKey = (key: string) => {
+const scopedCacheKey = (key: string, ownerId = currentAccountId()) => {
   if (!key.startsWith('life:')) return key;
-  const ownerId = currentAccountId();
   return ownerId ? accountStorageKey(key, ownerId) : null;
 };
 
@@ -48,11 +47,11 @@ function openDatabase() {
   });
 }
 
-async function storeRequest<T>(storeName: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>) {
+async function storeRequest<T>(storeName: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore, transaction: IDBTransaction) => IDBRequest<T>, extraStores: string[] = []) {
   const db = await openDatabase();
   return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(storeName, mode);
-    const request = operation(transaction.objectStore(storeName));
+    const transaction = db.transaction([storeName, ...extraStores], mode);
+    const request = operation(transaction.objectStore(storeName), transaction);
     let result:T;
     request.onsuccess = () => {result=request.result;};
     request.onerror = () => reject(request.error);
@@ -67,15 +66,15 @@ export const withTimeout = <T>(promise: Promise<T>, ms = 3000) => Promise.race<T
   new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error('请求超时，已使用本地数据')), ms)),
 ]);
 
-export async function getCached<T>(key: string) {
-  const scopedKey = scopedCacheKey(key);
+export async function getCached<T>(key: string, ownerId = currentAccountId()) {
+  const scopedKey = scopedCacheKey(key, ownerId);
   if (!scopedKey) return null;
   const record = await storeRequest<CacheValue<T> | undefined>('cache', 'readonly', store => store.get(scopedKey));
   return record || null;
 }
 
-export async function setCached<T>(key: string, value: T) {
-  const scopedKey = scopedCacheKey(key);
+export async function setCached<T>(key: string, value: T, ownerId = currentAccountId()) {
+  const scopedKey = scopedCacheKey(key, ownerId);
   if (!scopedKey) throw new Error('Authenticated account required for private cache');
   await storeRequest('cache', 'readwrite', store => store.put({ key: scopedKey, value, updatedAt: Date.now() }));
 }
@@ -91,14 +90,33 @@ export async function clearLegacyRssCaches() {
   }
 }
 
-export async function enqueueMutation(entity: SyncEntity, action: string, payload: unknown, ownerId = currentAccountId()) {
+export async function enqueueMutation<T = never>(
+  entity: SyncEntity, action: string, payload: unknown, ownerId = currentAccountId(),
+  snapshot?: { key: string; value: unknown; related?: { key: string; update: (value: T) => T } },
+) {
   if (!Number.isSafeInteger(ownerId) || !ownerId || ownerId <= 0) throw new Error('Authenticated account required for offline write');
-  await storeRequest('sync_queue', 'readwrite', store => store.add({ ownerId, entity, action, payload, createdAt: Date.now(), retryCount: 0, status: 'pending' } satisfies SyncItem));
+  await storeRequest('sync_queue', 'readwrite', (store, transaction) => {
+    const now = Date.now();
+    if (snapshot) {
+      const cache = transaction.objectStore('cache');
+      cache.put({
+        key: accountStorageKey(snapshot.key, ownerId), value: snapshot.value, updatedAt: now,
+      });
+      if (snapshot.related) {
+        const { key, update } = snapshot.related;
+        const request = cache.get(accountStorageKey(key, ownerId));
+        request.onsuccess = () => {
+          const record: CacheValue<T> | undefined = request.result;
+          if (record) cache.put({ ...record, value: update(record.value), updatedAt: now });
+        };
+      }
+    }
+    return store.add({ ownerId, entity, action, payload, createdAt: now, retryCount: 0, status: 'pending' } satisfies SyncItem);
+  }, snapshot ? ['cache'] : []);
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
-export async function getSyncQueue() {
-  const ownerId = currentAccountId();
+export async function getSyncQueue(ownerId = currentAccountId()) {
   if (!ownerId) return [];
   const queue = await storeRequest<SyncItem[]>('sync_queue', 'readonly', store => store.getAll());
   return queueForAccount(queue, ownerId);

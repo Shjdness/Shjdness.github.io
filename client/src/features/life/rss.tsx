@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { getCookie } from 'typescript-cookie';
 import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { SpaceSwitch, MobileLifeNav } from '../../components/header';
-import { clearLegacyRssCaches, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
+import { accountIdFromToken, clearLegacyRssCaches, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { usePomodoro } from '../../state/pomodoro';
 import { lifeApi, type RssData, type RssGroup, type RssItem, type RssStorage, type RssSubscription } from './model';
 import { dedupeRssItems } from './rss-identity';
 
 type RssPreviewItem = Pick<RssItem, 'title' | 'url' | 'summary' | 'publishedAt' | 'thumbnailUrl'> & { externalId: string };
 type ResolvedFeed = { sourceUrl: string; feedUrl: string; provider: string; platform: string; externalId: string; title: string; description: string; siteUrl: string; icon: string; category: string; preview: RssPreviewItem[] };
-async function mergePendingRss(value: RssData) {
-  const patches = (await getSyncQueue()).filter(item => item.entity === 'rss' && item.action === 'update');
+async function mergePendingRss(value: RssData, ownerId: number) {
+  const patches = (await getSyncQueue(ownerId)).filter(item => item.entity === 'rss' && item.action === 'update');
   if (!patches.length) return value;
   return { ...value, items: value.items.map(item => { let next = item; for (const queued of patches) { const payload = queued.payload as { id: number; patch: { read?: boolean; starred?: boolean } }; if (payload.id === item.id) next = { ...next, ...(payload.patch.read === undefined ? {} : { read: payload.patch.read ? 1 : 0 }), ...(payload.patch.starred === undefined ? {} : { starred: payload.patch.starred ? 1 : 0 }) }; } return next; }) };
 }
@@ -59,24 +60,27 @@ export function RssView() {
 
   const load = async (append = false) => {
     if (append && loadingMore.current) return;
+    const token = getCookie('token'), ownerId = accountIdFromToken(token);
+    if (!ownerId) return;
     const version = ++loadVersion.current;
-    const current = () => activeKey.current === cacheKey && loadVersion.current === version;
+    const current = () => getCookie('token') === token && activeKey.current === cacheKey && loadVersion.current === version;
     loadingMore.current = append; setLoading(true);
     const nextOffset = append ? offset : 0;
     try {
-      if (!append && !query && !year) { const cached = await getCached<RssData>(cacheKey); if (cached && current()) setData(dedupeRss(cached.value)); }
+      if (!append && !query && !year) { const cached = await getCached<RssData>(cacheKey, ownerId); if (cached && current()) setData(dedupeRss(cached.value)); }
+      if (!current()) return;
       const params = new URLSearchParams({ filter, limit: '200', offset: String(nextOffset) });
       if (sourceId) params.set('sourceId', String(sourceId));
       if (selectedGroup) params.set('category', selectedGroup);
       if (year) params.set('year', year);
       if (query) params.set('q', query);
-      const response = await mergePendingRss(await lifeApi<RssData>(`/rss?${params}`));
+      const response = await mergePendingRss(await lifeApi<RssData>(`/rss?${params}`), ownerId);
       if (!current()) return;
       const remote = dedupeRss(response);
       const next = append && data ? { ...remote, items: dedupeRssItems([...data.items, ...remote.items]) } : remote;
       setData(next); setOffset(nextOffset + response.items.length);
       // Cache only the first page of ordinary views, not every search/history page.
-      if (!year && !query) await setCached(cacheKey, {...next,items:next.items.slice(0,200)});
+      if (!year && !query) await setCached(cacheKey, {...next,items:next.items.slice(0,200)}, ownerId);
     } catch { if (current()) setMessage('读取失败，显示已有缓存；可稍后重试。'); }
     finally { if (current()) { setLoading(false); loadingMore.current=false; } }
   };
@@ -84,13 +88,15 @@ export function RssView() {
   useEffect(() => { void (async () => { try { const remote = await lifeApi<Omit<RssStorage, 'local'>>('/rss/storage'); const local = await navigator.storage?.estimate?.(); setStorage({ ...remote, local: { usedBytes: local?.usage || 0, limitBytes: local?.quota || 0 } }); } catch { /* Storage information is informative and must not block the reader. */ } })(); }, []);
 
   const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }) => {
+    const ownerId = accountIdFromToken(getCookie('token'));
+    if (!ownerId) return;
     const now = new Date(); const apply = (value: RssItem) => ({ ...value, ...(patch.read === undefined ? {} : { read: patch.read ? 1 : 0, readAt: patch.read ? now : null }), ...(patch.starred === undefined ? {} : { starred: patch.starred ? 1 : 0, starredAt: patch.starred ? now : null }) });
     setSelectedItem(current => current?.id === item.id ? apply(current) : current);
     setData(current => current ? { ...current, items: current.items.map(value => value.id === item.id ? apply(value) : value) } : current);
-    try { await lifeApi(`/rss/items/${item.id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('rss', 'update', { id: item.id, patch }); }
+    try { await lifeApi(`/rss/items/${item.id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('rss', 'update', { id: item.id, patch }, ownerId); }
   };
   const openItem = async (item: RssItem) => { setSelectedItem(item); if (!item.read) await updateItem(item, { read: true }); };
-  const markAllRead = async () => { if (!data?.counts.unread || !window.confirm(`将 ${data.counts.unread} 条未读全部标记为已读？`)) return; const now = new Date(); setData(current => current ? { ...current, items: current.items.map(item => ({ ...item, read: 1, readAt: item.readAt || now })), counts: { ...current.counts, unread: 0 } } : current); setBusy(true); try { await lifeApi('/rss/items/mark-all-read', { method: 'POST' }); setMessage('未读内容已全部清除。'); await load(); } catch { await enqueueMutation('rss', 'mark-all-read', {}); setMessage('已在本地清除未读，联网后自动同步。'); } finally { setBusy(false); } };
+  const markAllRead = async () => { const ownerId = accountIdFromToken(getCookie('token')); if (!ownerId) return; if (!data?.counts.unread || !window.confirm(`将 ${data.counts.unread} 条未读全部标记为已读？`)) return; const now = new Date(); setData(current => current ? { ...current, items: current.items.map(item => ({ ...item, read: 1, readAt: item.readAt || now })), counts: { ...current.counts, unread: 0 } } : current); setBusy(true); try { await lifeApi('/rss/items/mark-all-read', { method: 'POST' }); setMessage('未读内容已全部清除。'); await load(); } catch { await enqueueMutation('rss', 'mark-all-read', {}, ownerId); setMessage('已在本地清除未读，联网后自动同步。'); } finally { setBusy(false); } };
   const refreshAll = async () => {
     if (busy || !data?.subscriptions.length) return;
     setBusy(true);

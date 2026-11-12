@@ -4,7 +4,6 @@ import path from "node:path"
 
 const env = process.env;
 const baseUrl = env.SEO_BASE_URL || env.FRONTEND_URL || '';
-const containsKey = env.SEO_CONTAINS_KEY || '';
 const region = env.S3_REGION;
 const endpoint = env.S3_ENDPOINT;
 const accessKeyId = env.S3_ACCESS_KEY_ID;
@@ -12,6 +11,7 @@ const secretAccessKey = env.S3_SECRET_ACCESS_KEY;
 const accessHost = env.S3_ACCESS_HOST || endpoint;
 const bucket = env.S3_BUCKET;
 const folder = env.S3_CACHE_FOLDER || 'cache/';
+const privateRoutes = new Set(['/blog/diary', '/blog/memos', '/blog/drafts', '/blog/writing']);
 const forcePathStyle = env.S3_FORCE_PATH_STYLE === "true";
 if (!baseUrl) {
     throw new Error('SEO_BASE_URL is not defined');
@@ -31,6 +31,26 @@ if (!secretAccessKey) {
 if (!bucket) {
     throw new Error('S3_BUCKET is not defined');
 }
+const origin = new URL(baseUrl).origin;
+if (!origin.startsWith('https://')) throw new Error('SEO_BASE_URL must use HTTPS');
+
+function publicPage(value: string): string | null {
+    try {
+        const url = new URL(value, origin);
+        if (url.origin !== origin || url.username || url.password) return null;
+        const route = decodeURIComponent(url.pathname).replace(/\/$/, '') || '/';
+        const blogPage = /^\/blog(?:\/feed\/\d+|\/[a-zA-Z0-9_-]+)?$/.test(route);
+        if (route !== '/' && (!blogPage || privateRoutes.has(route))) return null;
+        url.hash = '';
+        const page = url.searchParams.get('page');
+        const isPagination = route === '/blog/articles' && page && /^\d{1,3}$/.test(page);
+        url.search = isPagination ? `?page=${page}` : '';
+        return url.href;
+    } catch {
+        return null;
+    }
+}
+
 const s3 = new S3Client({
     region: region,
     endpoint: endpoint,
@@ -57,41 +77,57 @@ async function saveFile(filename: string, data: string) {
     }
 }
 
-// Fetch All Links
-const fetchedLinks = new Set<string>();
-const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36';
+const ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const browserEnv = Object.fromEntries(
+    ['PATH', 'HOME', 'TMPDIR', 'LANG', 'XDG_CACHE_HOME'].flatMap(key => env[key] ? [[key, env[key]]] : []),
+);
+const start = publicPage(baseUrl);
+if (!start) throw new Error('SEO_BASE_URL must point to a public site route');
 const browser = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    env: browserEnv,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
 });
 
 async function fetchPage(url: string) {
-    // Fetch page content
     console.log(`Fetching ${url}`);
     const page = await browser.newPage();
-    await page.setUserAgent(ua);
-    const response = await page.goto(url, { waitUntil: 'networkidle2' });
-    if (!response) {
-        console.error(`Failed to fetch ${url}`);
-        return;
-    }
-    if (response.ok() && response.headers()['content-type']?.includes('text/html')) {
-        const html = await page.content();
-        await saveFile(url, html);
-        fetchedLinks.add(url);
-        const links = await page.evaluate(() => {
-            const anchors = Array.from(document.querySelectorAll('a'));
-            return anchors.map(anchor => anchor.href);
-        });
-        for (const link of links.filter(link => (link.startsWith(baseUrl) || (containsKey != '' && link.includes(containsKey))))) {
-            const linkWithoutHash = link.split('#')[0];
-            if (fetchedLinks.has(linkWithoutHash)) {
-                continue;
+    try {
+        await page.setUserAgent(ua);
+        await page.setRequestInterception(true);
+        page.on('request', request => {
+            if (request.isNavigationRequest() &&
+                (request.frame() !== page.mainFrame() || publicPage(request.url()) !== request.url())) {
+                void request.abort().catch(() => {});
+            } else {
+                void request.continue().catch(() => {});
             }
-            await fetchPage(linkWithoutHash);
-        }
+        });
+        const response = await page.goto(url, { waitUntil: 'networkidle2', timeout: 20_000 });
+        if (!response?.ok() || !response.headers()['content-type']?.includes('text/html') ||
+            publicPage(page.url()) !== page.url()) return [];
+        await saveFile(url, await page.content());
+        return await page.evaluate(() => Array.from(document.querySelectorAll('a'), anchor => anchor.href));
+    } finally {
+        await page.close();
     }
 }
 
-await fetchPage(baseUrl);
-await browser.close();
-console.log('🎉All Done.');
+const pending = [start], seen = new Set(pending);
+try {
+    for (let index = 0; index < pending.length; index++) {
+        const url = pending[index];
+        try {
+            for (const link of await fetchPage(url)) {
+                const next = publicPage(link);
+                if (!next || seen.has(next) || pending.length >= 250) continue;
+                seen.add(next);
+                pending.push(next);
+            }
+        } catch {
+            if (index === 0) throw new Error('SEO entry page failed to render');
+            console.warn(`Could not render ${url}`);
+        }
+    }
+} finally {
+    await browser.close();
+}

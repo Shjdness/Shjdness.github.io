@@ -51,3 +51,37 @@ it('keeps default pause calls and current-account write blocking compatible with
   fetch.mockResolvedValue({ok:true,status:200,headers:new Headers({'content-type':'application/json'}),text:async()=>'{}'});
   await expect(lifeApi('/life/basics',{method:'POST'})).resolves.toEqual({});
 });
+
+it('rejects a successful response whose session changed while reading the body', async () => {
+  storage();
+  const body = pending<string>();
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: () => body.promise })));
+  const result = lifeApi('/life/overview');
+  await Promise.resolve();
+  identity.owner = 2;
+  body.resolve('{}');
+  await expect(result).rejects.toThrow('会话已切换');
+});
+
+it('keeps the deadline through the body with a caller signal present', async () => {
+  storage();
+  const caller = new AbortController();
+  vi.stubGlobal('fetch', vi.fn(async (_url, { signal }: RequestInit) => ({
+    ok: true,
+    text: () => new Promise<string>((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+    }),
+  })));
+  await expect(lifeApi('/life/overview', { signal: caller.signal }, 10)).rejects.toMatchObject({ name: 'TimeoutError' });
+  expect(caller.signal.aborted).toBe(false);
+});
+
+it('forwards cancellation from the caller', async () => {
+  storage();
+  const caller = new AbortController();
+  caller.abort(new Error('caller cancelled'));
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  await expect(lifeApi('/life/overview', { signal: caller.signal })).rejects.toThrow('caller cancelled');
+  expect(fetch).not.toHaveBeenCalled();
+});

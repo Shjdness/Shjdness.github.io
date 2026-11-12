@@ -32,7 +32,10 @@ describe('writing page identity boundary', () => {
 
   it('still mounts the existing editor and retains a permitted writer’s local draft', () => {
     vi.stubGlobal('document', { URL: 'https://local.invalid/blog/writing' });
-    const values = new Map([['new/title', 'Synthetic draft title']]);
+    const values = new Map([
+      ['new/title', 'Legacy private title'],
+      ['writing:1:new/title', 'Synthetic draft one'], ['writing:2:new/title', 'Synthetic draft two'],
+    ]);
     const read = vi.fn((key: string) => values.get(key) ?? null);
     const write = vi.fn();
     const remove = vi.fn();
@@ -42,10 +45,15 @@ describe('writing page identity boundary', () => {
       const html = renderToStaticMarkup(
         React.createElement(ProfileContext.Provider, { value: profile }, React.createElement(WritingPage)),
       );
-      expect(html).toContain('Synthetic draft title');
+      expect(html).toContain(profile.id === 1 ? 'Synthetic draft one' : 'Synthetic draft two');
+      expect(html).not.toContain(profile.id === 1 ? 'Synthetic draft two' : 'Synthetic draft one');
+      expect(html).not.toContain('Legacy private title');
+      expect(html.includes('恢复旧版浏览器草稿')).toBe(profile.role === 'owner');
       expect(html).not.toContain('请先登录有写作权限的账号');
     }
-    expect(read).toHaveBeenCalledWith('new/content');
+    expect(read).toHaveBeenCalledWith('writing:1:new/content');
+    expect(read).toHaveBeenCalledWith('writing:2:new/content');
+    expect(read).not.toHaveBeenCalledWith('new/title');
     expect(write).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
   });
@@ -80,10 +88,11 @@ describe('writing page identity boundary', () => {
 
   it('keeps existing-record submit buttons disabled until the cloud record loads, even with cached metadata', () => {
     vi.stubGlobal('document', { URL: 'https://local.invalid/blog/writing/42' });
-    const values = new Map([
-      ['new/title', 'Synthetic new draft'], ['new/content', 'New body'],
-      ['42/title', 'Synthetic existing draft'], ['42/content', 'Existing body'], ['42/kind', 'diary'],
-    ]);
+    const values = new Map([1, 2].flatMap(ownerId => [
+      [`writing:${ownerId}:new/title`, 'Synthetic new draft'], [`writing:${ownerId}:new/content`, 'New body'],
+      [`writing:${ownerId}:42/title`, 'Synthetic existing draft'], [`writing:${ownerId}:42/content`, 'Existing body'],
+      [`writing:${ownerId}:42/kind`, 'diary'],
+    ]));
     const write = vi.fn(), remove = vi.fn();
     vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: write, removeItem: remove });
     for (const profile of [owner, trusted]) {

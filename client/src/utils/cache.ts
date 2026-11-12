@@ -25,9 +25,12 @@ export class Cache {
     static with(id?: number) {
         return new Cache(id);
     }
+    static forAccount(ownerId: number, id?: number) {
+        return new Cache(id, ownerId);
+    }
     private id: string;
-    constructor(id?: number) {
-        this.id = `${id ?? "new"}`;
+    constructor(id?: number, ownerId?: number) {
+        this.id = ownerId === undefined ? `${id ?? "new"}` : `writing:${ownerId}:${id ?? "new"}`;
     }
     public get(key: Keys) {
         return localStorage.getItem(`${this.id}/${key}`);

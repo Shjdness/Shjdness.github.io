@@ -1,7 +1,6 @@
 import { endpoint } from '../../main';
 import { accountIdFromToken, currentWritePause, pauseWrites, SyncPauseError,SyncConflictError } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
-import { headersWithAuth } from '../../utils/auth';
 
 export type LifeSection = 'life' | 'todos' | 'habits' | 'calendar' | 'year' | 'pomodoro' | 'rss' | 'reports' | 'check-in';
 export type Habit = { id: number; name: string; description: string; color: string; active: number; clientKey?: string | null };
@@ -36,26 +35,52 @@ export const READ_TIMEOUT = 6000;
 export const WRITE_TIMEOUT = 20000;
 
 export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverride?: number): Promise<T> {
-  const requestOwnerId = accountIdFromToken(getCookie('token'));
-  const timeout = timeoutOverride ?? ((init?.method || 'GET').toUpperCase() === 'GET' ? READ_TIMEOUT : WRITE_TIMEOUT);
-  if((init?.method||'GET')!=='GET' && currentWritePause()>Date.now())throw new SyncPauseError('今日数据库额度已暂停，本地更改已保留',currentWritePause());
-  const controller=new AbortController(), timer=window.setTimeout(()=>controller.abort(),timeout);
-  let response:Response;
-  try {response=await fetch(`${endpoint}${path}`, { ...init, signal:init?.signal || controller.signal, headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...headersWithAuth(), ...(init?.headers || {}) } });}
-  finally {window.clearTimeout(timer);}
-  if (!response.ok) {
-    const text=await response.text();let detail:any;try{detail=JSON.parse(text);}catch{}
-    const hard=detail?.code==='D1_QUOTA_PAUSED'||/exceeded D1.*daily.*limit/i.test(text);
-    const retryAt=detail?.retryAt || Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth(),new Date().getUTCDate()+1);
-    if(hard) {pauseWrites(retryAt,requestOwnerId);throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留',retryAt);}
-    if(response.status===409&&path.startsWith('/life/basics'))throw new SyncConflictError(detail??{message:'每日事项需要核对，原始内容已保留'});
-    throw new Error(detail?.message || text || `Request failed: ${response.status}`);
+  const token = getCookie('token');
+  const requestOwnerId = accountIdFromToken(token);
+  const method = (init?.method || 'GET').toUpperCase();
+  const timeout = timeoutOverride ?? (method === 'GET' ? READ_TIMEOUT : WRITE_TIMEOUT);
+  const writePause = method === 'GET' ? 0 : currentWritePause();
+  if (writePause > Date.now()) throw new SyncPauseError('今日数据库额度已暂停，本地更改已保留', writePause);
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const controller = new AbortController();
+  const abort = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) abort();
+  else init?.signal?.addEventListener('abort', abort, { once: true });
+  const timer = window.setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), timeout);
+  try {
+    controller.signal.throwIfAborted();
+    const response = await fetch(`${endpoint}${path}`, { ...init, cache: 'no-store', headers, signal: controller.signal });
+    const text = await response.text();
+    controller.signal.throwIfAborted();
+    const assertSession = () => {
+      if (getCookie('token') !== token) throw new Error('会话已切换，请重新读取数据');
+    };
+    if (!response.ok) {
+      let detail: { code?: string; retryAt?: number; message?: string } | undefined;
+      try { detail = JSON.parse(text); } catch {}
+      const hard = detail?.code === 'D1_QUOTA_PAUSED' || /exceeded D1.*daily.*limit/i.test(text);
+      if (hard) {
+        const now = new Date();
+        const retryAt = detail?.retryAt || Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+        pauseWrites(retryAt, requestOwnerId);
+        throw new SyncPauseError(detail?.message || '今日数据库额度已耗尽，本地更改已保留', retryAt);
+      }
+      assertSession();
+      if (response.status === 409 && path.startsWith('/life/basics')) {
+        throw new SyncConflictError(detail ?? { message: '每日事项需要核对，原始内容已保留' });
+      }
+      throw new Error(detail?.message || text || `Request failed: ${response.status}`);
+    }
+    assertSession();
+    const trimmed = text.trim();
+    if (trimmed && response.headers.get('content-type')?.includes('application/json')) {
+      try { return JSON.parse(trimmed) as T; } catch { return trimmed as T; }
+    }
+    return (trimmed || null) as T;
+  } finally {
+    window.clearTimeout(timer);
+    init?.signal?.removeEventListener('abort', abort);
   }
-  const body = await response.text();
-  const trimmed = body.trim();
-  if (trimmed && response.headers.get('content-type')?.includes('application/json')) {
-    try { return JSON.parse(trimmed) as T; } catch { return trimmed as T; }
-  }
-  return (trimmed || null) as T;
 }
-

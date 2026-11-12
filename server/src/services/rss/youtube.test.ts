@@ -31,6 +31,30 @@ describe("YouTube fetch boundary", () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("bounds the actual Atom response even without a content-length header", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(600 * 1024));
+        controller.enqueue(new Uint8Array(600 * 1024));
+      },
+      cancel,
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+    await expect(fetchText("https://www.youtube.com/feeds/videos.xml"))
+      .rejects.toThrow("body is too large");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("uses one abort budget across allowed redirect hops", async () => {
+    const mockedFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/feeds/videos.xml?channel_id=test" } }))
+      .mockResolvedValueOnce(new Response("<feed/>"));
+    vi.stubGlobal("fetch", mockedFetch);
+    await expect(fetchText("https://www.youtube.com/feeds/videos.xml")).resolves.toMatchObject({ body: "<feed/>" });
+    expect(mockedFetch.mock.calls[0][1].signal).toBe(mockedFetch.mock.calls[1][1].signal);
+  });
+
   it("rejects YouTube redirect endpoints as channel input", async () => {
     await expect(resolveChannelId("https://www.youtube.com/redirect?q=https://example.invalid"))
       .rejects.toThrow("仅支持 YouTube 频道");

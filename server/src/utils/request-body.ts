@@ -19,7 +19,7 @@ export function limitRequestBody(request:Request,limit:number) {
 }
 
 /** Read raw bytes once, enforcing an actual streaming bound, not just a header. */
-export async function readLimitedBody(request:Request,limit:number) {
+export async function readLimitedBody(request:Pick<Request, 'body' | 'headers'>,limit:number) {
   if(Number(request.headers.get('content-length')||0)>limit)throw new BodyLimitError();
   if(!request.body)return new Uint8Array();
   const reader=request.body.getReader(),chunks:Uint8Array[]=[];let size=0;

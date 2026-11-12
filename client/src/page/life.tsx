@@ -1,4 +1,6 @@
 import { useContext } from 'react';
+import { getCookie } from 'typescript-cookie';
+import { accountIdFromToken } from '../data/local-first';
 import { ProfileContext } from '../state/profile';
 import { CalendarView } from '../features/life/calendar';
 import { HabitView } from '../features/life/habits';
@@ -13,7 +15,11 @@ import { LifeCheckinView } from '../features/life/check-in';
 
 export function PrivateLifePage({ section }: { section: LifeSection }) {
   const profile = useContext(ProfileContext);
-  if (!mayAccessLife(profile?.role)) return <LifeDenied />;
+  if (!profile || !mayAccessLife(profile.role) || profile.id !== accountIdFromToken(getCookie('token'))) return <LifeDenied />;
+  return <LifeSectionPage key={profile.id} section={section} />;
+}
+
+function LifeSectionPage({ section }: { section: LifeSection }) {
   if (section === 'life') return <LifeOverview />;
   if (section === 'reports') return <LifeReportsView />;
   if (section === 'check-in') return <LifeCheckinView />;

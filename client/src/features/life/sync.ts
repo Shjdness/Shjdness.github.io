@@ -1,5 +1,5 @@
 import { getCookie } from 'typescript-cookie';
-import { accountIdFromToken, SyncConflictError, getCached, getSyncQueue, setCached, enqueueMutation, type SyncEntity } from '../../data/local-first';
+import { accountIdFromToken, SyncConflictError, getCached, getSyncQueue, setCached, enqueueMutation, type SyncEntity, type SyncItem } from '../../data/local-first';
 import type { DailyBasic, DailyNote, Habit, Log, TodoType } from './model';
 import { lifeApi } from './model';
 
@@ -197,10 +197,12 @@ export async function mergePendingBasics(date: string, cloud: DailyBasic[], cach
 export async function mergePendingHabitData(
   cloud: { habits: Habit[]; logs: Log[]; notes: DailyNote[] },
   cached: { habits: Habit[]; logs: Log[]; notes: DailyNote[] } | null,
+  ownerId?: number,
+  pending?: SyncItem[],
 ) {
-  const queue = await getSyncQueue();
+  const queue = pending ?? await getSyncQueue(ownerId);
   if (!queue.length) return cloud;
-  const mapping = (await getCached<Record<string, number>>('life:habit-id-map'))?.value || {};
+  const mapping = (await getCached<Record<string, number>>('life:habit-id-map', ownerId))?.value || {};
   let habits = [...cloud.habits]; let logs = [...cloud.logs]; let notes = [...cloud.notes];
   for (const queued of queue) {
     if (queued.entity === 'habit' && queued.action === 'create') {

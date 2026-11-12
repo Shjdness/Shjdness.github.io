@@ -47,10 +47,12 @@ function App() {
   const [config, setConfig] = useState<ConfigWrapper>(new ConfigWrapper({}, new Map()))
   useEffect(() => {
     if (ref.current) return
-    if (getCookie('token')?.length ?? 0 > 0) {
+    const token = getCookie('token');
+    if (token) {
       client.user.profile.get({
         headers: headersWithAuth()
       }).then(({ data, error }) => {
+        if (getCookie('token') !== token) return;
         if (data && typeof data !== 'string') {
           const nextProfile: Profile = {
             id: data.id,
@@ -60,6 +62,7 @@ function App() {
             role: data.role === 'owner' || data.role === 'trusted' ? data.role : 'member',
             name: data.username
           };
+          if (nextProfile.id !== accountIdFromToken(token)) return;
           setProfile(nextProfile)
           localStorage.setItem(LIFE_PROFILE_CACHE, JSON.stringify(nextProfile))
         } else if (Number(error?.status) === 401 || Number(error?.status) === 403) {

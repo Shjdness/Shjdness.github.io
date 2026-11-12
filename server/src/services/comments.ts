@@ -8,7 +8,7 @@ import { ServerConfig } from "../utils/cache";
 import { Config } from "../utils/config";
 import { getDB, getEnv } from "../utils/di";
 import { notify } from "../utils/webhook";
-import { canReadFeed } from "../utils/feed-permissions";
+import { canReadFeed, isPrivateFeed } from "../utils/feed-permissions";
 
 export function CommentService() {
     const db: DB = getDB();
@@ -66,7 +66,7 @@ export function CommentService() {
 
                     // Saving is authoritative. Optional config/network failures
                     // must not report failure after the row was committed.
-                    try {
+                    if (exist.listed && !isPrivateFeed(exist)) try {
                         const webhookUrl = await ServerConfig().get(Config.webhookUrl) || env.WEBHOOK_URL;
                         await notify(webhookUrl, `${env.FRONTEND_URL}/feed/${feedId}\n${user.username} 评论了: ${exist.title}\n${content}`);
                     } catch { /* Preserve the committed save acknowledgement. */ }

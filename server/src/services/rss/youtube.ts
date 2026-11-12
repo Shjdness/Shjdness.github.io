@@ -1,3 +1,4 @@
+import { readLimitedBody } from '../../utils/request-body';
 import { XMLParser } from "fast-xml-parser";
 
 export const FEED = "https://www.youtube.com/feeds/videos.xml?channel_id=";
@@ -107,6 +108,8 @@ export async function fetchText(
   accept = "application/atom+xml,text/html",
 ) {
   let lastStatus = 0;
+  const signal = AbortSignal.timeout(25_000);
+  const byteLimit = accept === "text/html" ? 4 * 1024 * 1024 : 1024 * 1024;
   // YouTube's Atom endpoint intermittently returns 404/5xx for an otherwise
   // valid channel (including from non-browser data-centre egress). Treat every
   // non-success response as transient for a few short attempts; a genuinely
@@ -115,21 +118,32 @@ export async function fetchText(
     let target = url;
     let response: Response | undefined;
     for (let hop = 0; hop < 4; hop += 1) {
+      signal.throwIfAborted();
       if (!isSafeYouTubeUrl(target)) throw new Error("YouTube 跳转到了不受信任的地址");
       response = await fetch(target, {
         redirect: "manual",
         headers: { Accept: accept, "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(15000),
+        signal,
       });
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
       const location = response.headers.get("location");
+      void response.body?.cancel().catch(() => {});
       if (!location) throw new Error("YouTube 跳转缺少地址");
       target = new URL(location, target).toString();
       response = undefined;
     }
     if (!response) throw new Error("YouTube 跳转次数过多");
-    if (response.ok)
-      return { body: await response.text(), finalUrl: response.url };
+    if (response.ok) {
+      try {
+        const bytes = await readLimitedBody(response, byteLimit);
+        signal.throwIfAborted();
+        return { body: new TextDecoder().decode(bytes), finalUrl: response.url };
+      } catch (error) {
+        void response.body?.cancel().catch(() => {});
+        throw error;
+      }
+    }
+    void response.body?.cancel().catch(() => {});
     lastStatus = response.status;
     if (response.status === 401 || response.status === 403) break;
     await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));

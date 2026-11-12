@@ -64,14 +64,14 @@ export function WritingPage({ id }: { id?: number }) {
   if (ownerId === null) {
     return <p role="status">请先登录有写作权限的账号。本地稿件已保留。</p>;
   }
-  return <WritingEditor key={`${ownerId}:${id ?? 'new'}`} id={id} />;
+  return <WritingEditor key={`${ownerId}:${id ?? 'new'}`} id={id} ownerId={ownerId} />;
 }
 
-function WritingEditor({ id }: { id?: number }) {
+function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   const { t } = useTranslation();
   const profile = React.useContext(ProfileContext);
   const colorMode = useColorMode();
-  const cache = Cache.with(id);
+  const cache = Cache.forAccount(ownerId, id);
   const revision = useRef(createWritingRevision()).current;
   const loadCheckpoint = useRef(revision.checkpoint()).current;
   const live = useRef(true);
@@ -106,6 +106,27 @@ function WritingEditor({ id }: { id?: number }) {
   const [loadedDraft, setLoadedDraft] = useState(false)
   const { showAlert, AlertUI } = useAlert()
   const { showConfirm, ConfirmUI } = useConfirm()
+  const restoreLegacy = () => {
+    if (profile?.role !== 'owner' || writingAccountId(profile, getCookie('token')) !== ownerId) return;
+    showConfirm('恢复旧版草稿', '只有确认这份旧版浏览器草稿属于当前账号时才继续。恢复会替换编辑器里的内容。', () => {
+      if (writingAccountId(profile, getCookie('token')) !== ownerId) return;
+      const legacy = Cache.with(id);
+      const oldTitle = legacy.get('title'), oldContent = legacy.get('content');
+      if (oldTitle === null && oldContent === null) {
+        showAlert('这篇文章没有旧版浏览器草稿。');
+        return;
+      }
+      const oldKind = legacy.get('kind');
+      const oldTags = legacy.get('tags') ?? '';
+      setTitle(oldTitle ?? '');
+      setContent(oldContent ?? '');
+      setSummary(legacy.get('summary') ?? '');
+      if (oldKind === 'article' || oldKind === 'essay' || oldKind === 'diary' || oldKind === 'memo') setKind(oldKind);
+      tagsByScope.current[tagScope(oldKind === 'article' || oldKind === 'essay' || oldKind === 'diary' || oldKind === 'memo' ? oldKind : kind)] = oldTags;
+      setTags(oldTags);
+      setSaveState('旧版草稿已复制到当前账号');
+    });
+  };
   const stats = readingStats(content)
 
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
@@ -587,6 +608,7 @@ function WritingEditor({ id }: { id?: number }) {
         <div className="w-full md:max-w-96 flex flex-col">
           {MetaInput({ className: "hidden md:block glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
           <div className="writing-save-state">{saveState}</div>
+          {profile?.role === 'owner' && <button type="button" className="writing-restore-draft mx-8" onClick={restoreLegacy}>恢复旧版浏览器草稿</button>}
           {recordLoadFailed && !recordLoaded && <button type="button" className="writing-save-draft mx-8" onClick={() => setLoadAttempt(value => value + 1)}>重试载入原记录（保留本地修改）</button>}
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>

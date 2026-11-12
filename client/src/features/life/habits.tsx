@@ -1,48 +1,179 @@
-import { useEffect, useMemo, useState } from 'react';
-import { accountIdFromToken, enqueueMutation, getCached, setCached, withTimeout } from '../../data/local-first';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { accountIdFromToken, enqueueMutation, getCached, setCached, getSyncQueue } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
-import { client } from '../../main';
-import { headersWithAuth } from '../../utils/auth';
-import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, READ_TIMEOUT, type CalendarData, type DailyNote, type Habit, type Log } from './model';
-import { assertCurrentAccount, createForAccount, mergePendingHabitData, rememberLocalId, resolveHabitId } from './sync';
+import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, type CalendarData, type DailyNote, type Habit, type Log } from './model';
+import { assertCurrentAccount, mergePendingHabitData } from './sync';
 import { LifeLayout } from './layout';
 
+type HabitWeekData = { habits: Habit[]; logs: Log[]; notes: DailyNote[] };
+
 export function HabitView() {
-  const [weekStart, setWeekStart] = useState(mondayOf()); const [habits, setHabits] = useState<Habit[]>([]); const [logs, setLogs] = useState<Log[]>([]); const [notes, setNotes] = useState<DailyNote[]>([]); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [selectedDate, setSelectedDate] = useState(isoDay()); const [noteDraft, setNoteDraft] = useState(''); const [editing, setEditing] = useState<Habit | null>(null);
+  const [weekStart, setWeekStart] = useState(mondayOf());
+  const ownerId = accountIdFromToken(getCookie('token'));
+  return ownerId ? <HabitWeek key={`${ownerId}:${isoDay(weekStart)}`} {...{ ownerId, weekStart, setWeekStart }} /> : null;
+}
+
+function HabitWeek({ ownerId, weekStart, setWeekStart }: {
+  ownerId: number; weekStart: Date; setWeekStart: (date: Date) => void;
+}) {
+  const [data, setData] = useState<HabitWeekData | null>(null);
+  const { habits, logs, notes } = data ?? { habits: [], logs: [], notes: [] };
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedDate, setSelectedDate] = useState(isoDay());
+  const [noteDraft, setNoteDraft] = useState('');
+  const [editing, setEditing] = useState<Habit | null>(null);
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const cacheKey = `life:habits:${isoDay(days[0])}:${isoDay(days[6])}`;
-  const load = async () => { const cached = await getCached<{ habits: Habit[]; logs: Log[]; notes: DailyNote[] }>(cacheKey); if (cached) { setHabits(cached.value.habits); setLogs(cached.value.logs); setNotes(cached.value.notes || []); } try { const [habitResult, noteResult] = await Promise.all([withTimeout<any>(client.habit.range.get({ query: { from: isoDay(days[0]), to: isoDay(days[6]) }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT), withTimeout<any>(client.life.notes.get({ query: { from: isoDay(days[0]), to: isoDay(days[6]) }, headers: headersWithAuth() }) as Promise<any>, READ_TIMEOUT)]); if (habitResult.data && typeof habitResult.data !== 'string') { const cloud = { habits: habitResult.data.habits as Habit[], logs: habitResult.data.logs as Log[], notes: Array.isArray(noteResult.data) ? noteResult.data as DailyNote[] : [] }; const next = await mergePendingHabitData(cloud, cached?.value || null); setHabits(next.habits); setLogs(next.logs); setNotes(next.notes); await setCached(cacheKey, next); } } catch {} };
-  useEffect(() => { void load(); const handler = () => void load(); window.addEventListener(CLOUD_REFRESH_EVENT, handler); return () => window.removeEventListener(CLOUD_REFRESH_EVENT, handler); }, [weekStart.getTime()]);
-  useEffect(() => { setNoteDraft(notes.find(note => note.date === selectedDate)?.content || ''); }, [selectedDate, notes]);
-  const persist = (nextHabits = habits, nextLogs = logs, nextNotes = notes) => setCached(cacheKey, { habits: nextHabits, logs: nextLogs, notes: nextNotes });
-  const create = async () => {
-    const ownerId = accountIdFromToken(getCookie('token'));
-    if (!ownerId || !name.trim() || busy) return;
+  const from = isoDay(days[0]), to = isoDay(days[6]);
+  const cacheKey = `life:habits:${from}:${to}`;
+  const revision = useRef(0);
+  const hydrated = useRef(false);
+  const saving = useRef(false);
+  const deferredRefresh = useRef(false);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    const load = async () => {
+      if (saving.current) { deferredRefresh.current = true; return; }
+      const version = ++revision.current;
+      const token = getCookie('token');
+      const current = () => mounted.current && version === revision.current && getCookie('token') === token &&
+        accountIdFromToken(token) === ownerId;
+      const inWeek = (item: { date: string }) => item.date >= from && item.date <= to;
+      const apply = (next: HabitWeekData) => {
+        if (!current()) return;
+        hydrated.current = true;
+        setData({ ...next, logs: next.logs.filter(inWeek), notes: next.notes.filter(inWeek) });
+        setError('');
+      };
+      try {
+        const [cached, before] = await Promise.all([
+          getCached<HabitWeekData>(cacheKey, ownerId).catch(() => null),
+          getSyncQueue(ownerId).catch(() => []),
+        ]);
+        if (!current()) return;
+        if (!hydrated.current && cached) {
+          const snapshot = { ...cached.value, notes: cached.value.notes || [] };
+          apply(await mergePendingHabitData(snapshot, snapshot, ownerId, before).catch(() => snapshot));
+        }
+        if (!current()) return;
+        const query = new URLSearchParams({ from, to });
+        const [week, noteResult] = await Promise.all([
+          lifeApi<Pick<HabitWeekData, 'habits' | 'logs'>>(`/habit/range?${query}`),
+          lifeApi<DailyNote[]>(`/life/notes?${query}`).catch(() => null),
+        ]);
+        if (!current()) return;
+        if (!Array.isArray(week?.habits) || !Array.isArray(week?.logs)) throw new Error('无效的习惯列表');
+        const after = await getSyncQueue(ownerId).catch(() => []);
+        // A sync can acknowledge a write while this read is still in flight.
+        const pending = [...new Map([...before, ...after].map(item => [item.id, item])).values()];
+        const next = await mergePendingHabitData({
+          ...week, notes: Array.isArray(noteResult) ? noteResult : cached?.value.notes ?? [],
+        }, cached?.value ?? null, ownerId, pending);
+        if (!current()) return;
+        const snapshot = { ...next, logs: next.logs.filter(inWeek), notes: next.notes.filter(inWeek) };
+        apply(snapshot);
+        await setCached(cacheKey, snapshot, ownerId);
+      } catch {
+        if (current() && !hydrated.current) setError('习惯暂时无法读取，请连接网络后重试。');
+      }
+    };
+    const handler = () => { void load(); };
+    void load();
+    const protectPendingSave = (event: BeforeUnloadEvent) => {
+      if (saving.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener(CLOUD_REFRESH_EVENT, handler);
+    window.addEventListener('beforeunload', protectPendingSave);
+    return () => {
+      mounted.current = false;
+      revision.current++;
+      window.removeEventListener(CLOUD_REFRESH_EVENT, handler);
+      window.removeEventListener('beforeunload', protectPendingSave);
+    };
+  }, [cacheKey, from, to, ownerId]);
+
+  const selectedNote = notes.find(note => note.date === selectedDate)?.content ?? '';
+  useEffect(() => { setNoteDraft(selectedNote); }, [selectedDate, selectedNote]);
+
+  const save = async (
+    entity: 'habit' | 'note', action: string, payload: unknown, next: HabitWeekData,
+    calendar?: { date: string; update: (value: CalendarData) => CalendarData },
+  ) => {
+    if (!data || saving.current || accountIdFromToken(getCookie('token')) !== ownerId) return false;
+    const token = getCookie('token');
+    const current = () => mounted.current && getCookie('token') === token;
+    saving.current = true;
+    revision.current++;
     setBusy(true);
+    setError('');
+    try {
+      await enqueueMutation(entity, action, payload, ownerId, {
+        key: cacheKey, value: next,
+        related: calendar && { key: `life:calendar:${calendar.date.slice(0, 7)}`, update: calendar.update },
+      });
+      if (!current()) return false;
+      setData(next);
+      return true;
+    } catch {
+      if (current()) setError('本机保存失败，请保留页面并重试。');
+      return false;
+    } finally {
+      saving.current = false;
+      if (current()) {
+        setBusy(false);
+        if (deferredRefresh.current) {
+          deferredRefresh.current = false;
+          window.dispatchEvent(new CustomEvent(CLOUD_REFRESH_EVENT));
+        }
+      }
+    }
+  };
+
+  const create = async () => {
+    if (!name.trim()) return;
     const localId = -Date.now(), clientKey = crypto.randomUUID();
     const local: Habit = { id: localId, name: name.trim(), description: '', color: '#e11d62', active: 1, clientKey };
-    const nextHabits = [local, ...habits], payload = { localId, name: local.name, clientKey };
-    setHabits(nextHabits); setName('');
-    try {
-      await createForAccount({ownerId, entity:'habit', payload, persist:()=>persist(nextHabits),
-        send:()=>lifeApi<{insertedId:number}>('/habit',{method:'POST',body:JSON.stringify({name:local.name,clientKey})}),
-        apply:async data=>{
-          if (!data?.insertedId) throw new Error('sync failed');
-          await rememberLocalId('life:habit-id-map',localId,data.insertedId,ownerId);
-          assertCurrentAccount(ownerId);
-          const mapped=nextHabits.map(item=>item.id===localId?{...item,id:data.insertedId}:item);
-          setHabits(mapped); await persist(mapped);
-        }});
-    } catch { if (accountIdFromToken(getCookie('token')) === ownerId) window.alert('本地保存未完成，请保留页面并复制当前新建内容'); }
-    finally { setBusy(false); }
+    if (await save('habit', 'create', { localId, name: local.name, clientKey }, { habits: [local, ...habits], logs, notes })) setName('');
   };
-  const updateHabit = async (habit: Habit, patch: { name?: string; description?: string; active?: boolean }) => { const nextHabits = habits.map(item => item.id === habit.id ? { ...item, ...patch, active: patch.active === undefined ? item.active : patch.active ? 1 : 0 } : item); setHabits(nextHabits); void persist(nextHabits); try { const id = await resolveHabitId(habit.id); await lifeApi(`/habit/${id}`, { method: 'POST', body: JSON.stringify(patch) }); } catch { await enqueueMutation('habit', patch.active === false ? 'archive' : 'update', { id: habit.id, patch }); } };
-  const removeHabit = async (habit: Habit) => { if (!window.confirm(`永久删除「${habit.name}」及其过往打卡记录？`)) return; const nextHabits = habits.filter(item => item.id !== habit.id); const nextLogs = logs.filter(log => log.habitId !== habit.id); setHabits(nextHabits); setLogs(nextLogs); setEditing(null); await persist(nextHabits, nextLogs); try { const id = await resolveHabitId(habit.id); await lifeApi(`/habit/${id}`, { method: 'DELETE' }); } catch { await enqueueMutation('habit', 'delete', { id: habit.id }); } };
-  const toggle = async (habitId: number, date: string) => { setSelectedDate(date); const completed = logs.some(log => log.habitId === habitId && log.date === date && log.completed); const nextLogs = completed ? logs.map(log => log.habitId === habitId && log.date === date ? { ...log, completed: 0 } : log) : [...logs.filter(log => !(log.habitId === habitId && log.date === date)), { habitId, date, completed: 1 }]; setLogs(nextLogs); void persist(habits, nextLogs); void patchCalendarCache(date, value => ({ ...value, habits, logs: nextLogs })); const payload = { id: habitId, date, completed: !completed }; try { const id = await resolveHabitId(habitId); await lifeApi(`/habit/${id}/toggle`, { method: 'POST', body: JSON.stringify({ date, completed: !completed }) }); } catch { await enqueueMutation('habit', 'toggle', payload); } };
-  const saveNote = async () => { const updatedAt = new Date().toISOString(); const note: DailyNote = { date: selectedDate, content: noteDraft.trim(), updatedAt }; const nextNotes = [...notes.filter(item => item.date !== selectedDate), note]; setNotes(nextNotes); await persist(habits, logs, nextNotes); await patchCalendarCache(selectedDate, value => ({ ...value, notes: [...(value.notes || []).filter(item => item.date !== selectedDate), note] })); try { await lifeApi(`/life/notes/${selectedDate}`, { method: 'POST', body: JSON.stringify({ content: note.content, updatedAt }) }); } catch { await enqueueMutation('note', 'save', note); } };
-  const removeNote = async () => { if (!noteDraft.trim() || !window.confirm(`清除 ${selectedDate} 的当天记录？`)) return; const nextNotes = notes.filter(item => item.date !== selectedDate); setNotes(nextNotes); setNoteDraft(''); await persist(habits, logs, nextNotes); await patchCalendarCache(selectedDate, value => ({ ...value, notes: (value.notes || []).filter(item => item.date !== selectedDate) })); try { await lifeApi(`/life/notes/${selectedDate}`, { method: 'DELETE' }); } catch { await enqueueMutation('note', 'delete', { date: selectedDate }); } };
+  const updateHabit = async (habit: Habit, patch: { name: string; description: string; active?: boolean }) => {
+    const next = habits.map(item => item.id === habit.id
+      ? { ...item, name: patch.name, description: patch.description, active: patch.active === false ? 0 : item.active }
+      : item);
+    if (await save('habit', patch.active === false ? 'archive' : 'update', { id: habit.id, patch }, { habits: next, logs, notes })) setEditing(null);
+  };
+  const removeHabit = async (habit: Habit) => {
+    if (!window.confirm(`永久删除「${habit.name}」及其过往打卡记录？`)) return;
+    const next = { habits: habits.filter(item => item.id !== habit.id), logs: logs.filter(log => log.habitId !== habit.id), notes };
+    if (await save('habit', 'delete', { id: habit.id }, next)) setEditing(null);
+  };
+  const toggle = async (habitId: number, date: string) => {
+    const match = (log: Log) => log.habitId === habitId && log.date === date;
+    const completed = !logs.some(log => match(log) && log.completed);
+    const nextLog = { habitId, date, completed: Number(completed) };
+    const next = { habits, logs: [...logs.filter(log => !match(log)), nextLog], notes };
+    if (await save('habit', 'toggle', { id: habitId, date, completed }, next, {
+      date, update: value => ({ ...value, logs: [...value.logs.filter(log => !match(log)), nextLog] }),
+    })) setSelectedDate(date);
+  };
+  const saveNote = async () => {
+    const note: DailyNote = { date: selectedDate, content: noteDraft.trim(), updatedAt: new Date().toISOString() };
+    const replaceNote = (existing: DailyNote[]) => [...existing.filter(item => item.date !== selectedDate), note];
+    await save('note', 'save', note, { habits, logs, notes: replaceNote(notes) }, {
+      date: selectedDate, update: value => ({ ...value, notes: replaceNote(value.notes || []) }),
+    });
+  };
+  const removeNote = async () => {
+    if (!noteDraft.trim() || !window.confirm(`清除 ${selectedDate} 的当天记录？`)) return;
+    const withoutNote = (existing: DailyNote[]) => existing.filter(item => item.date !== selectedDate);
+    if (await save('note', 'delete', { date: selectedDate }, { habits, logs, notes: withoutNote(notes) }, {
+      date: selectedDate, update: value => ({ ...value, notes: withoutNote(value.notes || []) }),
+    })) setNoteDraft('');
+  };
   const activeHabits = habits.filter(habit => habit.active);
-  return <LifeLayout section="habits" title="习惯"><div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(mondayOf())}>本周</button><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => { const date = isoDay(day); return <button key={date} className={selectedDate === date ? 'selected' : ''} onClick={() => setSelectedDate(date)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></button>; })}</div>{activeHabits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small><button className="habit-edit-button" onClick={() => setEditing(habit)} title="编辑习惯"><i className="ri-edit-line" /></button></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} onClick={() => toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} placeholder="添加一个想长期坚持的习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create} disabled={busy}>添加</button></div><section className="daily-note"><div><small>DAILY NOTE</small><strong>{selectedDate}</strong></div><textarea value={noteDraft} maxLength={2000} placeholder="今天做了什么 / 有什么想记下来……" onChange={event => setNoteDraft(event.target.value)} /><div className="daily-note-actions"><button className="secondary" disabled={!noteDraft.trim()} onClick={() => void removeNote()}>清除</button><button onClick={saveNote}>保存当天记录</button></div></section>{editing && <HabitEditor habit={editing} onClose={() => setEditing(null)} onDelete={() => void removeHabit(editing)} onSave={patch => { void updateHabit(editing, patch); setEditing(null); }} />}</LifeLayout>;
+  return <LifeLayout section="habits" title="习惯">{error && <p role="status">{error}</p>}<div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(mondayOf())}>本周</button><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => { const date = isoDay(day); return <button key={date} className={selectedDate === date ? 'selected' : ''} onClick={() => setSelectedDate(date)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></button>; })}</div>{activeHabits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small><button className="habit-edit-button" onClick={() => setEditing(habit)} title="编辑习惯"><i className="ri-edit-line" /></button></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} disabled={busy} onClick={() => void toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} maxLength={80} placeholder="添加习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create} disabled={busy || !data}>添加</button></div><section className="daily-note"><div><small>DAILY NOTE</small><strong>{selectedDate}</strong></div><textarea value={noteDraft} maxLength={2000} placeholder="今天做了什么 / 有什么想记下来……" onChange={event => setNoteDraft(event.target.value)} /><div className="daily-note-actions"><button className="secondary" disabled={busy || !data || !noteDraft.trim()} onClick={() => void removeNote()}>清除</button><button disabled={busy || !data} onClick={saveNote}>保存当天记录</button></div></section>{editing && <HabitEditor habit={editing} onClose={() => setEditing(null)} onDelete={() => void removeHabit(editing)} onSave={patch => void updateHabit(editing, patch)} />}</LifeLayout>;
 }
 
 function HabitEditor({ habit, onClose, onSave, onDelete }: { habit: Habit; onClose: () => void; onSave: (patch: { name: string; description: string; active?: boolean }) => void; onDelete: () => void }) {
@@ -52,8 +183,8 @@ function HabitEditor({ habit, onClose, onSave, onDelete }: { habit: Habit; onClo
 
 export async function patchCalendarCache(date: string, update: (value: CalendarData) => CalendarData, expectedOwnerId?: number) {
   assertCurrentAccount(expectedOwnerId);
-  const key = `life:calendar:${date.slice(0, 7)}`; const cached = await getCached<CalendarData>(key);
+  const key = `life:calendar:${date.slice(0, 7)}`; const cached = await getCached<CalendarData>(key, expectedOwnerId);
   assertCurrentAccount(expectedOwnerId);
-  if (cached) await setCached(key, update(cached.value));
+  if (cached) await setCached(key, update(cached.value), expectedOwnerId);
   assertCurrentAccount(expectedOwnerId);
 }

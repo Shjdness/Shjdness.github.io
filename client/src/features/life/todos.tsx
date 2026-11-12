@@ -42,9 +42,7 @@ function useTodos() {
     // Persist both the snapshot and the mutation before relying on the network.
     jobs.current.push(async () => {
       if (!ownerId.current || accountIdFromToken(getCookie('token')) !== ownerId.current) throw new Error('Account changed');
-      await setCached(CACHE_KEY, next);
-      if (accountIdFromToken(getCookie('token')) !== ownerId.current) throw new Error('Account changed');
-      await enqueueMutation('todo', action, payload);
+      await enqueueMutation('todo', action, payload, ownerId.current, { key: CACHE_KEY, value: next });
     });
     void drain();
   };
@@ -55,13 +53,16 @@ function useTodos() {
     const load = async () => {
       const thisRequest = ++request;
       const startedRevision = revision.current;
-      const canApply = () => active && request === thisRequest && revision.current === startedRevision && !jobs.current.length;
+      const token = getCookie('token');
+      const owner = ownerId.current;
+      if (!owner || accountIdFromToken(token) !== owner) return;
+      const canApply = () => active && getCookie('token') === token && request === thisRequest && revision.current === startedRevision && !jobs.current.length;
       try {
-        const cached = await getCached<LifeTodo[]>(CACHE_KEY);
+        const cached = await getCached<LifeTodo[]>(CACHE_KEY, owner);
         if (cached && canApply()) { current.current = cached.value; setItems(cached.value); setLoading(false); }
         const cloud = await lifeApi<LifeTodo[]>('/life/todos');
-        if (Array.isArray(cloud) && canApply() && !(await getSyncQueue()).some(item => item.entity === 'todo') && canApply()) {
-          current.current = cloud; setItems(cloud); await setCached(CACHE_KEY, cloud);
+        if (Array.isArray(cloud) && canApply() && !(await getSyncQueue(owner)).some(item => item.entity === 'todo') && canApply()) {
+          current.current = cloud; setItems(cloud); await setCached(CACHE_KEY, cloud, owner);
         }
       } catch { /* Cached records and queued changes remain available offline. */ }
       finally { if (active) setLoading(false); }

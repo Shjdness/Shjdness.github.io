@@ -42,7 +42,7 @@ export function LifeSyncStatus() {
     else setStatus(queue.length || !verified.current ? 'pending' : 'synced');
   };
   const sync = async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || !accountId || accountIdFromToken(getCookie('token')) !== accountId) return;
     if(currentWritePause()>Date.now()) {setStatus('paused');await refresh();return;}
     if (!navigator.onLine) { setStatus('offline'); await refresh(); return; }
     inFlight.current = true;
@@ -74,6 +74,10 @@ export function LifeSyncStatus() {
     } finally {
       inFlight.current = false;
       void refresh();
+      // A local write can land after the drain but during the cloud read.
+      if (verified.current) void getSyncQueue(accountId).then(queue => {
+        if (queue.length && accountIdFromToken(getCookie('token')) === accountId) void sync();
+      }).catch(() => {});
     }
   };
   useEffect(() => {
