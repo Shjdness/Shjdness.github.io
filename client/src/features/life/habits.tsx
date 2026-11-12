@@ -1,27 +1,34 @@
+import { useSearch } from 'wouter';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { accountIdFromToken, enqueueMutation, getCached, setCached, getSyncQueue } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
-import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, mondayOf, type CalendarData, type DailyNote, type Habit, type Log } from './model';
+import { addDays, CLOUD_REFRESH_EVENT, isoDay, isoDayParam, lifeApi, mondayOf, type CalendarData, type DailyNote, type Habit, type Log } from './model';
 import { assertCurrentAccount, mergePendingHabitData } from './sync';
 import { LifeLayout } from './layout';
 
 type HabitWeekData = { habits: Habit[]; logs: Log[]; notes: DailyNote[] };
 
 export function HabitView() {
-  const [weekStart, setWeekStart] = useState(mondayOf());
-  const ownerId = accountIdFromToken(getCookie('token'));
-  return ownerId ? <HabitWeek key={`${ownerId}:${isoDay(weekStart)}`} {...{ ownerId, weekStart, setWeekStart }} /> : null;
+  const noteDate = isoDayParam(new URLSearchParams(useSearch()).get('note'));
+  return <HabitWeekNavigation key={noteDate ?? 'current'} noteDate={noteDate} />;
 }
 
-function HabitWeek({ ownerId, weekStart, setWeekStart }: {
-  ownerId: number; weekStart: Date; setWeekStart: (date: Date) => void;
+function HabitWeekNavigation({ noteDate }: { noteDate?: string }) {
+  const [weekStart, setWeekStart] = useState(() => mondayOf(noteDate ? new Date(noteDate + 'T12:00:00') : new Date()));
+  const ownerId = accountIdFromToken(getCookie('token'));
+  return ownerId ? <HabitWeek key={`${ownerId}:${isoDay(weekStart)}`} {...{ ownerId, weekStart, setWeekStart, noteDate }} /> : null;
+}
+
+function HabitWeek({ ownerId, weekStart, setWeekStart, noteDate }: {
+  ownerId: number; weekStart: Date; setWeekStart: (date: Date) => void; noteDate?: string;
 }) {
   const [data, setData] = useState<HabitWeekData | null>(null);
   const { habits, logs, notes } = data ?? { habits: [], logs: [], notes: [] };
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [selectedDate, setSelectedDate] = useState(isoDay());
+  const requestedNote = noteDate && noteDate >= isoDay(weekStart) && noteDate <= isoDay(addDays(weekStart, 6)) ? noteDate : undefined;
+  const [selectedDate, setSelectedDate] = useState(requestedNote ?? isoDay());
   const [noteDraft, setNoteDraft] = useState('');
   const [editing, setEditing] = useState<Habit | null>(null);
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
@@ -173,7 +180,7 @@ function HabitWeek({ ownerId, weekStart, setWeekStart }: {
     })) setNoteDraft('');
   };
   const activeHabits = habits.filter(habit => habit.active);
-  return <LifeLayout section="habits" title="习惯">{error && <p role="status">{error}</p>}<div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(mondayOf())}>本周</button><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => { const date = isoDay(day); return <button key={date} className={selectedDate === date ? 'selected' : ''} onClick={() => setSelectedDate(date)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></button>; })}</div>{activeHabits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small><button className="habit-edit-button" onClick={() => setEditing(habit)} title="编辑习惯"><i className="ri-edit-line" /></button></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} disabled={busy} onClick={() => void toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} maxLength={80} placeholder="添加习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create} disabled={busy || !data}>添加</button></div><section className="daily-note"><div><small>DAILY NOTE</small><strong>{selectedDate}</strong></div><textarea value={noteDraft} maxLength={2000} placeholder="今天做了什么 / 有什么想记下来……" onChange={event => setNoteDraft(event.target.value)} /><div className="daily-note-actions"><button className="secondary" disabled={busy || !data || !noteDraft.trim()} onClick={() => void removeNote()}>清除</button><button disabled={busy || !data} onClick={saveNote}>保存当天记录</button></div></section>{editing && <HabitEditor habit={editing} onClose={() => setEditing(null)} onDelete={() => void removeHabit(editing)} onSave={patch => void updateHabit(editing, patch)} />}</LifeLayout>;
+  return <LifeLayout section="habits" title="习惯">{error && <p role="status">{error}</p>}<div className="habit-week-tools"><button onClick={() => setWeekStart(addDays(weekStart, -7))}><i className="ri-arrow-left-line" /> 上一周</button><strong>{isoDay(days[0])} — {isoDay(days[6])}</strong><button onClick={() => setWeekStart(mondayOf())}>本周</button><button onClick={() => setWeekStart(addDays(weekStart, 7))}>下一周 <i className="ri-arrow-right-line" /></button></div><div className="habit-week" role="grid"><div className="habit-week-head"><span>习惯</span>{days.map(day => { const date = isoDay(day); return <button key={date} className={selectedDate === date ? 'selected' : ''} onClick={() => setSelectedDate(date)}><b>{['日','一','二','三','四','五','六'][day.getDay()]}</b><small>{day.getDate()}</small></button>; })}</div>{activeHabits.map(habit => <div className="habit-week-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.description}</small><button className="habit-edit-button" onClick={() => setEditing(habit)} title="编辑习惯"><i className="ri-edit-line" /></button></span>{days.map(day => { const date = isoDay(day); const done = logs.some(log => log.habitId === habit.id && log.date === date && log.completed); return <button key={date} className={done ? 'done' : ''} aria-label={`${habit.name} ${date} ${done ? '已完成' : '未完成'}`} disabled={busy} onClick={() => void toggle(habit.id, date)}><i className={done ? 'ri-check-line' : ''} /></button>; })}</div>)}</div><div className="life-add"><input value={name} maxLength={80} placeholder="添加习惯" onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void create(); }} /><button onClick={create} disabled={busy || !data}>添加</button></div><details className="daily-note" open={requestedNote ? true : undefined}><summary>当天便签 · {selectedDate}</summary><textarea value={noteDraft} maxLength={2000} placeholder="今天做了什么 / 有什么想记下来……" onChange={event => setNoteDraft(event.target.value)} /><div className="daily-note-actions"><button className="secondary" disabled={busy || !data || !noteDraft.trim()} onClick={() => void removeNote()}>清除</button><button disabled={busy || !data} onClick={saveNote}>保存当天记录</button></div></details>{editing && <HabitEditor habit={editing} onClose={() => setEditing(null)} onDelete={() => void removeHabit(editing)} onSave={patch => void updateHabit(editing, patch)} />}</LifeLayout>;
 }
 
 function HabitEditor({ habit, onClose, onSave, onDelete }: { habit: Habit; onClose: () => void; onSave: (patch: { name: string; description: string; active?: boolean }) => void; onDelete: () => void }) {

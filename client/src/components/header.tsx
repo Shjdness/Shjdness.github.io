@@ -64,16 +64,13 @@ function NavBar() {
                 <NavItem title="文章" selected={isArticle||(mobile&&location==='/blog')} href="/blog/articles" />
                 <NavItem title="日记" selected={location === '/blog/diary'} href="/blog/diary" />
                 <NavItem when={profile?.canWrite === true} title="备忘录" selected={location === '/blog/memos'} href="/blog/memos" />
-                <NavItem mobile={false} when={profile?.canWrite === true} title="草稿" selected={location === '/blog/drafts'} href="/blog/drafts" />
-                <NavItem when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing')} href="/blog/writing" />
+                <NavItem when={profile?.canWrite === true} title="写作" selected={location.startsWith('/blog/writing') || location === '/blog/drafts'} href="/blog/writing" />
             </>}
             {isLife && <>
                 <NavItem mobile={false} title="总览" selected={location === '/life'} href="/life" />
                 <NavItem title="待办" selected={location === "/life/todos"||(mobile&&location==='/life')} href="/life/todos" />
                 <NavItem title="习惯" selected={location === '/life/habits'} href="/life/habits" />
-                <NavItem title="日历" selected={location === '/life/calendar'} href="/life/calendar" />
-                <NavItem mobile={false} title="年历" selected={location === '/life/year'} href="/life/year" />
-                <NavItem mobile={false} title="番茄钟" selected={location === '/life/pomodoro'} href="/life/pomodoro" />
+                <NavItem title="日历" selected={location === '/life/calendar' || location === '/life/year'} href="/life/calendar" />
                 <NavItem title="RSS" selected={location === '/life/rss'} href="/life/rss" />
             </>}
         </>

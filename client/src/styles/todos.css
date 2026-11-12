@@ -2,7 +2,7 @@
 .todo-workspace { margin-top:1.6rem; min-width:0; }
 .todo-workspace-tools { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.2rem; color:var(--ink-muted); font-size:.78rem; }
 .todo-workspace-tools input { min-width:0; width:min(100%,16rem); flex:none; padding:.7rem .9rem; border:1px solid var(--surface-edge); border-radius:999px; background:var(--surface-input); color:var(--ink); }
-.todo-columns { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; align-items:start; }
+.todo-columns { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; align-items:start; }
 .todo-column { min-width:0; padding:1rem; border:1px solid var(--surface-edge); border-radius:1.2rem; background:var(--surface-inner); }
 .todo-column > header > div { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
 .todo-column h2 { font-size:1.04rem; font-weight:800; }
@@ -38,16 +38,13 @@
 .todo-empty { padding:1rem .2rem; font-size:.8rem; color:var(--ink-muted); line-height:1.7; }
 .todo-save-error { padding:.8rem; margin-bottom:1rem; border:1px solid var(--accent); border-radius:.75rem; color:var(--ink); font-size:.8rem; }
 .todo-save-error button { margin-left:.6rem; text-decoration:underline; }
-.todo-workspace-tabs { display:none; }
 .todo-compact-compose,.life-home-todos .todo-compact-compose { grid-template-columns:minmax(0,1fr) auto; }
 @media (max-width:1399px) { .todo-columns { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:700px) {
   .todo-columns { grid-template-columns:minmax(0,1fr); }
-  .todo-column[data-active="false"] { display:none; }
   .todo-workspace-tools { align-items:stretch; flex-direction:column; gap:.7rem; }
   .todo-workspace-tools input { width:100%; }
-  .todo-workspace-tabs { display:flex; gap:.35rem; overflow-x:auto; margin:0 0 .8rem; padding:.3rem 0; }
-  .todo-workspace-tabs button { flex:none; padding:.5rem .65rem; border:1px solid var(--surface-edge); border-radius:999px; color:var(--ink-muted); font-size:.75rem; }
-  .todo-workspace-tabs button[aria-pressed="true"] { color:var(--accent); background:rgb(225 29 98 / .1); }
-  .todo-workspace-tabs button span { margin-left:.4rem; font-size:.65rem; }
 }
+
+.todo-columns > .todo-column--task { grid-column:1/-1; }
+.todo-workspace-tools button { padding:.55rem .8rem; border:1px solid var(--surface-edge); border-radius:.7rem; color:var(--ink); }

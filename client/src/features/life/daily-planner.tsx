@@ -1,23 +1,22 @@
 import {useEffect,useRef,useState} from 'react';
 import {getCookie} from 'typescript-cookie';
 import {accountIdFromToken,enqueueMutation,getCached,getSyncQueue,setCached} from '../../data/local-first';
-import {CLOUD_REFRESH_EVENT,lifeApi,type DailyBasic,type LifeTodo} from './model';
+import {CLOUD_REFRESH_EVENT,lifeApi,shanghaiDay,type DailyBasic,type LifeTodo} from './model';
 import {assertCurrentAccount,createForAccount,mergePendingBasics,normalizeBasics,rememberLocalId,resolveBasicId} from './sync';
 import {patchCalendarCache} from './habits';
 
-export function DailyBasicsPlanner({fixedDate}:{fixedDate?:string}){
+export function DailyBasicsPlanner({initialDate}:{initialDate?:string}){
  const owner=accountIdFromToken(getCookie('token'));
- return owner?<PlannerOwner key={owner} owner={owner} fixedDate={fixedDate}/>:null;
+ return owner?<PlannerOwner key={`${owner}:${initialDate??''}`} owner={owner} initialDate={initialDate}/>:null;
 }
-const shanghaiDay=()=>new Date(Date.now()+8*3600000).toISOString().slice(0,10);
-function PlannerOwner({owner,fixedDate}:{owner:number;fixedDate?:string}){
- const [offset,setOffset]=useState(0),[today,setToday]=useState(shanghaiDay),[drafts,setDrafts]=useState<Record<string,string>>({});
+function PlannerOwner({owner,initialDate}:{owner:number;initialDate?:string}){
+ const [selected,setSelected]=useState(initialDate),[today,setToday]=useState(shanghaiDay),[drafts,setDrafts]=useState<Record<string,string>>({});
  useEffect(()=>{const timer=window.setInterval(()=>setToday(shanghaiDay()),60000);return()=>window.clearInterval(timer);},[]);
- const days=[0,1,2].map(n=>new Date(Date.parse(today+'T00:00:00Z')+n*86400000).toISOString().slice(0,10)),date=fixedDate??days[offset];
+ const days=[0,1,2].map(n=>new Date(Date.parse(today+'T00:00:00Z')+n*86400000).toISOString().slice(0,10)),date=selected??today;
  // Per-date composer buffers survive tab changes; existing local/queued records
  // remain in their original account/date cache, never moved by merely browsing.
- return <section className="today-basics daily-planner"><header><div><small>DAILY PLAN</small><h2>每日三件事</h2></div></header>
-  {!fixedDate&&<nav aria-label="安排日期">{days.map((day,i)=><button key={day} aria-pressed={day===date} onClick={()=>setOffset(i)}>{['今天','明天','后天'][i]}</button>)}</nav>}
+ return <section className="today-basics daily-planner"><header><h2>每日三件事</h2></header>
+  <nav aria-label="安排日期">{days.map((day,i)=><button key={day} aria-pressed={day===date} onClick={()=>setSelected(i===0?undefined:day)}>{['今天','明天','后天'][i]}</button>)}</nav>
   <p className="daily-plan-date">{new Date(date+'T12:00:00Z').toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'long',day:'numeric',weekday:'long'})}（北京时间）</p>
   <PlanDay key={date} owner={owner} date={date} days={days} draft={drafts[date]??''} setDraft={value=>setDrafts(current=>({...current,[date]:value}))}/>
  </section>;

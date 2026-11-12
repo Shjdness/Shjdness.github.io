@@ -53,7 +53,7 @@ def main():
     before = api('/sync/report')
     if not before['backend'].get('measured'):
         raise RuntimeError('无法取得 D1 实际容量，本轮补录停止，避免失去容量保护')
-    sources = api('/sync/history-sources')['sources']
+    sources = api('/sync/history-sources?scope=pending')['sources']
     completed, failed, partial, total = 0, 0, 0, 0
     paused = False
     decisions = [(source, *classify(source)) for source in sources if source.get('status') != 'complete']

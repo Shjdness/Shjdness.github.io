@@ -97,7 +97,6 @@
 
 /* Phone-only feature selection. Desktop, routes, storage and permissions stay intact. */
 .mobile-life-nav { display:none; }
-.article-library { max-width:100%; }
 @media (max-width:767px) {
   .site-shell .mobile-secondary,
   .site-shell .life-home-side > .life-reports-entry,
@@ -107,6 +106,5 @@
   .site-header-nav .site-nav-link { flex:1 1 0; min-width:0; padding:.65rem .25rem; text-align:center; }
   .mobile-life-nav { display:flex; gap:.15rem; margin:.4rem 0; padding:.25rem; border-radius:1rem; background:var(--surface-inner); }
   .mobile-life-nav .site-nav-link { flex:1 1 0; min-width:0; padding:.65rem .25rem; text-align:center; }
-  .article-library { width:100%; max-width:100%; grid-template-columns:minmax(0,1fr); }
   .life-home-side .life-summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }

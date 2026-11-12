@@ -607,7 +607,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
         </div>
         <div className="w-full md:max-w-96 flex flex-col">
           {MetaInput({ className: "hidden md:block glass-panel bg-w rounded-2xl shadow-xl shadow-light p-4 mx-8" })}
-          <div className="writing-save-state">{saveState}</div>
+          <div className="writing-save-state">{saveState} <a href="/blog/drafts">草稿箱</a></div>
           {profile?.role === 'owner' && <button type="button" className="writing-restore-draft mx-8" onClick={restoreLegacy}>恢复旧版浏览器草稿</button>}
           {recordLoadFailed && !recordLoaded && <button type="button" className="writing-save-draft mx-8" onClick={() => setLoadAttempt(value => value + 1)}>重试载入原记录（保留本地修改）</button>}
           <div className="writing-actions mt-4 mx-8">

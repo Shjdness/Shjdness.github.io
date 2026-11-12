@@ -61,40 +61,36 @@ const featuredImages: GalleryImage[] = [
 
 export function GalleryPage() {
   const [remoteImages, setRemoteImages] = useState<GalleryImage[]>([])
-  const [loading, setLoading] = useState(true)
+  const [request, setRequest] = useState({ page: 0 })
+  const { page } = request
+  const [hasMore, setHasMore] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [backendUnavailable, setBackendUnavailable] = useState(false)
   const [openIndex, setOpenIndex] = useState(-1)
   const [selectedYear, setSelectedYear] = useState("all")
   const [selectedTag, setSelectedTag] = useState("all")
 
   useEffect(() => {
+    if (!page) return
     let cancelled = false
 
     async function loadGallery() {
       try {
-        const feeds: FeedSummary[] = []
-        let page = 1
-        let hasNext = true
-
-        while (hasNext) {
-          const { data } = await client.feed.get({
-            query: { page, limit: 50, type: "normal" },
-            headers: headersWithAuth(),
-          })
-
-          if (!data || typeof data === "string") break
-          feeds.push(...(data.data as FeedSummary[]))
-          hasNext = data.hasNext
-          page += 1
-        }
-
+        setLoading(true)
+        setBackendUnavailable(false)
+        const { data } = await client.feed.get({
+          query: { page, limit: 12, type: "normal", contentType: "normal" },
+          headers: headersWithAuth(),
+        })
+        if (!data || typeof data === "string") throw new Error("文章列表读取失败")
+        const feeds = data.data as FeedSummary[]
         const posts = await Promise.all(
           feeds.map(async (summary) => {
-            const { data } = await client.feed({ id: summary.id }).get({
+            const { data, error } = await client.feed({ id: summary.id }).get({
               headers: headersWithAuth(),
             })
 
-            if (!data || typeof data === "string") return []
+            if (!data || typeof data === "string") { if (Number(error?.status) === 404) return []; throw new Error("文章读取失败") }
             return extractImageUrls(data.content).map((src, order) => ({
               src,
               title: data.title || "未命名文章",
@@ -106,7 +102,10 @@ export function GalleryPage() {
           }),
         )
 
-        if (!cancelled) setRemoteImages(posts.flat())
+        if (!cancelled) {
+          setRemoteImages(previous => [...previous, ...posts.flat()])
+          setHasMore(data.hasNext)
+        }
       } catch {
         if (!cancelled) setBackendUnavailable(true)
       } finally {
@@ -118,7 +117,7 @@ export function GalleryPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [request])
 
   const images = useMemo(() => {
     const seen = new Set<string>()
@@ -171,12 +170,11 @@ export function GalleryPage() {
       <main className="gallery-page wauto mx-auto pb-12 ani-show">
         <div className="gallery-heading">
           <div>
-            <p className="gallery-kicker">VISUAL ARCHIVE</p>
-            <h1>影集 <span>Gallery</span></h1>
+            <h1>影集</h1>
           </div>
-          <Link href="/blog/timeline" className="gallery-back">
+          <Link href="/blog/articles" className="gallery-back">
             <i className="ri-arrow-left-line" aria-hidden="true" />
-            返回时间线
+            返回文章
           </Link>
         </div>
 
@@ -248,6 +246,10 @@ export function GalleryPage() {
             </div>
           )}
         </section>
+        {hasMore&&<button type="button" className="gallery-back" disabled={loading}
+          onClick={()=>{setLoading(true);setOpenIndex(-1);setRequest({page:backendUnavailable?page:page+1});}}>
+          {loading ? '读取中…' : backendUnavailable ? '重试读取文章图片' : page ? '继续载入文章图片' : '载入文章图片'}
+        </button>}
       </main>
 
       <Lightbox

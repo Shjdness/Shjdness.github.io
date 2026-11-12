@@ -27,6 +27,12 @@ export type LifeOverviewData = {
 
 export const mayAccessLife = (role?: string) => role === 'owner' || role === 'trusted';
 export const isoDay = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+export function isoDayParam(value: string | null): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+  const parsed = new Date(value);
+  if (Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value) return value;
+}
+export const shanghaiDay = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
 export const monthNow = () => isoDay().slice(0, 7);
 export const addDays = (date: Date, count: number) => { const next = new Date(date); next.setDate(next.getDate() + count); return next; };
 export const mondayOf = (date = new Date()) => { const next = new Date(date); const day = next.getDay() || 7; next.setDate(next.getDate() - day + 1); next.setHours(0, 0, 0, 0); return next; };

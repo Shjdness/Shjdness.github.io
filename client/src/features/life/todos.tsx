@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { getCookie } from 'typescript-cookie';
 import { accountIdFromToken, enqueueMutation, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { usePomodoro } from '../../state/pomodoro';
 import { LifeLayout } from './layout';
 import {DailyBasicsPlanner} from './daily-planner';
-import { CLOUD_REFRESH_EVENT, lifeApi, type LifeTodo, type TodoType } from './model';
+import { CLOUD_REFRESH_EVENT, isoDayParam, lifeApi, type LifeTodo, type TodoType } from './model';
 import { ACTION_WINDOW_MS, countdown, TODO_COLUMNS, todoColumn, todosInColumn } from './todo-workspace';
 
 type Patch = { content?: string; type?: TodoType; completed?: boolean; deadlineAt?: string | null; completedAt?: string | null; sortOrder?: number };
@@ -174,21 +174,21 @@ export function TodoBoard() {
 export function TodoView() {
   const store = useTodos();
   const now = useMinuteClock();
-  const [active, setActive] = useState<TodoType>('task');
+  const validDate = isoDayParam(new URLSearchParams(useSearch()).get('date'));
+  const [showOther, setShowOther] = useState(false);
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Partial<Record<TodoType, boolean>>>({});
   return <LifeLayout section="todos" title="待办与记录">
-    <DailyBasicsPlanner />
+    <DailyBasicsPlanner initialDate={validDate} />
     <div className="todo-workspace">
       <SaveError store={store} />
-      <div className="todo-workspace-tools"><span>72 小时从创建开始，超时后仍保留，供你继续推进或重新安排。</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索四栏内容" aria-label="搜索四栏内容" /></div>
-      <nav className="todo-workspace-tabs" aria-label="清单栏目">{TODO_COLUMNS.map(column => <button key={column.type} aria-pressed={active === column.type} onClick={() => setActive(column.type)}>{column.title}<span>{todosInColumn(store.items, column.type).length}</span></button>)}</nav>
-      <div className="todo-columns">{TODO_COLUMNS.map(column => {
+      <div className="todo-workspace-tools"><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索全部清单" aria-label="搜索全部清单" /><button type="button" aria-expanded={showOther || Boolean(query.trim())} onClick={() => setShowOther(open => !open)} disabled={Boolean(query.trim())}>构想、成功与每日执行</button></div>
+      <div className="todo-columns">{TODO_COLUMNS.filter(column => column.type === 'task' || showOther || query.trim()).map(column => {
         const items = todosInColumn(store.items, column.type, query);
         const searching = Boolean(query.trim());
         const showingAll = searching || Boolean(expanded[column.type]);
         const visible = showingAll ? items : items.slice(0, 5);
-        return <section key={column.type} className={`todo-column todo-column--${column.type}`} data-active={active === column.type} data-expanded={showingAll}>
+        return <section key={column.type} className={`todo-column todo-column--${column.type}`} data-expanded={showingAll}>
           <header><div><h2>{column.title}</h2><span>{todosInColumn(store.items, column.type).length}</span></div></header>
           <AddTodo type={column.type} store={store} />
           <div className="todo-entries" id={`todo-list-${column.type}`}>{visible.map(item => <TodoEntry key={item.id} item={item} store={store} now={now} />)}</div>

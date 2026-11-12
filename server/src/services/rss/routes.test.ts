@@ -74,6 +74,10 @@ describe('RSS routes and actual query composition',()=>{
     expect(state.status,await state.text()).toBe(200);
     const sources=await service.handle(new Request('http://localhost/rss/sync/history-sources',{headers}));
     expect(await sources.json()).toMatchObject({sources:expect.arrayContaining([expect.objectContaining({id:1,status:'complete',policy:'full'})])});
+    const probe=await service.handle(new Request('http://localhost/rss/sync/history-sources?scope=probe',{headers}));
+    expect(await probe.json()).toEqual({sources:[{status:'pending'}]});
+    const pending=await service.handle(new Request('http://localhost/rss/sync/history-sources?scope=pending',{headers}));
+    expect(await pending.json()).toMatchObject({sources:[{id:2,status:'pending',recent90:0}]});
     const report=await service.handle(new Request('http://localhost/rss/sync/report',{headers}));
     expect(await report.json()).toMatchObject({items:4,duplicates:{groups:0},flags:{read:1,starred:1}});
   });
@@ -82,6 +86,8 @@ describe('RSS routes and actual query composition',()=>{
     expect(capability.status).toBe(200); expect(await capability.json()).toMatchObject({version:3});
     const denied=await service.handle(new Request('http://localhost/rss/sync/history-sources'));
     expect(denied.status).toBe(401);
+    const probeDenied=await service.handle(new Request('http://localhost/rss/sync/history-sources?scope=probe'));
+    expect(probeDenied.status).toBe(401);
     const report=await service.handle(new Request('http://localhost/rss/sync/report',{headers:{authorization:'Bearer test-only-sync-token'}}));
     const reportText=await report.text();
     expect(report.status,reportText).toBe(200);

@@ -60,10 +60,10 @@ export function ReportMailSettings({ownerId,token}:{ownerId:number;token:string}
   });
   return <section className="life-report-explanation life-report-workspace life-report-mail" aria-labelledby="report-mail-title">
     <header><h2 id="report-mail-title">邮件提醒</h2><button type="button" disabled={busy} onClick={()=>void run(load)}>刷新邮件状态</button></header>
-    <p>先保存并验证邮箱，再明确启用。默认使用统计版；在下方单独允许完整明细后，邮件可包含计划与任务名称、选定打卡饮食作息及可分享的 AI 分析。不包含日记正文；打开本页不会触发验证或发送。</p>
-    {state&&!state.storageConfigured&&<p>邮件配置尚未就绪，当前无法保存新地址或发送邮件。</p>}
-    {state?.feedbackMode==='manual'&&<p>QQ 邮箱通道：服务已受理只表示 QQ 服务器接受提交，不代表收件箱已收到。此通道没有自动送达或退信回调，需查收邮件；未收到时先核对收件箱、垃圾箱及发件邮箱退信，可在这里暂停。</p>}
-    {state&&<p>收件地址：{state.maskedRecipient??(state.contactRevision?'配置暂不可读取':'尚未配置')} · {state.verified?'已验证':'未验证'} · {state.enabled?'提醒已启用':'提醒已关闭'}{state.pausedReason?' · 退信或收件人反馈后暂停':''}</p>}
+    {state&&<p>{state.maskedRecipient??'尚未配置收件邮箱'} · {state.verified?'已验证':'未验证'} · {state.enabled?'提醒已启用':'提醒已关闭'}{state.pausedReason?' · 投递暂停':''}</p>}
+    <p>最近报告：{labels[items.find(item=>item.kind!=='verification')?.state??'']??'暂无投递记录'}</p>
+    <details open={proof ? true : undefined}><summary>收件邮箱与提醒设置</summary>
+    {!state?.storageConfigured&&<p>邮件设置暂不可用。</p>}
     <form onSubmit={event=>{event.preventDefault();void save();}} className="life-report-mail-form">
       <label htmlFor="report-recipient">新的收件邮箱</label><input id="report-recipient" type="email" autoComplete="off" maxLength={254} value={email} disabled={busy||!state?.storageConfigured} onChange={event=>setEmail(event.target.value)} placeholder="输入邮箱，保存后仅显示掩码"/>
       <button disabled={busy||!state?.storageConfigured||!email.trim()}>保存地址</button>
@@ -74,6 +74,7 @@ export function ReportMailSettings({ownerId,token}:{ownerId:number;token:string}
     <p>验证链接只在本页内存中保留；如先登录或重新加载后验证码丢失，请再打开原邮件链接。邮箱验证不代表邮件已启用。</p>
     {!state?.enabled&&<label className="life-report-mail-consent"><input type="checkbox" checked={consent} disabled={busy||!state?.verified||!state.deliveryConfigured||Boolean(state.pausedReason)} onChange={event=>setConsent(event.target.checked)}/>我同意按已开启的日报/周报计划接收统计邮件，可随时暂停</label>}
     <div className="life-report-mail-actions"><button type="button" disabled={busy||!consent||!state?.verified||!state.deliveryConfigured||state.enabled||Boolean(state.pausedReason)} onClick={()=>void enable(true)}>启用邮件提醒</button><button type="button" disabled={busy||!state} onClick={()=>void enable(false)}>暂停邮件提醒</button></div>
+    </details>
     {message&&<p role="status">{message}</p>}
     <details><summary>最近投递状态</summary><p>服务受理、收件服务器接收与本人已读是不同状态；本站不跟踪已读。结果未知时不会自动重发。</p>{items.length?<ul>{items.map((item,index)=><li key={index}>{new Date(item.created_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})} · {item.kind==='verification'?'邮箱验证':'统计报告'} · {labels[item.state]??'状态待确认'}</li>)}</ul>:<p>暂无投递记录。</p>}</details>
   </section>;

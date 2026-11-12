@@ -85,7 +85,18 @@ export function RssView() {
     finally { if (current()) { setLoading(false); loadingMore.current=false; } }
   };
   useEffect(() => { setOffset(0); setSelectedItem(null); void load(); }, [filter, sourceId, selectedGroup, year, query]);
-  useEffect(() => { void (async () => { try { const remote = await lifeApi<Omit<RssStorage, 'local'>>('/rss/storage'); const local = await navigator.storage?.estimate?.(); setStorage({ ...remote, local: { usedBytes: local?.usage || 0, limitBytes: local?.quota || 0 } }); } catch { /* Storage information is informative and must not block the reader. */ } })(); }, []);
+  const [storageLoading,setStorageLoading]=useState(false);
+  const loadStorage=async()=>{
+    if(storage||storageLoading)return;
+    const token=getCookie('token');
+    setStorageLoading(true);
+    try {
+      const remote=await lifeApi<Omit<RssStorage,'local'>>('/rss/storage');
+      const local=await navigator.storage?.estimate?.();
+      if(getCookie('token')===token)setStorage({...remote,local:{usedBytes:local?.usage||0,limitBytes:local?.quota||0}});
+    } catch { /* A storage query must not interrupt reading. */ }
+    finally { if(getCookie('token')===token)setStorageLoading(false); }
+  };
 
   const updateItem = async (item: RssItem, patch: { read?: boolean; starred?: boolean }) => {
     const ownerId = accountIdFromToken(getCookie('token'));
@@ -177,7 +188,7 @@ export function RssView() {
             <button className={!selectedGroup && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(null); setSourceId(null); }}><i className="ri-folders-line" /><span>全部分组</span></button>
             {groupNames.map(group => { const sources = subscriptionsForView.filter(source => (source.category || '其他') === group); if (!sources.length) return null; const folded = !expandedGroups.has(group); return <section className="rss-source-group" key={group}><div className="rss-source-group-head"><button className={selectedGroup === group && !sourceId ? 'active' : ''} onClick={() => { setSelectedGroup(group); setSourceId(null); }}><strong>{group}</strong><b>{sources.length}</b></button><button aria-expanded={!folded} title={folded ? '展开' : '收起'} onClick={() => setExpandedGroups(current => { const next = new Set(current); next.has(group) ? next.delete(group) : next.add(group); return next; })}><i className={folded ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'} /></button></div>{!folded && sources.map(source => <div className="rss-source-row" key={source.id}><button className={sourceId === source.id ? 'active' : ''} onClick={() => { setSourceId(source.id); setSelectedGroup(group); }}><img src={source.favicon || '/favicon.png'} alt="" loading="lazy" /><span>{displayName(source)}</span></button><button title="来源设置" onClick={() => setEditingSource(source)}><i className="ri-more-2-fill" /></button></div>)}</section>; })}
           </section>
-          {storage && <section className="rss-sidebar-card rss-storage-card"><div className="rss-side-heading"><span>存储与同步</span></div><label><span>D1 整库实测 <b>{storage.backend.measured ? formatBytes(storage.backend.usedBytes) : '暂未取得'}</b></span></label><label><span>RSS 文字字段 <b>{formatBytes(storage.rssBytes)}</b></span></label>{storage.local?.limitBytes ? <label><span>本站本机缓存 <b>{formatBytes(storage.local.usedBytes)}</b></span></label> : null}<small>文字按 UTF-8 计量，不含行与索引开销。整库包含日记等其他数据；容量上限以 Cloudflare 套餐为准。图片、视频不入库。每天主动抓取一次，推送另行接收。</small>{storage.metrics?.length ? <details><summary>近 24 小时入库计量</summary>{storage.metrics.map(metric => <p key={metric.kind}>{metric.kind === 'history' ? '历史补录' : metric.kind === 'push' ? '推送' : '日常同步'}：新增 {metric.added}，更新 {metric.updated}，跳过 {metric.unchanged}；读 {metric.rowsRead} / 写 {metric.rowsWritten} 行{metric.kind === 'history' && metric.sizeBefore && metric.sizeAfter ? `；整库区间 ${formatBytes(metric.sizeBefore)} → ${formatBytes(metric.sizeAfter)}` : ''}</p>)}<small>仅计入库查询，不含监控记录、订阅元数据更新；并非账户总额度。</small></details> : null}</section>}
+          <details className="rss-sidebar-card rss-storage-card" onToggle={event=>{if(event.currentTarget.open)void loadStorage();}}><summary>存储与同步</summary>{!storage&&<button onClick={()=>void loadStorage()} disabled={storageLoading}>{storageLoading?"读取中…":"读取空间统计"}</button>}{storage&&<><label><span>D1 整库实测 <b>{storage.backend.measured ? formatBytes(storage.backend.usedBytes) : '暂未取得'}</b></span></label><label><span>RSS 文字字段 <b>{formatBytes(storage.rssBytes)}</b></span></label>{storage.local?.limitBytes ? <label><span>本站本机缓存 <b>{formatBytes(storage.local.usedBytes)}</b></span></label> : null}<small>文字按 UTF-8 计量，不含行与索引开销。整库包含日记等其他数据；容量上限以 Cloudflare 套餐为准。图片、视频不入库。每天主动抓取一次，推送另行接收。</small>{storage.metrics?.length ? <details><summary>近 24 小时入库计量</summary>{storage.metrics.map(metric => <p key={metric.kind}>{metric.kind === 'history' ? '历史补录' : metric.kind === 'push' ? '推送' : '日常同步'}：新增 {metric.added}，更新 {metric.updated}，跳过 {metric.unchanged}；读 {metric.rowsRead} / 写 {metric.rowsWritten} 行{metric.kind === 'history' && metric.sizeBefore && metric.sizeAfter ? `；整库区间 ${formatBytes(metric.sizeBefore)} → ${formatBytes(metric.sizeAfter)}` : ''}</p>)}<small>仅计入库查询，不含监控记录、订阅元数据更新；并非账户总额度。</small></details> : null}</>}</details>
         </div>
       </aside>
       <section className={`rss-main ${selectedItem ? 'is-reader is-video' : 'is-library'}`}>

@@ -1,4 +1,4 @@
-import {useContext,useEffect,useState} from 'react';
+import {useContext,useEffect,useRef,useState} from 'react';
 import {Link} from 'wouter';
 import {getCookie} from 'typescript-cookie';
 import {loadReportPreview,type LifeReportPreview} from './report-preview';
@@ -20,14 +20,20 @@ export function LifeReportsEntry(){
 
 export function LifeReportsView(){
   const profile=useContext(ProfileContext);
+  const token=getCookie('token');
+  const owner=profile?.role==='owner'&&accountIdFromToken(token)===profile.id ? profile.id : null;
+  return owner&&token?<ReportsForOwner key={token} owner={owner} token={token}/>:<LifeDenied/>;
+}
+
+function ReportsForOwner({owner,token}:{owner:number;token:string}){
+  const previewRequested=useRef(false);
+  const [previewEnabled,setPreviewEnabled]=useState(false);
   const [kind,setKind]=useState<'daily'|'weekly'>('daily');
   const [reload,setReload]=useState(0);
   const [result,setResult]=useState<{token:string;kind:string;report:LifeReportPreview}|null>(null);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(false);
   const [selected,setSelected]=useState<{token:string;report:LifeReportPreview}|null>(null);
-  const token=getCookie('token');
-  const owner=profile?.role==='owner'&&accountIdFromToken(token)===profile.id ? profile.id : null;
 
   useEffect(()=>{
     const refresh=()=>setReload(value=>value+1);
@@ -37,7 +43,7 @@ export function LifeReportsView(){
   },[]);
   useEffect(()=>{
     setResult(null);setError('');
-    if(!owner||!token){setLoading(false);return;}
+    if(!owner||!token||!previewEnabled){setLoading(false);return;}
     const controller=new AbortController();let active=true,timedOut=false;
     const timer=window.setTimeout(()=>{timedOut=true;controller.abort();},15000);
     setLoading(true);
@@ -50,15 +56,17 @@ export function LifeReportsView(){
       finally{window.clearTimeout(timer);if(current())setLoading(false);}
     })();
     return()=>{active=false;window.clearTimeout(timer);controller.abort();};
-  },[owner,token,kind,reload]);
+  },[owner,token,kind,reload,previewEnabled]);
 
-  if(!owner)return <LifeDenied/>;
+  const [advanced,setAdvanced]=useState(false);
+  const [legacyAI,setLegacyAI]=useState(false);
+  if(getCookie('token')!==token)return <LifeDenied/>;
   const historical=Boolean(selected&&selected.token===token);
   const report=selected&&selected.token===token?selected.report:result&&result.token===token&&result.kind===kind?result.report:null;
   return <LifeLayout section="reports" title="复盘与提醒">
     <div className="life-reports">
-      <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{setSelected(null);setReload(value=>value+1);}}>刷新统计</button><Link href="/life">返回 Life</Link></header>
-      <p className="life-reports-notice">{historical?'当前为已保存的历史统计快照，不随源记录变化。':'当前为统计预览，尚未保存为历史报告。'}AI 只分析单独允许的范围：统计数字或选定生活记录；邮件提醒需验证并单独启用，完整明细与自动 AI 分别授权。</p>
+      <header className="life-reports-toolbar"><nav aria-label="报告类型"><button type="button" aria-pressed={kind==='daily'&&!historical} onClick={()=>{previewRequested.current=true;setPreviewEnabled(true);setSelected(null);setKind('daily');}}>昨日日报</button><button type="button" aria-pressed={kind==='weekly'&&!historical} onClick={()=>{previewRequested.current=true;setPreviewEnabled(true);setSelected(null);setKind('weekly');}}>上周周报</button></nav><button type="button" disabled={loading} onClick={()=>{previewRequested.current=true;setPreviewEnabled(true);setSelected(null);setReload(value=>value+1);}}>预览最新统计</button><Link href="/life">返回 Life</Link></header>
+
       {loading&&!historical&&<p role="status">正在读取已同步记录…</p>}
       {error&&!historical&&<p role="alert">{error}</p>}
       {report&&<>
@@ -70,13 +78,17 @@ export function LifeReportsView(){
           <Metric value={report.daysWithNotes} label="有日历便签的天数" detail="只统计非空便签，不展示或分析正文"/>
           <Metric value={report.ideasCreated} label="新增未来构想" detail="按当前仍在构想栏的记录统计"/>
         </div>
-        <section className="life-report-explanation"><div><Link href="/life/todos">回到四栏工作台</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
+        <section className="life-report-explanation"><div><Link href="/life/todos">打开待办</Link><Link href="/life/pomodoro">开始一次专注</Link></div></section>
       </>}
-      <ReportWorkspace key={token} ownerId={owner} token={token!} kind={kind} historical={historical} onSelect={report=>setSelected({token:token!,report})}/>
-      <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token!}/>
-      <ReportBriefSettings key={'brief-'+token} ownerId={owner} token={token!}/>
-      <ReportAISettings key={'selected-ai-'+token} ownerId={owner} token={token!} selected/>
-      <details className="life-report-explanation"><summary>仅数字分析（兼容设置）</summary><ReportAISettings key={'auto-ai-'+token} ownerId={owner} token={token!}/></details>
+      <ReportWorkspace key={token} ownerId={owner} token={token} kind={kind} historical={historical} allowInitialSelection={()=>!previewRequested.current} onInitialHistoryRead={()=>setPreviewEnabled(true)} onSelect={report=>{previewRequested.current=true;setPreviewEnabled(false);setSelected({token,report});}}/>
+      <ReportMailSettings key={'mail-'+token} ownerId={owner} token={token}/>
+      <details className="life-report-explanation" onToggle={event=>{setAdvanced(event.currentTarget.open);if(!event.currentTarget.open)setLegacyAI(false);}}><summary>邮件内容与 AI 设置</summary>
+        {advanced&&<>
+          <ReportBriefSettings key={'brief-'+token} ownerId={owner} token={token}/>
+          <ReportAISettings key={'selected-ai-'+token} ownerId={owner} token={token} selected/>
+          <details onToggle={event=>setLegacyAI(event.currentTarget.open)}><summary>兼容数字 AI 设置</summary>{legacyAI&&<ReportAISettings key={'auto-ai-'+token} ownerId={owner} token={token}/>}</details>
+        </>}
+      </details>
       <details className="life-report-explanation"><summary>统计范围</summary><p>只包含服务端已同步记录；本机尚未同步的内容不在其中。统计依据当前记录状态，不能重建已删除、撤销完成或移动栏目之前的全部历史。</p><p>每日执行是辅助记忆的清单，不计习惯打卡率。专注按结束时间归入周期，展示保存的分钟数，不等同于经过独立核验的实际用时。</p></details>
     </div>
   </LifeLayout>;

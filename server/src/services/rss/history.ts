@@ -14,15 +14,21 @@ export function historyRoutes(db: DB, authorized: (value?: string) => boolean) {
   const sourceById = (id: number) => db.query.rssSubscriptions.findFirst({ where: and(eq(rssSubscriptions.id,id),eq(rssSubscriptions.active,1),eq(rssSubscriptions.platform,'youtube')) });
   return new Elysia({aot:false}).use(setup())
     .get('/capabilities', () => ({ version: 3, history: true, search: true }))
-    .get('/sync/history-sources', async ({headers,set}) => {
+    .get('/sync/history-sources', async ({headers,set,query}) => {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
-      const result = await getEnv().DB.prepare(`SELECT s.id,s.title,s.alias,s.external_id AS channelId,s.site_url AS siteUrl,s.history_policy AS policy,s.history_status AS status,s.history_reason AS reason,s.history_error AS error,
+      const db = getEnv().DB;
+      if (query.scope === 'probe') {
+        const pending = await db.prepare(`SELECT history_status AS status FROM rss_subscriptions
+          WHERE active=1 AND platform='youtube' AND history_status<>'complete' LIMIT 1`).first();
+        return { sources: pending ? [pending] : [] };
+      }
+      const result = await db.prepare(`SELECT s.id,s.title,s.alias,s.external_id AS channelId,s.site_url AS siteUrl,s.history_policy AS policy,s.history_status AS status,s.history_reason AS reason,s.history_error AS error,
         SUM(CASE WHEN i.published_precision='exact' AND i.published_at>=? THEN 1 ELSE 0 END) AS recent90,
         MAX(CASE WHEN i.published_precision='exact' THEN i.published_at END) AS newest
         FROM rss_subscriptions s LEFT JOIN rss_items i ON i.subscription_id=s.id AND i.owner_id=s.owner_id
-        WHERE s.active=1 AND s.platform='youtube' GROUP BY s.id ORDER BY s.id`).bind(Math.floor(Date.now()/1000)-90*86400).all();
+        WHERE s.active=1 AND s.platform='youtube' AND (?=0 OR s.history_status<>'complete') GROUP BY s.id ORDER BY s.id`).bind(Math.floor(Date.now()/1000)-90*86400,query.scope==='pending'?1:0).all();
       return { sources: result.results };
-    })
+    }, {query:t.Object({scope:t.Optional(t.Union([t.Literal('probe'),t.Literal('pending')]))})})
     .get('/sync/report', async ({headers,set}) => {
       if (!authorized(headers.authorization)) { set.status=401; return 'Unauthorized'; }
       const storage = await rssStorage(getEnv().DB);
