@@ -9,9 +9,19 @@ import { reserveBackgroundWrites } from '../utils/write-budget';
 import { allowBurst } from '../utils/rate-limit';
 import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
-import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
+import { canMutateFeed, canReadFeed, isPrivateFeed } from "../utils/feed-permissions";
 import { normalizeTagNames, prepareTagBinding, prepareTagIds } from "./tag";
 import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts } from '../utils/post-create';
+
+const hasPrivateReference = (...fields: Array<string | null | undefined>) => fields.some(field => field?.includes('private-media:'));
+const privateMediaPublicationMessage = '公开发布前请移除私密图片引用';
+
+function privateMediaPublicationBlocked(error: unknown) {
+  for (let depth = 0; depth < 5 && error instanceof Error; depth++, error = error.cause) {
+    if (/\bPRIVATE_MEDIA_PUBLICATION_BLOCKED\b/.test(error.message)) return true;
+  }
+  return false;
+}
 
 const timelineVisibility = and(eq(feeds.draft, 0), eq(feeds.listed, 1),
   or(eq(feeds.kind, 'article'), eq(feeds.kind, 'essay')));
@@ -307,6 +317,9 @@ export function FeedService() {
             }
 
             const normalizedKind = kind === "diary" || kind === "essay" || kind === "memo" ? kind : "article";
+            if (!isPrivateFeed({draft,kind:normalizedKind}) && hasPrivateReference(content, summary, title, alias)) {
+              set.status = 409; return privateMediaPublicationMessage;
+            }
             const operation=clientKey?{ownerId:uid,clientKey,requestHash:await postRequestHash({
               title:title||'未命名草稿',content:content||'',summary,alias:alias??null,draft,kind:normalizedKind,
               tags:[...normalizedTags].sort(),createdAt:createdAt?new Date(createdAt).toISOString():null,
@@ -351,7 +364,7 @@ export function FeedService() {
               .returning({ id: feeds.id }).toSQL();
             let result:{insertedId:number};
             try{result=await createPostWithTags(getEnv().DB,insert,tagIds,operation);}
-            catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}throw error;}
+            catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}if(privateMediaPublicationBlocked(error)){set.status=409;return privateMediaPublicationMessage;}throw error;}
             await PublicCache().deletePrefix("feeds_");
             return result;
           },
@@ -473,6 +486,9 @@ export function FeedService() {
             const normalizedTags = tags === undefined ? undefined : normalizeTagNames(tags);
             if (normalizedTags === null) { set.status = 400; return "Invalid tags"; }
             const nextKind = kind === "diary" || kind === "essay" || kind === "memo" || kind === "article" ? kind : feed.kind;
+            if (!isPrivateFeed({draft:draft ?? feed.draft,kind:nextKind}) && hasPrivateReference(content ?? feed.content, summary ?? feed.summary, title ?? feed.title, alias ?? feed.alias)) {
+              set.status = 409; return privateMediaPublicationMessage;
+            }
             const privateKind = nextKind === "diary" || nextKind === "memo";
             const update = db
               .update(feeds)
@@ -489,10 +505,15 @@ export function FeedService() {
                 updatedAt: new Date(),
               })
               .where(eq(feeds.id, id_num));
-            if (normalizedTags !== undefined) {
-              const binding = await prepareTagBinding(db, id_num, feed.uid, nextKind, normalizedTags);
-              await db.batch([update, ...binding]);
-            } else await update;
+            try {
+              if (normalizedTags !== undefined) {
+                const binding = await prepareTagBinding(db, id_num, feed.uid, nextKind, normalizedTags);
+                await db.batch([update, ...binding]);
+              } else await update;
+            } catch (error) {
+              if (!privateMediaPublicationBlocked(error)) throw error;
+              set.status = 409; return privateMediaPublicationMessage;
+            }
             await clearFeedCache(id_num, feed.alias, alias || null);
             return "Updated";
           },

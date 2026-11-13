@@ -29,8 +29,10 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
     const execute=()=>sqlite.prepare(sql).all(...values);
     return {bind(...args:unknown[]){values=args;return this;},async all(){return {success:true,results:execute(),meta:{}};},async raw(){return execute().map((row:Record<string,unknown>)=>Object.values(row));},async first(){if(staleReceiptRead && sql==='SELECT value FROM info WHERE key=?'){staleReceiptRead=false;return null;}return sqlite.prepare(sql).get(...values)||null;},async run(){const result=sqlite.prepare(sql).run(...values);return {success:true,results:[],meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}};}};
   };
+  let beforeBatch: (()=>void)|undefined;
   let afterBatch: (()=>void)|undefined;
   const batch=vi.fn(async(statements:Array<{all:()=>Promise<unknown>}>)=>{
+    beforeBatch?.();
     sqlite.exec('BEGIN');
     let result:unknown[];
     try{result=await Promise.all(statements.map(statement=>statement.all()));sqlite.exec('COMMIT');}
@@ -248,5 +250,24 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect((await api.feed({id:firstCreate.data.insertedId}).delete(null,{headers:guestHeaders})).status).toBe(403);
   expect((await api.feed({id:firstCreate.data.insertedId}).delete(null,{headers})).status).toBe(200);
   expect((await api.feed.post(stablePayload,{headers})).status).toBe(409);
+
+  const marker='![private](private-media:784f0bfa-6d25-4a21-9f5c-f410fdb7822a)';
+  const draft=await api.feed.post({title:'media race',content:'plain draft',summary:'',draft:true,kind:'article',tags:['unchanged']},{headers});
+  if(!draft.data||typeof draft.data==='string')throw Error('Missing media fixture');
+  const mediaId=draft.data.insertedId;
+  beforeBatch=()=>{
+    beforeBatch=undefined;
+    sqlite.prepare('UPDATE feeds SET content=? WHERE id=?').run(marker,mediaId);
+  };
+  const publish=await api.feed({id:mediaId}).post({draft:false,tags:['replacement']},{headers});
+  expect(publish.status).toBe(409);
+  expect(sqlite.prepare('SELECT draft,content FROM feeds WHERE id=?').get(mediaId)).toEqual({draft:1,content:marker});
+  expect(sqlite.prepare('SELECT h.name FROM hashtags h JOIN feed_hashtags f ON f.hashtag_id=h.id WHERE f.feed_id=?').all(mediaId)).toEqual([{name:'unchanged'}]);
+  expect((await api.feed({id:mediaId}).post({draft:false,kind:'memo'},{headers})).status).toBe(200);
+  expect((await api.feed({id:mediaId}).post({kind:'essay'},{headers})).status).toBe(409);
+  expect((await api.feed({id:mediaId}).post({kind:'article',content:'public replacement'},{headers})).status).toBe(200);
+  expect((await api.feed({id:mediaId}).post({summary:marker},{headers})).status).toBe(409);
+  expect((await api.feed.post({title:'blocked marker',content:marker,summary:'',draft:false,kind:'article',tags:[]},{headers})).status).toBe(409);
+  expect(()=>sqlite.prepare("INSERT INTO feeds (uid,title,content,draft,listed,kind) VALUES (1,'unlisted',?,0,0,'article')").run(marker)).toThrow('PRIVATE_MEDIA_PUBLICATION_BLOCKED');
   sqlite.close();
 });
