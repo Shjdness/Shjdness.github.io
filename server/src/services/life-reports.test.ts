@@ -68,7 +68,8 @@ it('requires selected-module approval, exposes actual input only to owner and re
 });
 
 it('saves only server-generated facts once per complete period and keeps history owner-scoped',async()=>{
-  const f=fixture();try{
+  const f=fixture();vi.useFakeTimers({toFake:['Date']});try{
+    vi.setSystemTime(new Date('2026-11-02T01:00:00Z'));
     const first=await (await f.request(1,'/history',{kind:'daily'})).json();
     expect(first).toMatchObject({saved:true,created:true,ownerId:1});
     f.sqlite.exec("INSERT INTO life_todos(owner_id,content,type,completed,completed_at) VALUES(1,'new later fixture','success',1,unixepoch()-86400)");
@@ -81,7 +82,7 @@ it('saves only server-generated facts once per complete period and keeps history
     const query=f.sqlite.prepare('EXPLAIN QUERY PLAN SELECT id FROM life_reports WHERE owner_id=? AND id<? ORDER BY id DESC LIMIT 21').all(1,Number.MAX_SAFE_INTEGER).map((r:any)=>r.detail).join(' ');
     expect(query).toContain('life_reports_owner_id');
     expect(f.sqlite.prepare("SELECT reserved FROM rss_write_budget WHERE day LIKE 'reports:%'").get()).toMatchObject({reserved:8});
-  }finally{f.sqlite.close();}
+  }finally{vi.useRealTimers();f.sqlite.close();}
 });
 it('prevents early/manual RSS bypass, preserves previews, and saves after refresh or deadline',async()=>{
  const f=fixture();vi.useFakeTimers({toFake:['Date']});try{
