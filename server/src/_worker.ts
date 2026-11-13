@@ -17,6 +17,23 @@ import { runRequestContext } from "./utils/di";
 import {limitRequestBody} from './utils/request-body';
 export type DB = DrizzleD1Database<typeof import("./db/schema")>;
 
+function protectResponseCache(request: Request, url: URL, response: Response): Response {
+  // Match whole path segments so public routes with similar names keep their policy.
+  const path = url.pathname.replace(/\/+$/, '');
+  const privateRoute = /^\/(?:life|habit|pomodoro|rss|user|storage)(?:\/|$)/.test(path)
+    || /^\/(?:config\/(?:server|cache)|tag\/options|feed\/(?:diary|memo|drafts))(?:\/|$)/.test(path)
+    || (path === '/feed' && url.searchParams.getAll('type').includes('draft'))
+    || (path === '/tag' && url.searchParams.getAll('kind').some(kind => kind === 'diary' || kind === 'memo'))
+    || (path.startsWith('/feed/') && [401, 403, 404].includes(response.status));
+  if (!privateRoute && !request.headers.has('authorization')) return response;
+
+  const cache = response.headers.get('Cache-Control')?.split(',').map(value => value.trim().toLowerCase());
+  if (cache?.includes('private') && cache.includes('no-store')) return response;
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'private, no-store');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 export default {
   async scheduled(_event:ScheduledController,env:Env,_context:ExecutionContext):Promise<void>{
     let failed=false;
@@ -26,9 +43,10 @@ export default {
     if(failed)throw Error('Life report schedule unavailable');
   },
   async fetch(request: Request, env: Env): Promise<Response> {
-    if([REPORT_MAIL_WEBHOOK_PATH,REPORT_MAIL_BREVO_WEBHOOK_PATH].includes(new URL(request.url).pathname))return reportMailCallback(request,env);
+    const url = new URL(request.url);
+    if([REPORT_MAIL_WEBHOOK_PATH,REPORT_MAIL_BREVO_WEBHOOK_PATH].includes(url.pathname))return reportMailCallback(request,env);
     const db = drizzle(env.DB, { schema: schema });
-    return runRequestContext(env,db,async()=>{
+    const response = await runRequestContext(env,db,async()=>{
     try { await ServerConfig().all(); }
     catch(error) {
       const response=quotaResponse(error) || new Response('Private configuration initialization failed; retry later', {status:503,headers:{'Cache-Control':'no-store','Retry-After':'60'}});
@@ -43,5 +61,6 @@ export default {
     }
     return await new Elysia({ aot: false }).use(app()).handle(limitRequestBody(request,6*1024*1024));
     });
+    return protectResponseCache(request, url, response);
   },
 };

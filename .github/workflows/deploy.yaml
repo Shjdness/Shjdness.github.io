@@ -119,7 +119,15 @@ jobs:
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/reports/history/1/checkins")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/checkins/status")" = "403"
           test "$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$API_URL/life/backup?version=5")" = "403"
-          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$API_URL/life/todos")" = "403"
+          private_cache_ready=0
+          for attempt in $(seq 1 12); do
+            headers="$(curl --silent --show-error --max-time 15 --dump-header - --output /dev/null "$API_URL/life/todos" || true)"
+            if printf '%s\n' "$headers" | grep -Eq '^HTTP/[^ ]+ 403([[:space:]]|$)' && printf '%s\n' "$headers" | grep -Eiq '^cache-control:.*private.*no-store'; then
+              private_cache_ready=1; break
+            fi
+            sleep 5
+          done
+          if [ "$private_cache_ready" != "1" ]; then echo 'Private Life denial is missing no-store'; exit 1; fi
           curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "$API_URL/life/todo-capabilities" | grep -Fq '"version":2'
           curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors "$API_URL/rss/capabilities" | grep -Fq '"version":3'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$API_URL/rss/sync/history-sources")" = "401"

@@ -3,6 +3,7 @@ import {SignJWT} from 'jose';
 import {describe,it,expect,vi,afterEach} from 'vitest';
 import {treaty} from '@elysiajs/eden';
 import {app} from './server';
+import worker from './_worker';
 import {runRequestContext} from './utils/di';
 import {limitRequestBody} from './utils/request-body';
 
@@ -31,11 +32,51 @@ describe('framework upgrade compatibility and security boundary',()=>{
     const api=treaty<ReturnType<typeof app>>('http://localhost',{fetcher});
     const profile=await api.user.profile.get({headers:{Authorization:'Bearer '+token}});
     expect(profile.status).toBe(200);expect(profile.data).toMatchObject({id:1,role:'owner'});
-    expect(profile.response.headers.get('cache-control')).toContain('no-store');
     for(const origin of ['https://site.invalid','https://site.invalid.evil.invalid']) {
       const response=await call(service,new Request('http://localhost/life/todos',{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'GET'}}));
       expect(response.headers.get('access-control-allow-origin')).toBe(origin==='https://site.invalid'?origin:null);
     }
+  });
+  it('prevents caching at the Worker boundary for private successes, denials and configuration failures',async()=>{
+    // Simulate only the configuration row lookup. Anonymous route guards must
+    // return before any private content is queried.
+    const prepare = vi.fn((sql: string) => {
+      if (sql.includes('"info"')) return { bind: () => ({ raw: async () => [['private:server.config:v1','{}']] }) };
+      if (sql.includes('"users"')) return { bind: () => ({ raw: async () => [[1,'test-owner','owner','',1,null,0,0]] }) };
+      throw Error('Unexpected D1 query');
+    });
+    const workerEnv = { ...env, DB: { prepare } };
+    for (const [path,status] of [
+      ['/life/todos',403], ['/habit',403], ['/rss/storage',403], ['/feed?type=draft',403],
+      ['/tag/options?scope=diary',403], ['/tag?kind=memo',200], ['/config/server',401],
+      ['/life/backup?version=5',403], ['/life/reports/mail',403], ['/life/todo-capabilities',200],
+    ] as const) {
+      const response = await worker.fetch(new Request('http://localhost'+path),workerEnv);
+      expect(response.status,path).toBe(status);
+      expect(response.headers.get('cache-control'),path).toMatch(/private.*no-store/);
+    }
+    const publicResponse = await worker.fetch(new Request('http://localhost/reliability/capabilities'),workerEnv);
+    expect(publicResponse.status).toBe(200);
+    expect(publicResponse.headers.get('cache-control')).toBeNull();
+    const token = await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
+    const profile = await worker.fetch(new Request('http://localhost/user/profile',{
+      headers: { Authorization: 'Bearer '+token },
+    }),workerEnv);
+    expect(profile.status).toBe(200);
+    expect(await profile.json()).toMatchObject({id:1,role:'owner'});
+    expect(profile.headers.get('cache-control')).toBe('private, no-store');
+    const redirect = await worker.fetch(new Request('http://localhost/user/github'),workerEnv);
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get('set-cookie')).toMatch(/HttpOnly/i);
+    expect(redirect.headers.get('cache-control')).toBe('private, no-store');
+
+    const unavailable = await worker.fetch(new Request('http://localhost/life/todos',{
+      headers: { Origin: env.FRONTEND_URL },
+    }),{ ...env, DB: { prepare: () => { throw Error('Configuration unavailable'); } } });
+    expect(unavailable.status).toBe(503);
+    expect(unavailable.headers.get('retry-after')).toBe('60');
+    expect(unavailable.headers.get('access-control-allow-origin')).toBe(env.FRONTEND_URL);
+    expect(unavailable.headers.get('cache-control')).toBe('private, no-store');
   });
   it('rejects oversized streamed JSON without a content-length header',async()=>{
     const service=make();

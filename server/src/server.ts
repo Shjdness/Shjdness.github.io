@@ -28,7 +28,6 @@ export const app = () => new Elysia({ aot: false })
     .onRequest(async({request,set})=>{
         set.headers['X-Content-Type-Options']='nosniff';
         set.headers['Referrer-Policy']='no-referrer';
-        if(request.headers.has('authorization'))set.headers['Cache-Control']='private, no-store';
         const ip=request.headers.get('cf-connecting-ip') || 'unknown';
         if(!allowBurst(ip)) {set.status=429;set.headers['Retry-After']='60';return '请求过于频繁，请稍后重试';}
         if(Number(request.headers.get('content-length')||0)>6*1024*1024) {set.status=413;return 'Request body is too large';}
