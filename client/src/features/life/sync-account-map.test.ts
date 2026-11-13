@@ -9,7 +9,8 @@ vi.mock('../../data/local-first',async importOriginal=>({
 }));
 import {lifeApi} from './model';
 import {processSyncQueue,type SyncItem} from '../../data/local-first';
-import {sendQueuedMutation} from './sync';
+import {mergePendingBasicDays,sendQueuedMutation} from './sync';
+import type {DailyBasic} from './model';
 const entities=['habit','basic','todo'] as const;
 const item=(entity:typeof entities[number]):SyncItem=>({id:1,ownerId:1,entity,action:'create',payload:{localId:-7,name:'fixture',content:'fixture',date:'2026-10-31',clientKey:'original-operation'},createdAt:1,retryCount:0,status:'pending'});
 function setup() {
@@ -68,4 +69,30 @@ it('preserves the original request key and payload when mapping storage fails an
   expect(calls[0][1]?.body).toBe(calls[1][1]?.body);
   expect(String(calls[1][1]?.body)).toContain('original-operation');
   expect(storage.remove).toHaveBeenCalledOnce();
+});
+
+it('replays a complete month with one ID-map read pinned to the original account',async()=>{
+  setup();
+  const read=pending();
+  state.read.mockReturnValue(read.promise);
+  const dates = Array.from({length:31},(_,i)=>`2026-10-${String(i+1).padStart(2,'0')}`);
+  const basic = (id:number, date:string, content:string, clientKey:string):DailyBasic => ({id,date,content,completed:0,sortOrder:0,clientKey});
+  const queueItem = (action:string,payload:unknown):SyncItem => ({ownerId:1,entity:'basic',action,payload,createdAt:1,retryCount:0,status:'pending'});
+  const first = basic(11,dates[0],'cloud copy','same-create');
+  const last = basic(12,dates[30],'remove this','old-item');
+  const local = basic(-8,dates[1],'offline plan','offline');
+  const result = mergePendingBasicDays(dates,[first,last],[local],1,[
+    queueItem('create',{localId:-7,date:dates[0],clientKey:first.clientKey}),
+    queueItem('update',{id:-7,completed:true}),
+    queueItem('create',{localId:-8,date:local.date,clientKey:local.clientKey}),
+    queueItem('delete',{id:12}),
+  ]);
+  expect(state.read).toHaveBeenCalledExactlyOnceWith('life:basic-id-map',1);
+  state.owner=2;
+  read.resolve({value:{'-7':11}});
+  const days=await result;
+  expect(days).toHaveLength(31);
+  expect(days.flat()).toEqual([{...first,completed:1},local]);
+  expect(state.read).toHaveBeenCalledOnce();
+  expect(state.write).not.toHaveBeenCalled();
 });

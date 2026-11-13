@@ -164,11 +164,22 @@ export function normalizeBasics(values: DailyBasic[]) {
 }
 
 export async function mergePendingBasics(date: string, cloud: DailyBasic[], cached: DailyBasic[] = []) {
-  const queue = (await getSyncQueue()).filter(item => item.entity === 'basic');
+  const ownerId = accountIdFromToken(getCookie('token'));
+  const queue = await getSyncQueue(ownerId);
+  const [day] = await mergePendingBasicDays([date], cloud, cached, ownerId, queue);
+  return day;
+}
+
+export async function mergePendingBasicDays(dates: string[], cloud: DailyBasic[], cached: DailyBasic[], ownerId: number | null, pending: SyncItem[]) {
+  const queue = pending.filter(item => item.entity === 'basic');
+  const mapping = queue.length ? (await getCached<Record<string, number>>('life:basic-id-map', ownerId))?.value || {} : {};
+  return dates.map(date => replayBasicDay(date, cloud, cached, queue, mapping));
+}
+
+function replayBasicDay(date: string, cloud: DailyBasic[], cached: DailyBasic[], queue: SyncItem[], mapping: Record<string, number>) {
   const dayCloud = normalizeBasics(cloud.filter(value => value.date === date));
-  const dayCached = normalizeBasics(cached.filter(value => value.date === date));
   if (!queue.length) return dayCloud;
-  const mapping = (await getCached<Record<string, number>>('life:basic-id-map'))?.value || {};
+  const dayCached = normalizeBasics(cached.filter(value => value.date === date));
   let result = [...dayCloud];
   for (const item of queue) {
     const payload = item.payload as { localId?: number; id?: number; date?: string; content?: string; completed?: boolean; sortOrder?: number; clientKey?: string };

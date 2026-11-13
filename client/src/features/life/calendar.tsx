@@ -3,7 +3,7 @@ import { Link } from 'wouter';
 import { accountIdFromToken, getCached, getSyncQueue, setCached } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
 import { addDays, CLOUD_REFRESH_EVENT, isoDay, lifeApi, monthNow, type CalendarData, type DailyBasic, type DailyNote, type Habit, type Log, type PomodoroSession, type RssActivity } from './model';
-import { mergePendingBasics, mergePendingHabitData } from './sync';
+import { mergePendingBasicDays, mergePendingHabitData } from './sync';
 import { LifeLayout } from './layout';
 
 export function CalendarView({ year }: { year: boolean }) {
@@ -19,6 +19,8 @@ function MonthView() {
     const end = new Date(yearNumber, monthNumber, 1);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
     const query = new URLSearchParams({ month, start: start.toISOString(), end: end.toISOString() });
+    const dates = Array.from({ length: new Date(yearNumber, monthNumber, 0).getDate() },
+      (_, index) => `${month}-${String(index + 1).padStart(2, '0')}`);
     let version = 0, active = true;
     const load = async () => {
       const token = getCookie('token'), ownerId = accountIdFromToken(token);
@@ -43,21 +45,24 @@ function MonthView() {
         if (!current()) return;
         const data = await lifeApi<CalendarData>(`/life/calendar?${query}`);
         if (!current() || !Array.isArray(data?.habits) || !Array.isArray(data?.logs)) return;
-        const merged = await mergePendingHabitData({ ...data, notes: data.notes || [] }, cached?.value ?? null, ownerId);
-        const basics: DailyBasic[] = [];
-        for (let day = 1; day <= new Date(yearNumber, monthNumber, 0).getDate() && current(); day++) {
-          basics.push(...await mergePendingBasics(`${month}-${String(day).padStart(2, '0')}`, data.basics || [], cached?.value.basics || []));
-        }
+        // Read after the network response so edits made during the request
+        // are included. The cached first paint can be rendered independently.
+        const queue = await getSyncQueue(ownerId);
+        if (!current()) return;
+        const [merged, days] = await Promise.all([
+          mergePendingHabitData({ ...data, notes: data.notes || [] }, cached?.value ?? null, ownerId, queue),
+          mergePendingBasicDays(dates, data.basics || [], cached?.value.basics || [], ownerId, queue),
+        ]);
         if (!current()) return;
         const sessions = [...data.sessions];
-        for (const queued of (await getSyncQueue(ownerId)).filter(item => item.entity === 'pomodoro' && item.action === 'create')) {
+        for (const queued of queue.filter(item => item.entity === 'pomodoro' && item.action === 'create')) {
           const payload = queued.payload as { startedAt: string; endedAt: string; focusMinutes: number; roundIndex: number; completed: boolean; taskName?: string; completedEarly?: boolean };
           if (payload.startedAt.startsWith(month) && !sessions.some(value => new Date(value.startedAt).toISOString() === new Date(payload.startedAt).toISOString())) {
             sessions.push({ ...payload, id: -(queued.id || Date.now()), startedAt: new Date(payload.startedAt), endedAt: new Date(payload.endedAt), completed: Number(payload.completed), completedEarly: Number(Boolean(payload.completedEarly)) });
           }
         }
         if (!current()) return;
-        const next = { ...merged, logs: merged.logs.filter(log => log.date.startsWith(month)), notes: merged.notes.filter(note => note.date.startsWith(month)), sessions, basics };
+        const next = { ...merged, logs: merged.logs.filter(log => log.date.startsWith(month)), notes: merged.notes.filter(note => note.date.startsWith(month)), sessions, basics: days.flat() };
         apply(next);
         await setCached(key, next, ownerId);
       } catch { /* Keep the cached calendar when the cloud is unavailable. */ }
