@@ -40,6 +40,31 @@ export const CLOUD_REFRESH_EVENT = 'shjdshy-cloud-refresh';
 export const READ_TIMEOUT = 6000;
 export const WRITE_TIMEOUT = 20000;
 
+let todoRequest: { token: string; result: Promise<LifeTodo[]> } | undefined;
+
+export function readLifeTodos() {
+  const token = getCookie('token');
+  if (!token) {
+    invalidateLifeTodos();
+    return Promise.reject(new Error('请先登录'));
+  }
+  if (todoRequest?.token === token) return todoRequest.result;
+
+  const result = lifeApi<LifeTodo[]>('/life/todos').then(rows => {
+    if (todoRequest?.result !== result) throw new Error('待办已刷新，请重新读取');
+    if (!Array.isArray(rows)) throw new Error('云端未返回待办列表');
+    return rows;
+  }).finally(() => {
+    if (todoRequest?.result === result) todoRequest = undefined;
+  });
+  todoRequest = { token, result };
+  return result;
+}
+
+export function invalidateLifeTodos() {
+  todoRequest = undefined;
+}
+
 export async function lifeApi<T>(path: string, init?: RequestInit, timeoutOverride?: number): Promise<T> {
   const token = getCookie('token');
   const requestOwnerId = accountIdFromToken(token);

@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {getCookie} from 'typescript-cookie';
 import {accountIdFromToken,enqueueMutation,getCached,getSyncQueue,setCached} from '../../data/local-first';
-import {CLOUD_REFRESH_EVENT,lifeApi,shanghaiDay,type DailyBasic,type LifeTodo} from './model';
+import {CLOUD_REFRESH_EVENT,lifeApi,readLifeTodos,shanghaiDay,type DailyBasic,type LifeTodo} from './model';
 import {assertCurrentAccount,createForAccount,mergePendingBasics,normalizeBasics,rememberLocalId,resolveBasicId} from './sync';
 import {patchCalendarCache} from './habits';
 
@@ -40,9 +40,16 @@ function PlanDay({owner,date,days,draft,setDraft}:{owner:number;date:string;days
   }catch{if(alive.current&&version===epoch.current)setNotice('暂未取得云端记录；已有本机内容保留。');}
  };
  useEffect(()=>{
-  alive.current=true;void load();const handler=()=>void load();window.addEventListener(CLOUD_REFRESH_EVENT,handler);
-  void lifeApi<LifeTodo[]>('/life/todos').then(rows=>{assertCurrentAccount(owner);if(alive.current)setTodos(rows.filter(r=>r.type==='task'&&!r.completed&&r.id>0));}).catch(()=>undefined);
-  return()=>{alive.current=false;epoch.current++;window.removeEventListener(CLOUD_REFRESH_EVENT,handler);};
+  const token=getCookie('token');
+  let todoVersion=0, active=true;
+  const handler=()=>{
+   if(!active||getCookie('token')!==token)return;
+   void load();
+   const request=++todoVersion;
+   void readLifeTodos().then(rows=>{if(active&&request===todoVersion&&getCookie('token')===token)setTodos(rows.filter(r=>r.type==='task'&&!r.completed&&r.id>0));}).catch(()=>undefined);
+  };
+  alive.current=true;handler();window.addEventListener(CLOUD_REFRESH_EVENT,handler);
+  return()=>{active=false;alive.current=false;epoch.current++;window.removeEventListener(CLOUD_REFRESH_EVENT,handler);};
  },[]);
  const perform=async(action:()=>Promise<void>)=>{
   if(working.current)return;working.current=true;epoch.current++;setBusy(true);setNotice('');

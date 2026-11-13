@@ -5,7 +5,7 @@ import { accountIdFromToken, enqueueMutation, getCached, getSyncQueue, setCached
 import { usePomodoro } from '../../state/pomodoro';
 import { LifeLayout } from './layout';
 import {DailyBasicsPlanner} from './daily-planner';
-import { CLOUD_REFRESH_EVENT, isoDayParam, lifeApi, type LifeTodo, type TodoType } from './model';
+import { CLOUD_REFRESH_EVENT, isoDayParam, readLifeTodos, type LifeTodo, type TodoType } from './model';
 import { ACTION_WINDOW_MS, countdown, TODO_COLUMNS, todoColumn, todosInColumn } from './todo-workspace';
 
 type Patch = { content?: string; type?: TodoType; completed?: boolean; deadlineAt?: string | null; completedAt?: string | null; sortOrder?: number };
@@ -58,9 +58,10 @@ function useTodos() {
       if (!owner || accountIdFromToken(token) !== owner) return;
       const canApply = () => active && getCookie('token') === token && request === thisRequest && revision.current === startedRevision && !jobs.current.length;
       try {
+        const loadingCloud = readLifeTodos().catch(() => null);
         const cached = await getCached<LifeTodo[]>(CACHE_KEY, owner);
         if (cached && canApply()) { current.current = cached.value; setItems(cached.value); setLoading(false); }
-        const cloud = await lifeApi<LifeTodo[]>('/life/todos');
+        const cloud = await loadingCloud;
         if (Array.isArray(cloud) && canApply() && !(await getSyncQueue(owner)).some(item => item.entity === 'todo') && canApply()) {
           current.current = cloud; setItems(cloud); await setCached(CACHE_KEY, cloud, owner);
         }

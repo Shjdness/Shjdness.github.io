@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import { Link } from 'wouter';
 import { accountIdFromToken, accountStorageKey, currentWritePause, flushSyncQueue, getLegacySyncQueueCount, getSyncQueue, onLocalChange } from '../../data/local-first';
 import { getCookie } from 'typescript-cookie';
-import { CLOUD_REFRESH_EVENT, lifeApi, type LifeSection } from './model';
+import { CLOUD_REFRESH_EVENT, invalidateLifeTodos, lifeApi, mayAccessLife, type LifeSection } from './model';
 import { sendQueuedMutation } from './sync';
 import { SyncConflicts } from './sync-conflicts';
 
@@ -41,48 +41,62 @@ export function LifeSyncStatus() {
     else if (inFlight.current) setStatus('syncing');
     else setStatus(queue.length || !verified.current ? 'pending' : 'synced');
   };
-  const sync = async () => {
-    if (inFlight.current || !accountId || accountIdFromToken(getCookie('token')) !== accountId) return;
+  const sync = async (refreshCloud = false) => {
+    const token = getCookie('token');
+    const current = () => getCookie('token') === token;
+    if (inFlight.current || !accountId || accountIdFromToken(token) !== accountId) return;
     if(currentWritePause()>Date.now()) {setStatus('paused');await refresh();return;}
     if (!navigator.onLine) { setStatus('offline'); await refresh(); return; }
     inFlight.current = true;
     cloudError.current = '';
     verified.current = false;
     try {
-      if ((await getSyncQueue()).length) setStatus('syncing');
-      // A second edit can arrive while the first batch is in flight. Drain the
-      // newly queued writes before declaring the page synced; stop on failures.
-      let remaining = true;
-      while (remaining) {
+      let remaining = (await getSyncQueue(accountId)).length;
+      if (remaining && current()) setStatus('syncing');
+      let writesApplied = false;
+      const refreshAfterWrites = () => {
+        invalidateLifeTodos();
+        window.dispatchEvent(new CustomEvent(CLOUD_REFRESH_EVENT));
+      };
+      // A second edit can arrive while the first batch is in flight.
+      while (remaining && current()) {
         const result = await flushSyncQueue(sendQueuedMutation);
-        if (result.failed) { await refresh(); setStatus('failed'); return; }
-        remaining = (await getSyncQueue()).length > 0;
+        if (!current()) return;
+        writesApplied ||= result.synced > 0;
+        if (result.failed) {
+          if (writesApplied) refreshAfterWrites();
+          await refresh(); setStatus('failed'); return;
+        }
+        remaining = (await getSyncQueue(accountId)).length;
       }
-      const todos = await lifeApi<unknown>('/life/todos');
-      if (!Array.isArray(todos)) throw new Error('云端未返回待办列表');
+      if (!current()) return;
+      const profile = await lifeApi<{id: number; role?: string}>('/user/profile');
+      if (!current()) return;
+      if (profile?.id !== accountId || !mayAccessLife(profile.role)) throw new Error('无法核验私人空间的云端访问权限');
       verified.current = true;
-      window.dispatchEvent(new CustomEvent(CLOUD_REFRESH_EVENT));
+      if (writesApplied || refreshCloud) refreshAfterWrites();
       const stamp = new Date().toISOString();
       localStorage.setItem(syncStampKey, stamp);
       setLastSync(stamp);
       setSyncError('');
       setStatus('synced');
     } catch (error) {
+      if (!current()) return;
       cloudError.current = error instanceof Error ? error.message : '无法连接云端';
       setSyncError(cloudError.current);
       setStatus('failed');
     } finally {
       inFlight.current = false;
-      void refresh();
+      if (current()) void refresh();
       // A local write can land after the drain but during the cloud read.
       if (verified.current) void getSyncQueue(accountId).then(queue => {
-        if (queue.length && accountIdFromToken(getCookie('token')) === accountId) void sync();
+        if (queue.length && current()) void sync();
       }).catch(() => {});
     }
   };
   useEffect(() => {
     void sync();
-    const handleOnline = () => { void sync(); };
+    const handleOnline = () => { void sync(true); };
     const handleOffline = () => { setStatus('offline'); void refresh(); };
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
     const unsubscribe = onLocalChange(() => { void refresh(); if (!inFlight.current) void sync(); });
@@ -90,10 +104,10 @@ export function LifeSyncStatus() {
   }, []);
   useEffect(()=>{
     const until=currentWritePause();
-    if(until>Date.now()) {const timer=window.setTimeout(()=>void sync(),until-Date.now()+1000);return()=>window.clearTimeout(timer);}
+    if(until>Date.now()) {const timer=window.setTimeout(()=>void sync(true),until-Date.now()+1000);return()=>window.clearTimeout(timer);}
   },[status]);
   const labels = { paused:`写入暂停 · ${new Date(currentWritePause()).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} 后重试`, synced: `已同步${lastSync ? ` · ${new Date(lastSync).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}`, pending: pending ? `${pending} 项待同步` : '正在核验云端…', syncing: '正在同步…', failed: '同步失败 · 点击重试', offline: `${pending} 项离线保存` };
   const icons = { paused:'ri-time-line', synced: 'ri-cloud-line', pending: 'ri-time-line', syncing: 'ri-loader-4-line', failed: 'ri-error-warning-line', offline: 'ri-cloud-off-line' };
-  return <button className={`life-sync-status ${status}`} onClick={() => void sync()} disabled={status === 'syncing'||status==='paused'} title={legacyPending ? `旧版未标记账号的离线操作有 ${legacyPending} 条，已保留且不会自动提交。请核对所属账号后处理。` : syncError || '推送本地更改并拉取云端最新数据'}><i className={`${icons[status]} ${status === 'syncing' ? 'spin' : ''}`} /><span>{labels[status]}{legacyPending ? ` · ${legacyPending} 条旧离线记录待核对` : ''}</span></button>;
+  return <button className={`life-sync-status ${status}`} onClick={() => void sync(true)} disabled={status === 'syncing'||status==='paused'} title={legacyPending ? `旧版未标记账号的离线操作有 ${legacyPending} 条，已保留且不会自动提交。请核对所属账号后处理。` : syncError || '推送本地更改并拉取云端最新数据'}><i className={`${icons[status]} ${status === 'syncing' ? 'spin' : ''}`} /><span>{labels[status]}{legacyPending ? ` · ${legacyPending} 条旧离线记录待核对` : ''}</span></button>;
 }
 

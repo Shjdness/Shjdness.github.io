@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { usePomodoro } from '../../state/pomodoro';
-import { getCached, getSyncQueue } from '../../data/local-first';
+import { getCookie } from 'typescript-cookie';
+import { accountIdFromToken, getCached, getSyncQueue } from '../../data/local-first';
 import { LifeLayout } from './layout';
-import { lifeApi, type LifeTodo } from './model';
+import { CLOUD_REFRESH_EVENT, readLifeTodos, type LifeTodo } from './model';
 
 const boundedNumber = (value: string, fallback: number, min: number, max: number) => { const parsed = Number(value); return Number.isFinite(parsed) && parsed >= min ? Math.min(max, Math.round(parsed)) : fallback; };
 export function PomodoroView() {
@@ -10,16 +11,24 @@ export function PomodoroView() {
   const [drafts, setDrafts] = useState(() => ({ focus: String(preferences.focusMinutes), break: String(preferences.breakMinutes), rounds: String(preferences.rounds) }));
   const [todos, setTodos] = useState<LifeTodo[]>([]);
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      const cached = await getCached<LifeTodo[]>('life:todos');
-      if (active && cached) setTodos(cached.value);
+    const token = getCookie('token'), owner = accountIdFromToken(token);
+    if (!owner) return;
+    let active = true, version = 0;
+    const load = async () => {
+      const request = ++version;
+      const current = () => active && request === version && getCookie('token') === token;
+      if (!current()) return;
+      const loadingCloud = readLifeTodos().catch(() => null);
       try {
-        const cloud = await lifeApi<LifeTodo[]>('/life/todos');
-        if (active && Array.isArray(cloud) && !(await getSyncQueue()).some(item => item.entity === 'todo')) setTodos(cloud);
+        const cached = await getCached<LifeTodo[]>('life:todos',owner);
+        if (cached && current()) setTodos(cached.value);
+        const cloud = await loadingCloud;
+        if (cloud && current() && !(await getSyncQueue(owner)).some(item => item.entity === 'todo') && current()) setTodos(cloud);
       } catch { /* The cached list remains usable offline. */ }
-    })();
-    return () => { active = false; };
+    };
+    void load();
+    window.addEventListener(CLOUD_REFRESH_EVENT, load);
+    return () => { active = false; window.removeEventListener(CLOUD_REFRESH_EVENT, load); };
   }, []);
   const { focusMinutes, breakMinutes, rounds } = preferences;
   const commitSetting = (kind: 'focus' | 'break' | 'rounds') => { const limits = kind === 'focus' ? [1, 180] : kind === 'break' ? [1, 60] : [1, 20]; const key: 'focusMinutes' | 'breakMinutes' | 'rounds' = kind === 'focus' ? 'focusMinutes' : kind === 'break' ? 'breakMinutes' : 'rounds'; const value = boundedNumber(drafts[kind], preferences[key], limits[0], limits[1]); setDrafts(current => ({ ...current, [kind]: String(value) })); setPreferences(current => ({ ...current, [key]: value })); if (!timer.startedAt && ((kind === 'focus' && timer.mode === 'focus') || (kind === 'break' && timer.mode === 'break'))) setTimer(current => ({ ...current, remaining: value * 60 })); };
