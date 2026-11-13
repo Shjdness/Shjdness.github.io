@@ -42,7 +42,7 @@ export function LifeBackupService() {
     // Keep subqueries in that transaction too; do not fetch IDs in an earlier request.
     const [ownFeeds, ownComments, ownHabits, logs, notes, basics, todos, sessions,
       subscriptions, groups, items, appearance, ownFeedTags, ownTags, tagOptions, reports, preferences, analyses,checkins,revisions,extensions,checkinAnalyses,briefs] = await db.batch([
-      db.query.feeds.findMany({ where: eq(feeds.uid, uid) }),
+      db.query.feeds.findMany({ where: eq(feeds.uid, uid), columns: { writeRevision: false } }),
       db.query.comments.findMany({ where: eq(comments.userId, uid) }),
       db.query.habits.findMany({ where: eq(habits.ownerId, uid) }),
       db.query.habitLogs.findMany({ where: eq(habitLogs.ownerId, uid) }),

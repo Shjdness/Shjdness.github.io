@@ -43,6 +43,8 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const raw={prepare,batch} as any;
   const db=drizzle(raw,{schema});
   const env={DB:raw,JWT_SECRET:'test-only-signing-secret-at-least-32-characters',RIN_GITHUB_CLIENT_ID:'test-client',RIN_GITHUB_CLIENT_SECRET:'test-secret',FRONTEND_URL:'https://site.invalid',S3_ACCESS_HOST:'https://assets.invalid',S3_CACHE_FOLDER:'cache/',S3_ENDPOINT:'https://r2.invalid',S3_BUCKET:'test',S3_ACCESS_KEY_ID:'test-only',S3_SECRET_ACCESS_KEY:'test-only',S3_REGION:'auto'} as any;
+  const privateHead=vi.fn(async (key:string)=>key.startsWith('owner/1/')?{}:null);
+  env.PRIVATE_MEDIA={head:privateHead};
   const service=runRequestContext(env,db,()=>app());
   const fetcher:typeof fetch=Object.assign((input:Parameters<typeof fetch>[0],init?:Parameters<typeof fetch>[1])=>runRequestContext(env,db,()=>service.handle(new Request(input,init))),{preconnect:()=>{}});
   const api=treaty<ReturnType<typeof app>>('http://localhost',{fetcher});
@@ -252,6 +254,12 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect((await api.feed.post(stablePayload,{headers})).status).toBe(409);
 
   const marker='![private](private-media:784f0bfa-6d25-4a21-9f5c-f410fdb7822a)';
+  const allowedMedia=await api.feed.post({title:'owned staged media',content:marker,summary:'',draft:true,kind:'article',tags:[]},{headers});
+  expect(allowedMedia.status).toBe(200);
+  expect(privateHead).toHaveBeenLastCalledWith('owner/1/784f0bfa-6d25-4a21-9f5c-f410fdb7822a');
+  const forgedMedia=await api.feed.post({title:'unowned staged media',content:marker,summary:'',draft:true,kind:'article',tags:[]},{headers:guestHeaders});
+  expect(forgedMedia.status).toBe(409);
+  expect(sqlite.prepare('SELECT id FROM feeds WHERE title=?').get('unowned staged media')).toBeUndefined();
   const draft=await api.feed.post({title:'media race',content:'plain draft',summary:'',draft:true,kind:'article',tags:['unchanged']},{headers});
   if(!draft.data||typeof draft.data==='string')throw Error('Missing media fixture');
   const mediaId=draft.data.insertedId;
@@ -269,5 +277,21 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect((await api.feed({id:mediaId}).post({summary:marker},{headers})).status).toBe(409);
   expect((await api.feed.post({title:'blocked marker',content:marker,summary:'',draft:false,kind:'article',tags:[]},{headers})).status).toBe(409);
   expect(()=>sqlite.prepare("INSERT INTO feeds (uid,title,content,draft,listed,kind) VALUES (1,'unlisted',?,0,0,'article')").run(marker)).toThrow('PRIVATE_MEDIA_PUBLICATION_BLOCKED');
+  beforeBatch=()=>{
+    beforeBatch=undefined;
+    sqlite.prepare("UPDATE feeds SET kind='diary',listed=0,content='private parallel edit',write_revision='parallel-edit' WHERE id=?").run(mediaId);
+  };
+  expect((await api.feed({id:mediaId}).post({title:'stale metadata',tags:['stale tag']},{headers})).status).toBe(409);
+  expect(sqlite.prepare('SELECT kind,listed,content FROM feeds WHERE id=?').get(mediaId)).toEqual({kind:'diary',listed:0,content:'private parallel edit'});
+  beforeBatch=()=>{
+    beforeBatch=undefined;
+    sqlite.prepare('DELETE FROM feed_hashtags WHERE feed_id=?').run(mediaId);
+    sqlite.prepare('DELETE FROM feeds WHERE id=?').run(mediaId);
+    sqlite.prepare("INSERT INTO feeds (id,uid,title,content,draft,listed,kind,write_revision) VALUES (?,1,'recreated','separate draft',1,0,'article','new-incarnation')").run(mediaId);
+    sqlite.prepare("INSERT INTO feed_hashtags (feed_id,hashtag_id) SELECT ?,id FROM hashtags WHERE name='unchanged'").run(mediaId);
+  };
+  expect((await api.feed({id:mediaId}).post({content:marker,tags:['unrelated tag']},{headers})).status).toBe(409);
+  expect(sqlite.prepare('SELECT title,content,draft FROM feeds WHERE id=?').get(mediaId)).toEqual({title:'recreated',content:'separate draft',draft:1});
+  expect(sqlite.prepare('SELECT h.name FROM hashtags h JOIN feed_hashtags f ON f.hashtag_id=h.id WHERE f.feed_id=?').all(mediaId)).toEqual([{name:'unchanged'}]);
   sqlite.close();
 });

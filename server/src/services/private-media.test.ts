@@ -10,8 +10,13 @@ const secret = 'isolated-jwt-secret-at-least-32-characters';
 
 function fixture() {
     const users = new Map([[1, 1], [2, 2], [3, 0]]);
+    const feeds = new Map<number, { uid: number; draft: number; kind: string; content: string }>();
     const prepare = vi.fn((sql: string) => ({ bind: (id: number) => ({ raw: async () => {
         if (sql.includes('"info"')) return [['private:server.config:v1', '{}']];
+        if (sql.includes('"feeds"')) {
+            const feed = feeds.get(id);
+            return feed ? [[feed.uid, feed.draft, feed.kind, feed.content]] : [];
+        }
         if (!sql.includes('"users"')) throw Error('Unexpected database read');
         const role = users.get(id);
         return role === undefined ? [] : [[id, 'fixture', 'fixture', '', role, null, 0, 0]];
@@ -51,7 +56,7 @@ function fixture() {
         if (options.body instanceof ReadableStream) init.duplex = 'half';
         return worker.fetch(new Request(`https://worker.invalid/storage/private/${options.path ?? id}`, init), options.env ?? env);
     };
-    return { users, bucket, objects, env, token, call };
+    return { users, feeds, bucket, objects, env, token, call };
 }
 
 describe('isolated private media Worker integration', () => {
@@ -103,5 +108,33 @@ describe('isolated private media Worker integration', () => {
         expect((await put(Uint8Array.of(...png, 0))).status).toBe(409);
         expect([...f.objects.keys()]).toEqual([`owner/1/${id}`]);
         expect(f.objects.get(`owner/1/${id}`)?.bytes).toEqual(png);
+    });
+
+    it('uses the authorized current draft to resolve attachments for other users', async () => {
+        const f = fixture();
+        const [admin, author] = await Promise.all([f.token(1), f.token(2)]);
+        expect((await f.call({ token: author, method: 'PUT', body: png })).status).toBe(201);
+        const path = `${id}?feedId=7`;
+        const content = `![private image](private-media:${id})`;
+        f.feeds.set(7, { uid: 2, draft: 1, kind: 'article', content });
+        const bound = await f.call({ token: admin, path });
+        expect(bound.status).toBe(200);
+        expect(new Uint8Array(await bound.arrayBuffer())).toEqual(png);
+        expect(f.bucket.get).toHaveBeenLastCalledWith(`owner/2/${id}`);
+        expect((await f.call({ token: admin })).status).toBe(404);
+        f.bucket.get.mockClear();
+        expect((await f.call({ token: admin, path: `${path}&feedId=9` })).status).toBe(404);
+        f.users.set(1, 2);
+        expect((await f.call({ token: admin, path })).status).toBe(404);
+        f.users.set(1, 1);
+        f.feeds.set(7, { uid: 2, draft: 0, kind: 'article', content });
+        expect((await f.call({ token: admin, path })).status).toBe(404);
+        f.feeds.set(7, { uid: 2, draft: 1, kind: 'article', content: `[ordinary link](private-media:${id})` });
+        expect((await f.call({ token: admin, path })).status).toBe(404);
+        f.feeds.delete(7);
+        expect((await f.call({ token: admin, path })).status).toBe(404);
+        f.feeds.set(7, { uid: 1, draft: 0, kind: 'memo', content });
+        expect((await f.call({ token: admin, path })).status).toBe(404);
+        expect(f.bucket.get.mock.calls).toEqual([[`owner/1/${id}`]]);
     });
 });

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, lt, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
 import { feeds, feedHashtags, hashtags, visits } from "../db/schema";
@@ -10,11 +10,13 @@ import { allowBurst } from '../utils/rate-limit';
 import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed, isPrivateFeed } from "../utils/feed-permissions";
-import { normalizeTagNames, prepareTagBinding, prepareTagIds } from "./tag";
-import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts } from '../utils/post-create';
+import { privateMediaReferencesAvailable } from '../utils/private-media-reference';
+import { normalizeTagNames, prepareTagIds } from "./tag";
+import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts, updatePostWithTags } from '../utils/post-create';
 
 const hasPrivateReference = (...fields: Array<string | null | undefined>) => fields.some(field => field?.includes('private-media:'));
 const privateMediaPublicationMessage = '公开发布前请移除私密图片引用';
+const unavailableMediaMessage = '无法确认私密图片属于此稿件账号，或图片数量超过上限';
 
 function privateMediaPublicationBlocked(error: unknown) {
   for (let depth = 0; depth < 5 && error instanceof Error; depth++, error = error.cause) {
@@ -83,10 +85,11 @@ export function FeedService() {
                 where: where,
                 columns:
                   admin || privateList
-                    ? undefined
+                    ? { writeRevision: false }
                     : {
                         draft: false,
                         listed: false,
+                        writeRevision: false,
                       },
                 with: {
                   hashtags: {
@@ -225,6 +228,7 @@ export function FeedService() {
                 eq(feeds.kind, "diary"),
                 eq(feeds.draft, 0),
               ),
+              columns: { writeRevision: false },
               with: {
                 hashtags: {
                   columns: {},
@@ -247,6 +251,7 @@ export function FeedService() {
           return (
             await db.query.feeds.findMany({
               where: and(eq(feeds.uid, uid), eq(feeds.kind, "memo"), eq(feeds.draft, 0)),
+              columns: { writeRevision: false },
               with: {
                 hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
                 user: { columns: { id: true, username: true, avatar: true } },
@@ -269,6 +274,7 @@ export function FeedService() {
           return (
             await db.query.feeds.findMany({
               where: and(eq(feeds.draft, 1), ownerFilter),
+              columns: { writeRevision: false },
               with: {
                 hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
                 user: { columns: { id: true, username: true, avatar: true } },
@@ -344,6 +350,9 @@ export function FeedService() {
               set.status = 400;
               return "Content already exists";
             }
+            if (hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, uid, getEnv().PRIVATE_MEDIA)) {
+              set.status = 409; return unavailableMediaMessage;
+            }
             const date = createdAt ? new Date(createdAt) : new Date();
             const privateKind = normalizedKind === "diary" || normalizedKind === "memo";
             const tagIds=await prepareTagIds(db, uid, normalizedKind, normalizedTags);
@@ -358,6 +367,7 @@ export function FeedService() {
                 listed: privateKind || draft ? 0 : 1,
                 draft: draft ? 1 : 0,
                 kind: normalizedKind,
+                writeRevision: crypto.randomUUID(),
                 createdAt: date,
                 updatedAt: date,
               })
@@ -389,6 +399,7 @@ export function FeedService() {
           const id_num = parseInt(id);
           const feed = await db.query.feeds.findFirst({
               where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
+              columns: { writeRevision: false },
               with: {
                 hashtags: {
                   columns: {},
@@ -489,7 +500,11 @@ export function FeedService() {
             if (!isPrivateFeed({draft:draft ?? feed.draft,kind:nextKind}) && hasPrivateReference(content ?? feed.content, summary ?? feed.summary, title ?? feed.title, alias ?? feed.alias)) {
               set.status = 409; return privateMediaPublicationMessage;
             }
+            if (content !== undefined && hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, feed.uid, getEnv().PRIVATE_MEDIA)) {
+              set.status = 409; return unavailableMediaMessage;
+            }
             const privateKind = nextKind === "diary" || nextKind === "memo";
+            const writeRevision = crypto.randomUUID();
             const update = db
               .update(feeds)
               .set({
@@ -498,18 +513,23 @@ export function FeedService() {
                 summary,
                 alias,
                 top: admin ? top : undefined,
-                listed: privateKind || draft === true ? 0 : 1,
+                listed: privateKind || (draft ?? feed.draft) ? 0 : 1,
                 draft: draft === undefined ? undefined : draft ? 1 : 0,
-                kind: nextKind,
+                kind: kind === undefined ? undefined : nextKind,
+                writeRevision,
                 createdAt: createdAt ? new Date(createdAt) : undefined,
                 updatedAt: new Date(),
               })
-              .where(eq(feeds.id, id_num));
+              .where(and(eq(feeds.id, id_num), eq(feeds.uid, feed.uid),
+                feed.writeRevision === null ? isNull(feeds.writeRevision) : eq(feeds.writeRevision, feed.writeRevision)))
+              .returning({ id: feeds.id });
             try {
+              let updated: { id: number }[];
               if (normalizedTags !== undefined) {
-                const binding = await prepareTagBinding(db, id_num, feed.uid, nextKind, normalizedTags);
-                await db.batch([update, ...binding]);
-              } else await update;
+                const tagIds = await prepareTagIds(db, feed.uid, nextKind, normalizedTags);
+                updated = await updatePostWithTags(getEnv().DB, update.toSQL(), id_num, feed.uid, writeRevision, tagIds);
+              } else updated = await update;
+              if (!updated.length) { set.status = 409; return '稿件已变化，请保留本地内容并重新读取'; }
             } catch (error) {
               if (!privateMediaPublicationBlocked(error)) throw error;
               set.status = 409; return privateMediaPublicationMessage;
@@ -553,6 +573,7 @@ export function FeedService() {
               .update(feeds)
               .set({
                 top,
+                writeRevision: crypto.randomUUID(),
               })
               .where(eq(feeds.id, feed.id));
             await clearFeedCache(feed.id, null, null);
