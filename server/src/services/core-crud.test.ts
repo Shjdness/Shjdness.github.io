@@ -59,6 +59,28 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const changed=await api.feed({id:inserted[1]}).post({content:'updated private note',tags:['tag diary']},{headers});
   expect(changed.status,JSON.stringify(changed.error)).toBe(200);
   expect((await api.tag.options.get({query:{scope:'diary'},headers})).data).toEqual([{name:'tag diary'}]);
+  const archive = (query: string) => fetcher('http://localhost/feed/timeline/' + query);
+  sqlite.exec(`INSERT INTO feeds(id,uid,title,content,draft,listed,kind,created_at) VALUES
+    (101,1,'year start','','0',1,'essay',unixepoch('2026-12-31 16:00:00')),
+    (102,1,'equal timestamp','','0',1,'article',unixepoch('2026-10-30 00:00:00')),
+    (103,1,'private kind','','0',1,'memo',unixepoch('2026-10-30 00:00:00')),
+    (104,1,'unlisted','','0',0,'article',unixepoch('2026-10-30 00:00:00')),
+    (105,1,'draft','',1,1,'article',unixepoch('2026-10-30 00:00:00'));
+    INSERT INTO feed_hashtags(feed_id,hashtag_id) SELECT 102,id FROM hashtags WHERE name='tag article';`);
+  expect(await (await archive('options')).json()).toEqual({years:['2027','2026'],tags:['tag article']});
+  expect(await (await archive('activity?year=2026')).json()).toEqual({days:[{day:'2026-10-30',count:2}]});
+  expect(await (await archive('activity?year=2027')).json()).toEqual({days:[{day:'2027-01-01',count:1}]});
+  const first=await (await archive('page?year=2026&limit=1')).json() as {items:{id:number}[];next:string};
+  expect(first.items).toMatchObject([{id:102}]);
+  const second=await (await archive('page?year=2026&limit=1&before='+encodeURIComponent(first.next))).json();
+  expect(second).toMatchObject({items:[{id:inserted[0]}],next:null});
+  const tags=(names:string[])=>encodeURIComponent(JSON.stringify(names));
+  expect(await (await archive('page?year=2026&tags='+tags(['tag article','tag diary']))).json()).toEqual({items:[],next:null});
+  expect(await (await archive('page?year=2026&tags='+tags(['tag article']))).json()).toMatchObject({items:[{id:102},{id:inserted[0]}]});
+  expect((await archive('page?before=abc')).status).toBe(422);
+  expect((await archive('page?limit=51')).status).toBe(422);
+  expect((await archive('page?tags='+encodeURIComponent('{"x":"y"}'))).status).toBe(422);
+  sqlite.exec('DELETE FROM feeds WHERE id BETWEEN 101 AND 105');
   const todo=await api.life.todos.post({content:'fixture task',type:'task',clientKey:'fixture-task-1'},{headers});
   expect(todo.status,JSON.stringify(todo.error)).toBe(200);
   expect((await api.life.todos.get({headers})).data).toEqual(expect.arrayContaining([expect.objectContaining({content:'fixture task'})]));

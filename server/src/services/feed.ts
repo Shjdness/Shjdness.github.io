@@ -1,7 +1,7 @@
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt, or } from "drizzle-orm";
 import Elysia, { t } from "elysia";
 import type { DB } from "../_worker";
-import { feeds, visits } from "../db/schema";
+import { feeds, feedHashtags, hashtags, visits } from "../db/schema";
 import { setup } from "../setup";
 import { ClientConfig, PublicCache } from "../utils/cache";
 import { getDB, getEnv } from "../utils/di";
@@ -12,6 +12,16 @@ import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed } from "../utils/feed-permissions";
 import { normalizeTagNames, prepareTagBinding, prepareTagIds } from "./tag";
 import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts } from '../utils/post-create';
+
+const timelineVisibility = and(eq(feeds.draft, 0), eq(feeds.listed, 1),
+  or(eq(feeds.kind, 'article'), eq(feeds.kind, 'essay')));
+const timelineYear = t.String({ pattern: '^[0-9]{4}$' });
+const timelineYearRange = (year: string) => {
+  const start = new Date(`${year}-01-01T00:00:00+08:00`);
+  const end = new Date(start);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  return and(gte(feeds.createdAt, start), lt(feeds.createdAt, end));
+};
 
 export function FeedService() {
   const db: DB = getDB();
@@ -127,15 +137,54 @@ export function FeedService() {
             }),
           },
         )
+        .get("/timeline/options", async () => {
+          const year = sql<string>`strftime('%Y', ${feeds.createdAt}, 'unixepoch', '+8 hours')`;
+          const [years, tags] = await Promise.all([
+            db.select({ year }).from(feeds).where(timelineVisibility).groupBy(year).orderBy(desc(year)),
+            db.selectDistinct({ name: hashtags.name }).from(feeds)
+              .innerJoin(feedHashtags, eq(feeds.id, feedHashtags.feedId))
+              .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id))
+              .where(timelineVisibility).orderBy(hashtags.name),
+          ]);
+          return { years: years.map(row => row.year), tags: tags.map(row => row.name) };
+        })
+        .get("/timeline/activity", async ({ query }) => {
+          const day = sql<string>`date(${feeds.createdAt}, 'unixepoch', '+8 hours')`;
+          const rows = await db.select({ day, count: count() }).from(feeds)
+            .where(and(timelineVisibility, timelineYearRange(query.year))).groupBy(day);
+          return { days: rows };
+        }, { query: t.Object({ year: timelineYear }) })
+        .get("/timeline/page", async ({ query, set }) => {
+          const limit = query.limit ?? 24;
+          const tags = [...new Set(query.tags ?? [])];
+          const cursor = query.before?.split(':').map(Number);
+          if (cursor && (!Number.isSafeInteger(cursor[0]) || !Number.isSafeInteger(cursor[1])
+            || !Number.isFinite(new Date(cursor[0] * 1000).getTime()))) {
+            set.status = 400;
+            return 'Invalid timeline cursor';
+          }
+          const before = cursor ? new Date(cursor[0] * 1000) : undefined;
+          const where = and(timelineVisibility, query.year ? timelineYearRange(query.year) : undefined,
+            before && cursor ? or(lt(feeds.createdAt, before),
+              and(eq(feeds.createdAt, before), lt(feeds.id, cursor[1]))) : undefined,
+            ...tags.map(tag => sql`EXISTS (SELECT 1 FROM ${feedHashtags} JOIN ${hashtags}
+              ON ${hashtags.id} = ${feedHashtags.hashtagId}
+              WHERE ${feedHashtags.feedId} = ${feeds.id} AND ${hashtags.name} = ${tag})`));
+          const rows = await db.select({ id: feeds.id, title: feeds.title, createdAt: feeds.createdAt })
+            .from(feeds).where(where).orderBy(desc(feeds.createdAt), desc(feeds.id)).limit(limit + 1);
+          const items = rows.slice(0, limit);
+          const tail = items.at(-1);
+          return { items, next: rows.length > limit && tail ? `${tail.createdAt.getTime() / 1000}:${tail.id}` : null };
+        }, { query: t.Object({
+          year: t.Optional(timelineYear),
+          before: t.Optional(t.String({ maxLength: 40, pattern: '^-?[0-9]+:[1-9][0-9]*$' })),
+          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50, multipleOf: 1 })),
+          tags: t.Optional(t.ArrayString(t.String({ minLength: 1, maxLength: 100 }), { maxItems: 30 })),
+        }) })
         .get("/timeline", async () => {
-          const where = and(
-            eq(feeds.draft, 0),
-            eq(feeds.listed, 1),
-            or(eq(feeds.kind, "article"), eq(feeds.kind, "essay")),
-          );
           return (
             await db.query.feeds.findMany({
-              where: where,
+              where: timelineVisibility,
               columns: {
                 id: true,
                 title: true,

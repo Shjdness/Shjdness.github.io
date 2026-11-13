@@ -1,68 +1,99 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Helmet } from 'react-helmet'
 import { Link } from "wouter"
-import { Waiting } from "../components/loading"
-import { client } from "../main"
-import { headersWithAuth } from "../utils/auth"
+import { endpoint } from "../main"
 import { siteName } from "../utils/constants"
 import { useTranslation } from "react-i18next";
 
-type TimelineFeed = { id: number; title: string | null; createdAt: Date; hashtags?: Array<{ name: string }> }
+type TimelineFeed = { id: number; title: string | null; createdAt: string }
+type TimelinePageData = { items: TimelineFeed[]; next: string | null }
+type TimelineOptions = { years: string[]; tags: string[] }
+type TimelineActivity = { days: { day: string; count: number }[] }
+
+async function readTimeline<T>(path: string, signal: AbortSignal): Promise<T> {
+    const response = await fetch(`${endpoint}/feed/timeline/${path}`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    })
+    if (!response.ok) throw new Error('读取时间轴失败')
+    return response.json()
+}
 
 export function TimelinePage() {
-    const [feeds, setFeeds] = useState<Partial<Record<number, TimelineFeed[]>>>()
-    const [length, setLength] = useState(0)
-    const ref = useRef(false)
-    const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
+    const [options, setOptions] = useState<TimelineOptions | null>(null)
+    const [year, setYear] = useState('')
     const [selectedTags, setSelectedTags] = useState<string[]>([])
+    const [cursor, setCursor] = useState<string>()
+    const [page, setPage] = useState<TimelinePageData | null>(null)
+    const [activity, setActivity] = useState<TimelineActivity | null>(null)
+    const [optionsError, setOptionsError] = useState(false)
+    const [activityError, setActivityError] = useState(false)
+    const [pageError, setPageError] = useState(false)
+    const [attempt, retry] = useState(0)
     const { t } = useTranslation()
-    function fetchFeeds() {
-        client.feed.timeline.get({
-            headers: headersWithAuth()
-        }).then(({ data }: any) => {
-            if (data && typeof data !== 'string') {
-                const normalFeeds = data as TimelineFeed[]
-                setLength(normalFeeds.length)
-                const groups = normalFeeds.reduce<Partial<Record<number, TimelineFeed[]>>>((result, feed) => {
-                    const year = new Date(feed.createdAt).getFullYear()
-                    result[year] = [...(result[year] || []), feed]
-                    return result
-                }, {})
-                setFeeds(groups)
-                const latestYear = Math.max(...normalFeeds.map(({ createdAt }) => new Date(createdAt).getFullYear()))
-                if (Number.isFinite(latestYear)) setHeatmapYear(latestYear)
-            }
-        })
+    const changeYear = (value: string) => {
+        setYear(value)
+        setCursor(undefined)
+        setPage(null)
+        setActivity(null)
     }
+
     useEffect(() => {
-        if (ref.current) return
-        fetchFeeds()
-        ref.current = true
-    }, [])
-    const allFeeds = useMemo(() => Object.values(feeds || {}).flat().filter((feed): feed is TimelineFeed => Boolean(feed)), [feeds])
-    const tagNames = useMemo(() => [...new Set(allFeeds.flatMap(feed => feed.hashtags?.map(tag => tag.name) || []))].sort(), [allFeeds])
-    const visibleFeeds = useMemo(() => selectedTags.length ? allFeeds.filter(feed => selectedTags.every(name => feed.hashtags?.some(tag => tag.name === name))) : allFeeds, [allFeeds, selectedTags])
-    const visibleGroups = useMemo(() => visibleFeeds.reduce<Partial<Record<number, TimelineFeed[]>>>((result, feed) => { const year = new Date(feed.createdAt).getFullYear(); result[year] = [...(result[year] || []), feed]; return result; }, {}), [visibleFeeds])
-    const years = useMemo(() => [...new Set(allFeeds.map(({ createdAt }) => new Date(createdAt).getFullYear()))].sort((a, b) => b - a), [allFeeds])
+        if (options) return
+        const controller = new AbortController()
+        setOptionsError(false)
+        void readTimeline<TimelineOptions>('options', controller.signal).then(data => {
+            if (controller.signal.aborted) return
+            setOptions(data)
+            setYear(data.years[0] ?? '')
+        }).catch(() => { if (!controller.signal.aborted) setOptionsError(true) })
+        return () => controller.abort()
+    }, [attempt, options])
+
+    useEffect(() => {
+        if (!year || activity) return
+        const controller = new AbortController()
+        setActivityError(false)
+        void readTimeline<TimelineActivity>(`activity?year=${year}`, controller.signal).then(data => {
+            if (!controller.signal.aborted) setActivity(data)
+        }).catch(() => { if (!controller.signal.aborted) setActivityError(true) })
+        return () => controller.abort()
+    }, [year, attempt, activity])
+
+    useEffect(() => {
+        if (!year) return
+        const controller = new AbortController()
+        const query = new URLSearchParams({ year })
+        if (cursor) query.set('before', cursor)
+        if (selectedTags.length) query.set('tags', JSON.stringify(selectedTags))
+        setPageError(false)
+        void readTimeline<TimelinePageData>(`page?${query}`, controller.signal).then(data => {
+            if (controller.signal.aborted) return
+            setPage(previous => cursor && previous && previous.next === cursor
+                ? { ...data, items: [...previous.items, ...data.items] }
+                : cursor && previous ? previous : data)
+        }).catch(() => { if (!controller.signal.aborted) setPageError(true) })
+        return () => controller.abort()
+    }, [year, cursor, selectedTags, attempt])
+
     const heatmapDays = useMemo(() => {
-        const counts = new Map<string, number>()
-        allFeeds.forEach(({ createdAt }) => {
-            const date = new Date(createdAt)
-            if (date.getFullYear() !== heatmapYear) return
-            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-            counts.set(key, (counts.get(key) || 0) + 1)
-        })
-        const first = new Date(heatmapYear, 0, 1)
-        const last = new Date(heatmapYear, 11, 31)
-        const cells: ({ date: Date; count: number } | null)[] = Array(first.getDay()).fill(null)
-        for (let date = new Date(first); date <= last; date.setDate(date.getDate() + 1)) {
-            const day = new Date(date)
-            const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`
-            cells.push({ date: day, count: counts.get(key) || 0 })
+        if (!year || !activity) return []
+        const counts = new Map(activity.days.map(row => [row.day, row.count]))
+        const first = Date.parse(`${year}-01-01T00:00:00Z`)
+        const cells: ({ day: string; count: number } | null)[] = Array(new Date(first).getUTCDay()).fill(null)
+        for (let date = first; ; date += 86400000) {
+            const day = new Date(date).toISOString().slice(0, 10)
+            if (!day.startsWith(year)) break
+            cells.push({ day, count: counts.get(day) ?? 0 })
         }
         while (cells.length % 7 !== 0) cells.push(null)
         return cells
-    }, [allFeeds, heatmapYear])
+    }, [activity, year])
+
+    const changeTags = (tags: string[]) => {
+        setSelectedTags(tags)
+        setCursor(undefined)
+        setPage(null)
+    }
 
     return (
         <>
@@ -74,61 +105,53 @@ export function TimelinePage() {
                 <meta property="og:type" content="article" />
                 <meta property="og:url" content={document.URL} />
             </Helmet>
-            <Waiting for={feeds}>
-                <main className="w-full flex flex-col justify-center items-center mb-8 ani-show">
-                    <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
-                        <p>{t('timeline')}</p>
-                        <div className="flex flex-row justify-between">
-                            <p className="text-sm mt-4 text-neutral-500 font-normal">
-                                {t('article.total$count', { count: length })}
-                            </p>
-                        </div>
+            <main className="w-full flex flex-col items-center mb-8 ani-show">
+                <header className="wauto py-4"><h1 className="text-4xl font-bold">{t('timeline')}</h1></header>
+                {(optionsError || pageError || activityError) && <p className="wauto" role="status">
+                    {optionsError ? '归档选项读取失败' : pageError ? '文章读取失败' : '热力图读取失败'} <button type="button" onClick={() => retry(value => value + 1)}>重试</button>
+                </p>}
+                {!options && !optionsError && <p role="status">正在读取归档…</p>}
+                {options && !options.years.length && <p>暂无公开文章</p>}
+                {year && <section className="heatmap-panel wauto" aria-label={t('heatmap.title')}>
+                    <div className="heatmap-heading">
+                        <h2>{t('heatmap.title')}</h2>
+                        <select value={year} onChange={event => changeYear(event.target.value)} aria-label={t('heatmap.year')}>
+                            {options?.years.map(value => <option key={value} value={value}>{value}</option>)}
+                        </select>
                     </div>
-                    {tagNames.length > 0 && <div className="inline-tag-filter wauto">{tagNames.map(name => <button key={name} className={selectedTags.includes(name) ? 'active' : ''} onClick={() => setSelectedTags(current => current.includes(name) ? current.filter(value => value !== name) : [...current, name])}>#{name}</button>)}{selectedTags.length > 0 && <button onClick={() => setSelectedTags([])}>清除筛选</button>}</div>}
-                    <section className="heatmap-panel wauto" aria-label={t('heatmap.title')}>
-                        <div className="heatmap-heading">
-                            <div>
-                                <h2>{t('heatmap.title')}</h2>
-                            </div>
-                            <select value={heatmapYear} onChange={(event) => setHeatmapYear(Number(event.target.value))} aria-label={t('heatmap.year')}>
-                                {years.map(year => <option key={year} value={year}>{year}</option>)}
-                            </select>
-                        </div>
-                        <div className="heatmap-grid" role="img" aria-label={`${heatmapYear} ${t('heatmap.title')}`}>
-                            {heatmapDays.map((day, index) => day ? (
-                                <span
-                                    key={day.date.toISOString()}
-                                    className={`heatmap-day level-${Math.min(4, day.count)}`}
-                                    title={`${day.date.toLocaleDateString('zh-CN')} · ${day.count} ${t('heatmap.posts')}`}
-                                />
-                            ) : <span key={`blank-${index}`} className="heatmap-day is-empty" />)}
-                        </div>
-                    </section>
-                    {feeds && Object.keys(visibleGroups).sort((a, b) => parseInt(b) - parseInt(a)).map(year => (
-                        <div key={year} className="wauto flex flex-col justify-center items-start">
-                            <h1 className="flex flex-row items-center space-x-2">
-                                <span className="text-2xl font-bold t-primary ">
-                                    {t('year$year', { year: year })}
-                                </span>
-                                <span className="text-sm t-secondary">
-                                    {t('article.total_short$count', { count: visibleGroups[+year]?.length })}
-                                    </span>
-                            </h1>
-                            <div className="w-full flex flex-col justify-center items-start my-4">
-                                {visibleGroups[+year]?.map(({ id, title, createdAt }) => (
-                                    <FeedItem key={id} id={id.toString()} title={title || t('untitled')} createdAt={new Date(createdAt)} />
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </main>
-            </Waiting>
+                    {activity && <div className="heatmap-grid" role="img" aria-label={`${year} ${t('heatmap.title')}`}>
+                        {heatmapDays.map((day, index) => day
+                            ? <span key={day.day} className={`heatmap-day level-${Math.min(4, day.count)}`}
+                                title={`${day.day} · ${day.count} ${t('heatmap.posts')}`} />
+                            : <span key={`blank-${index}`} className="heatmap-day is-empty" />)}
+                    </div>}
+                </section>}
+                {year && !!options?.tags.length && <div className="inline-tag-filter wauto">
+                    {options.tags.map(name => <button key={name} type="button" aria-pressed={selectedTags.includes(name)}
+                        className={selectedTags.includes(name) ? 'active' : ''}
+                        disabled={selectedTags.length >= 30 && !selectedTags.includes(name)}
+                        onClick={() => changeTags(selectedTags.includes(name) ? selectedTags.filter(tag => tag !== name) : [...selectedTags, name])}>#{name}</button>)}
+                    {!!selectedTags.length && <button type="button" onClick={() => changeTags([])}>清除筛选</button>}
+                </div>}
+                {year && <section className="wauto">
+                    <h2 className="text-2xl font-bold">{t('year$year', { year })}</h2>
+                    {!page && !pageError && <p role="status">正在读取文章…</p>}
+                    {page && !page.items.length && <p>该年份暂无符合筛选的文章</p>}
+                    <div className="w-full my-4">
+                        {page?.items.map(({ id, title, createdAt }) => (
+                            <FeedItem key={id} id={String(id)} title={title || t('untitled')} createdAt={new Date(createdAt)} />
+                        ))}
+                    </div>
+                    {page?.next && <button className="site-nav-link" type="button" disabled={cursor === page.next}
+                        onClick={() => setCursor(page.next ?? undefined)}>{cursor === page.next && !pageError ? '正在读取…' : '加载更多'}</button>}
+                </section>}
+            </main>
         </>
     )
 }
 
 export function FeedItem({ id, title, createdAt }: { id: string, title: string, createdAt: Date }) {
-    const formatter = new Intl.DateTimeFormat('en-US', { day: '2-digit', month: '2-digit' });
+    const formatter = new Intl.DateTimeFormat('en-US', { day: '2-digit', month: '2-digit', timeZone: 'Asia/Shanghai' });
     return (
         <div className="flex flex-row pl-8">
             <div className="flex flex-row items-center">

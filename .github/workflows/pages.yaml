@@ -38,6 +38,13 @@ jobs:
         run: |
           test "$(curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "$API_URL/")" = "Hi"
           curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "$API_URL/feed?page=1&limit=1" > /dev/null
+          timeline_ready=0
+          for attempt in $(seq 1 36); do
+            page="$(curl --fail --silent --max-time 15 "$API_URL/feed/timeline/page?limit=1" || true)"
+            if echo "$page" | grep -Fq '"items":['; then timeline_ready=1; break; fi
+            sleep 10
+          done
+          if [ "$timeline_ready" != "1" ]; then echo 'Timeline pagination API not ready' >&2; exit 1; fi
           # This frontend needs the tag options route and its D1 migration.
           tags_ready=0
           for attempt in $(seq 1 36); do
