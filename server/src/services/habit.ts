@@ -3,6 +3,7 @@ import Elysia, { t } from 'elysia';
 import { habitLogs, habits } from '../db/schema';
 import { setup } from '../setup';
 import { getDB } from '../utils/di';
+import { validLifeDaySpan } from '../utils/life-date-range';
 
 const day = t.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
 
@@ -51,6 +52,7 @@ export function HabitService() {
     }, { body: t.Object({ date: day, completed: t.Boolean(), note: t.Optional(t.String({ maxLength: 500 })) }) })
     .get('/range', async ({ uid, lifeAccess, set, query }) => {
       if (!uid || !lifeAccess) { set.status = 403; return 'Private Life access is required'; }
+      if (!validLifeDaySpan(query.from, query.to, 366)) { set.status = 400; return 'Invalid date range'; }
       const ownerHabits = await db.query.habits.findMany({ where: eq(habits.ownerId, uid), orderBy: (habits, { desc }) => [desc(habits.active), desc(habits.createdAt)] });
       const logs = await db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid), gte(habitLogs.date, query.from), lte(habitLogs.date, query.to)) });
       return { habits: ownerHabits, logs };
@@ -61,6 +63,6 @@ export function HabitService() {
       const ownerHabits = await db.query.habits.findMany({ where: eq(habits.ownerId, uid) });
       const logs = await db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid),gte(habitLogs.date,prefix+'01'),lte(habitLogs.date,prefix+'31')) });
       return { habits: ownerHabits, logs };
-    }, { query: t.Object({ month: t.String({ pattern: '^\\d{4}-\\d{2}$' }) }) })
+    }, { query: t.Object({ month: t.String({ pattern: '^\\d{4}-(0[1-9]|1[0-2])$' }) }) })
   );
 }

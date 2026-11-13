@@ -85,6 +85,48 @@ describe('framework upgrade compatibility and security boundary',()=>{
     const response=await call(service,limitRequestBody(request,32));
     expect(response.status,await response.text()).toBe(413);
   });
+  it('bounds Life date queries before content reads and accepts legacy local-time windows',async()=>{
+    const findMany = vi.fn(async () => []);
+    const lifeDb = {
+      query: {
+        users: db.query.users,
+        habits: { findMany }, habitLogs: { findMany }, pomodoroSessions: { findMany },
+        rssItems: { findMany }, dailyBasics: { findMany }, lifeDailyNotes: { findMany }, lifeTodos: { findMany },
+      },
+      select: () => ({ from: () => ({ where: async () => [{ value: 0 }] }) }),
+    } as any;
+    const service = runRequestContext(env, lifeDb, () => app());
+    const token = await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
+    const get = (path: string, query: Record<string, string>) => runRequestContext(env, lifeDb, () => service.handle(new Request(
+      `http://localhost${path}?${new URLSearchParams(query)}`, { headers: { Authorization: `Bearer ${token}` } },
+    )));
+    // A west-coast DST day can run for 25 hours and overlap the next Shanghai date.
+    const overview = { day:'2026-11-02', dayStart:'2026-11-01T07:00:00Z', dayEnd:'2026-11-02T08:00:00Z', weekStart:'2026-10-26', weekEnd:'2026-11-01' };
+    const month = { month:'2024-02', start:'2024-01-31T16:00:00Z', end:'2024-02-29T16:00:00Z' };
+    const year = { year:'2024', start:'2023-12-31T16:00:00Z', end:'2024-12-31T16:00:00Z' };
+    const leapDay = { from:'2024-02-29', to:'2024-02-29' };
+    for (const [path, query] of [
+      ['/life/overview', { ...overview, dayEnd:'2027-11-02T08:00:00Z' }],
+      ['/life/overview', { ...overview, weekStart:'2000-01-01' }],
+      ['/life/overview', { ...overview, day:'2026-02-29' }],
+      ['/life/overview', { ...overview, dayStart:'2026-02-30T07:00:00Z' }],
+      ['/life/calendar', { ...month, month:'2024-13' }],
+      ['/life/calendar', { ...month, end:year.end }],
+      ['/life/year', { ...year, year:'2025' }],
+      ['/life/notes', { ...leapDay, to:'2030-02-28' }],
+      ['/life/basics', { ...leapDay, to:'2024-02-28' }],
+      ['/habit/range', { from:'2025-02-29', to:'2025-03-01' }],
+    ] as const) expect((await get(path, query)).status, path).toBe(400);
+    expect((await get('/habit/calendar', { month:'2026-13' })).status).toBe(422);
+    expect(findMany).not.toHaveBeenCalled();
+
+    for (const [path, query] of [
+      ['/life/overview', overview], ['/life/calendar', month], ['/life/year', year],
+      ['/life/basics', leapDay], ['/life/notes', { from:'2024-02-26', to:'2024-03-03' }],
+      ['/habit/range', leapDay], ['/habit/calendar', { month:'2024-02' }],
+    ] as const) expect((await get(path, query)).status, path).toBe(200);
+    expect(findMany).toHaveBeenCalled();
+  });
   it('does not expose internal database diagnostics in a failed request',async()=>{
     const broken={query:{users:{findFirst:async()=>{throw Error('fixture private database diagnostic');}}}} as any;
     const service=runRequestContext(env,broken,()=>app());

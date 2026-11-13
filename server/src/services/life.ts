@@ -6,19 +6,13 @@ import { getDB, getEnv } from '../utils/di';
 import { roleForUser } from '../utils/roles';
 import { todoState } from '../utils/todo-state';
 import {createDailyPlan,updateDailyPlan,reorderDailyPlan,validPlanDay} from '../utils/daily-plans';
+import { lifeCalendarWindow, lifeOverviewWindow, validLifeDaySpan } from '../utils/life-date-range';
 
 const dayPattern = '^\\d{4}-\\d{2}-\\d{2}$';
 const monthPattern = '^\\d{4}-\\d{2}$';
 const yearPattern = '^\\d{4}$';
 const todoType = t.Union([t.Literal('task'), t.Literal('learn'), t.Literal('success'), t.Literal('daily')]);
 const optionalTodoDate = t.Optional(t.Union([t.String({ format: 'date-time' }), t.Null()]));
-
-function validRange(startValue: string, endValue: string) {
-    const start = new Date(startValue);
-    const end = new Date(endValue);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) return null;
-    return { start, end };
-}
 
 /**
  * Aggregated Life reads live here so the browser does not need to coordinate
@@ -40,8 +34,8 @@ export function LifeService() {
             .get('/todo-capabilities', () => ({ version: 2 }))
             .get('/overview', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-                const today = validRange(query.dayStart, query.dayEnd);
-                if (!today || query.weekStart > query.weekEnd) {
+                const today = lifeOverviewWindow(query);
+                if (!today) {
                     set.status = 400;
                     return 'Invalid date range';
                 }
@@ -137,22 +131,23 @@ export function LifeService() {
             })
             .get('/calendar', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-                const range = validRange(query.start, query.end);
+                const range = lifeCalendarWindow(query.month, query.start, query.end);
                 if (!range) {
                     set.status = 400;
                     return 'Invalid date range';
                 }
                 const [ownerHabits, logs, sessions, notes, basics] = await Promise.all([
                     db.query.habits.findMany({ where: and(eq(habits.ownerId, uid!), eq(habits.active, 1)) }),
-                    db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.month}-01`), lte(habitLogs.date, `${query.month}-31`)) }),
+                    db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, range.firstDay), lte(habitLogs.date, range.lastDay)) }),
                     db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), orderBy: [desc(pomodoroSessions.startedAt)], limit: 500 }),
-                    db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, `${query.month}-01`), lte(lifeDailyNotes.date, `${query.month}-31`)) }),
-                    db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, `${query.month}-01`), lte(dailyBasics.date, `${query.month}-31`)), orderBy: [dailyBasics.sortOrder] }),
+                    db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, range.firstDay), lte(lifeDailyNotes.date, range.lastDay)) }),
+                    db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, range.firstDay), lte(dailyBasics.date, range.lastDay)), orderBy: [dailyBasics.sortOrder] }),
                 ]);
                 return { habits: ownerHabits, logs, sessions, notes, basics };
             }, { query: t.Object({ month: t.String({ pattern: monthPattern }), start: t.String(), end: t.String() }) })
             .get('/basics', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                if (!validLifeDaySpan(query.from, query.to, 366)) { set.status = 400; return 'Invalid date range'; }
                 return db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, query.from), lte(dailyBasics.date, query.to)), orderBy: [dailyBasics.date, dailyBasics.sortOrder] });
             }, { query: t.Object({ from: t.String({ pattern: dayPattern }), to: t.String({ pattern: dayPattern }) }) })
             .post('/basics', async ({ uid, lifeAccess, set, body }) => {
@@ -183,6 +178,7 @@ export function LifeService() {
             })
             .get('/notes', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
+                if (!validLifeDaySpan(query.from, query.to, 366)) { set.status = 400; return 'Invalid date range'; }
                 return db.query.lifeDailyNotes.findMany({ where: and(eq(lifeDailyNotes.ownerId, uid!), gte(lifeDailyNotes.date, query.from), lte(lifeDailyNotes.date, query.to)) });
             }, { query: t.Object({ from: t.String({ pattern: dayPattern }), to: t.String({ pattern: dayPattern }) }) })
             .post('/notes/:date', async ({ uid, lifeAccess, set, params, body }) => {
@@ -207,14 +203,14 @@ export function LifeService() {
             }, { params: t.Object({ date: t.String({ pattern: dayPattern }) }) })
             .get('/year', async ({ uid, lifeAccess, set, query }) => {
                 if (!requireLife({ uid, lifeAccess, set })) return 'Private Life access is required';
-                const range = validRange(query.start, query.end);
+                const range = lifeCalendarWindow(query.year, query.start, query.end);
                 if (!range) {
                     set.status = 400;
                     return 'Invalid date range';
                 }
                 const [ownerHabits, logs, sessions, rss, basics] = await Promise.all([
                     db.query.habits.findMany({ where: eq(habits.ownerId, uid!), columns: { id: true, name: true } }),
-                    db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, `${query.year}-01-01`), lte(habitLogs.date, `${query.year}-12-31`)), columns: { habitId: true, date: true, completed: true } }),
+                    db.query.habitLogs.findMany({ where: and(eq(habitLogs.ownerId, uid!), gte(habitLogs.date, range.firstDay), lte(habitLogs.date, range.lastDay)), columns: { habitId: true, date: true, completed: true } }),
                     db.query.pomodoroSessions.findMany({ where: and(eq(pomodoroSessions.ownerId, uid!), gte(pomodoroSessions.startedAt, range.start), lt(pomodoroSessions.startedAt, range.end)), columns: { startedAt: true, focusMinutes: true, completed: true }, limit: 2000 }),
                     db.query.rssItems.findMany({
                         where: and(eq(rssItems.ownerId, uid!), or(
@@ -224,7 +220,7 @@ export function LifeService() {
                         columns: { readAt: true, starredAt: true },
                         limit: 3000,
                     }),
-                    db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, `${query.year}-01-01`), lte(dailyBasics.date, `${query.year}-12-31`)), columns: { date: true, completed: true } }),
+                    db.query.dailyBasics.findMany({ where: and(eq(dailyBasics.ownerId, uid!), gte(dailyBasics.date, range.firstDay), lte(dailyBasics.date, range.lastDay)), columns: { date: true, completed: true } }),
                 ]);
                 return { habits: ownerHabits, logs, sessions, rss, basics };
             }, { query: t.Object({ year: t.String({ pattern: yearPattern }), start: t.String(), end: t.String() }) }),
