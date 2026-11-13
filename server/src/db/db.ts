@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/d1';
-import type { D1Database } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
 export interface Env {
     DB: D1Database;
@@ -21,6 +21,8 @@ export interface Env {
     S3_CACHE_FOLDER: string,
     WEBHOOK_URL: string,
     S3_FORCE_PATH_STYLE: string,
+    /** Dedicated bucket with no public domain. Optional until media rollout. */
+    PRIVATE_MEDIA?: R2Bucket,
     GUEST_ACCESS_CODE: string,
     /** Shared secret for the lightweight GitHub YouTube feed reconciler. */
     RSS_SYNC_TOKEN: string,

@@ -6,6 +6,7 @@ import { setup } from "../setup";
 import { getEnv } from "../utils/di";
 import { createS3Client } from "../utils/s3";
 import { imageFormat } from "../utils/image-format";
+import { PrivateMediaService } from "./private-media";
 
 function buf2hex(buffer: ArrayBuffer) {
     return [...new Uint8Array(buffer)]
@@ -78,5 +79,6 @@ export function StorageService() {
                         file: t.File()
                     })
                 })
-        );
+        )
+        .use(PrivateMediaService());
 }
