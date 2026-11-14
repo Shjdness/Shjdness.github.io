@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { SignJWT } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../_worker';
@@ -7,11 +9,19 @@ const id = '784f0bfa-6d25-4a21-9f5c-f410fdb7822a';
 const png = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 const origin = 'https://site.invalid';
 const secret = 'isolated-jwt-secret-at-least-32-characters';
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
+const budgetMigration = readFileSync(new URL('../../sql/0044-private-media-budget.sql', import.meta.url), 'utf8');
+const day = () => new Date().toISOString().slice(0, 10);
 
 function fixture() {
+    const sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(budgetMigration);
+    const reserve = vi.fn((sql: string, params: Array<string | number>) => sqlite.prepare(sql).all(...params));
     const users = new Map([[1, 1], [2, 2], [3, 0]]);
     const feeds = new Map<number, { uid: number; draft: number; kind: string; content: string }>();
-    const prepare = vi.fn((sql: string) => ({ bind: (id: number) => ({ raw: async () => {
+    const prepare = vi.fn((sql: string) => ({ bind: (id: number, ...params: Array<string | number>) => ({
+        all: async () => ({ results: reserve(sql, [id, ...params]) }),
+        raw: async () => {
         if (sql.includes('"info"')) return [['private:server.config:v1', '{}']];
         if (sql.includes('"feeds"')) {
             const feed = feeds.get(id);
@@ -56,7 +66,7 @@ function fixture() {
         if (options.body instanceof ReadableStream) init.duplex = 'half';
         return worker.fetch(new Request(`https://worker.invalid/storage/private/${options.path ?? id}`, init), options.env ?? env);
     };
-    return { users, feeds, bucket, objects, env, token, call };
+    return { users, feeds, bucket, objects, env, token, call, reserve, sqlite };
 }
 
 describe('isolated private media Worker integration', () => {
@@ -136,5 +146,79 @@ describe('isolated private media Worker integration', () => {
         f.feeds.set(7, { uid: 1, draft: 0, kind: 'memo', content });
         expect((await f.call({ token: admin, path })).status).toBe(404);
         expect(f.bucket.get.mock.calls).toEqual([[`owner/1/${id}`]]);
+    });
+
+    it('admits both limits atomically and leaves exhausted accounts able to confirm old uploads', async () => {
+        const f = fixture();
+        const [owner, other] = await Promise.all([f.token(1), f.token(2)]);
+        const put = (token = owner, path = id, body = png) => f.call({ token, path, method: 'PUT', body });
+        const insert = f.sqlite.prepare('INSERT INTO private_media_budget VALUES (?, ?, ?, ?)');
+        insert.run(day(), 'site', 198, 128 * 1024 * 1024 - 2 * png.length);
+        insert.run(day(), 'owner:1', 39, 32 * 1024 * 1024 - png.length);
+        const otherId = `a${id.slice(1)}`;
+        const thirdId = `b${id.slice(1)}`;
+        const competing = await Promise.all([put(owner, id), put(owner, otherId)]);
+        expect(competing.map(result => result.status).sort()).toEqual([201, 429]);
+        expect(f.bucket.put).toHaveBeenCalledTimes(1);
+        const winner = competing[0].status === 201 ? id : otherId;
+        expect((await put(owner, winner)).status).toBe(200);
+        expect((await put(owner, winner, Uint8Array.of(...png, 0))).status).toBe(409);
+        expect(f.reserve).toHaveBeenCalledTimes(2);
+        expect((await put(other, thirdId)).status).toBe(201);
+        const rejected = await put(other, otherId);
+        expect(rejected.status).toBe(429);
+        expect(rejected.headers.get('cache-control')).toBe('private, no-store');
+        expect(Number(rejected.headers.get('retry-after'))).toBeGreaterThan(0);
+        expect(await rejected.json()).toEqual({ code: 'PRIVATE_MEDIA_DAILY_LIMIT' });
+        expect(f.bucket.put).toHaveBeenCalledTimes(2);
+        expect(f.sqlite.prepare('SELECT scope, attempts FROM private_media_budget ORDER BY scope').all())
+            .toEqual([{ scope: 'owner:1', attempts: 40 }, { scope: 'owner:2', attempts: 1 }, { scope: 'site', attempts: 200 }]);
+    });
+
+    it('fails closed on an unknown budget result and recognizes a committed R2 upload after UTC rollover', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(new Date('2026-11-14T23:59:59Z'));
+            const f = fixture();
+            const owner = await f.token(1, '24h');
+            const put = (path = id) => f.call({ token: owner, path, method: 'PUT', body: png });
+            f.reserve.mockImplementationOnce((sql, params) => {
+                f.sqlite.prepare(sql).all(...params);
+                throw Error('Synthetic lost D1 receipt');
+            });
+            expect((await put()).status).toBe(503);
+            expect(f.bucket.put).not.toHaveBeenCalled();
+            const write = f.bucket.put.getMockImplementation()!;
+            f.bucket.put.mockImplementationOnce(async (...params) => {
+                await write(...params);
+                throw Error('Synthetic lost R2 receipt');
+            });
+            expect((await put()).status).toBe(503);
+            expect(f.objects.size).toBe(1);
+            vi.setSystemTime(new Date('2026-11-15T00:00:01Z'));
+            expect((await put()).status).toBe(200);
+            expect(f.reserve).toHaveBeenCalledTimes(2);
+            expect((await put(`c${id.slice(1)}`)).status).toBe(201);
+            expect(f.sqlite.prepare("SELECT day, attempts FROM private_media_budget WHERE scope = 'site' ORDER BY day").all())
+                .toEqual([{ day: '2026-11-14', attempts: 2 }, { day: '2026-11-15', attempts: 1 }]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects the byte cap without consuming either account or site attempts', async () => {
+        const f = fixture();
+        const owner = await f.token(1);
+        const put = () => f.call({ token: owner, method: 'PUT', body: png });
+        const insert = f.sqlite.prepare('INSERT INTO private_media_budget VALUES (?, ?, ?, ?)');
+        for (const [scope, limit] of [['site', 128], ['owner:1', 32]] as const) {
+            f.sqlite.prepare('DELETE FROM private_media_budget').run();
+            insert.run(day(), scope, 1, limit * 1024 * 1024 - png.length + 1);
+            const read = f.sqlite.prepare('SELECT * FROM private_media_budget');
+            const before = read.all();
+            expect((await put()).status).toBe(429);
+            expect(read.all()).toEqual(before);
+        }
+        expect(f.bucket.put).not.toHaveBeenCalled();
     });
 });

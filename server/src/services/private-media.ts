@@ -5,6 +5,7 @@ import { setup } from '../setup';
 import { getDB, getEnv } from '../utils/di';
 import { canReadFeed, isPrivateFeed } from '../utils/feed-permissions';
 import { imageFormat } from '../utils/image-format';
+import { reservePrivateMediaUpload } from '../utils/private-media-budget';
 import { feedReferencesPrivateMedia, privateMediaId, privateMediaKey } from '../utils/private-media-reference';
 import { allowBurst } from '../utils/rate-limit';
 import { hasBodyLimitError, readLimitedBody } from '../utils/request-body';
@@ -31,7 +32,7 @@ function validObjectType(value: string | undefined): value is string {
 }
 
 export function PrivateMediaService() {
-    const bucket = getEnv().PRIVATE_MEDIA;
+    const { PRIVATE_MEDIA: bucket, DB: budgetDb } = getEnv();
     const db = getDB();
     return new Elysia({ aot: false })
         .use(setup())
@@ -82,16 +83,30 @@ export function PrivateMediaService() {
                     if (!format) return reply(415);
                     const digest = digestHex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
                     const key = privateMediaKey(uid, params.id);
+                    const receipt = (status: number) => Response.json({ id: params.id }, { status, headers: privateHeaders });
+                    const matches = (object: Pick<R2Object, 'size' | 'customMetadata' | 'httpMetadata'>) =>
+                        object.size === bytes.length && object.customMetadata?.digest === digest && object.httpMetadata?.contentType === format.contentType;
+                    const previous = await bucket.head(key);
+                    if (previous) return matches(previous) ? receipt(200) : reply(409);
+
+                    const budget = await reservePrivateMediaUpload(budgetDb, uid, bytes.length);
+                    if (!budget.admitted) {
+                        const retrySeconds = Math.max(1, Math.ceil((budget.retryAt - Date.now()) / 1000));
+                        return Response.json({ code: 'PRIVATE_MEDIA_DAILY_LIMIT' }, {
+                            status: 429, headers: { ...privateHeaders, 'Retry-After': String(retrySeconds) },
+                        });
+                    }
+                    // A concurrent or previously unconfirmed PUT may still
+                    // commit after HEAD. Keep the condition and never refund.
                     const written = await bucket.put(key, bytes, {
                         onlyIf: { etagDoesNotMatch: '*' },
                         httpMetadata: { contentType: format.contentType },
                         customMetadata: { digest },
                     });
-                    if (written) return Response.json({ id: params.id }, { status: 201, headers: privateHeaders });
+                    if (written) return receipt(201);
                     const existing = await bucket.head(key);
                     if (!existing) return reply(503);
-                    if (existing.size !== bytes.length || existing.customMetadata?.digest !== digest || existing.httpMetadata?.contentType !== format.contentType) return reply(409);
-                    return Response.json({ id: params.id }, { headers: privateHeaders });
+                    return matches(existing) ? receipt(200) : reply(409);
                 } catch (error) { return reply(hasBodyLimitError(error) ? 413 : 503); }
             // Elysia's dynamic handler falls back to MIME-based parsing when
             // the custom parser returns undefined, so use an explicit marker.

@@ -31,9 +31,14 @@ async function privateMediaRequest<T>(mediaId: string, feedId: number | undefine
     credentials: 'omit', cache: 'no-store', redirect: 'error', signal: combined,
   });
   if (!response.ok) {
+    if (response.status === 429 && upload) {
+      const reason = await response.json().catch(() => undefined) as { code?: string } | undefined;
+      throw Error(reason?.code === 'PRIVATE_MEDIA_DAILY_LIMIT'
+        ? '已达到私密图片每日上传限额，请在北京时间 08:00 额度刷新后重试'
+        : '图片上传过于频繁，请一分钟后重试');
+    }
     void response.body?.cancel().catch(() => {});
     if (response.status === 404) throw new PrivateMediaUnavailable();
-    if (response.status === 429 && upload) throw Error('图片上传过于频繁，请一分钟后重试');
     throw Error('私密图片请求未完成，请重试');
   }
   const result = await read(response);
