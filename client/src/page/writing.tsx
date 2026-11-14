@@ -23,11 +23,14 @@ import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
 import { createWritingRevision, loadWritingRecord } from '../utils/writing-load';
 import { completeWritingSave, confirmWritingDraftDeletion } from '../utils/writing-save';
-import { maxUploadImageBytes, uploadPrivateMedia } from '../utils/private-media';
+import { maxUploadImageBytes, privateMediaWriteMessage, privateMediaWritesPaused, readPrivateMediaAvailability, uploadPrivateMedia, usePrivateMediaAvailability } from '../utils/private-media';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
 const tagScope = (kind: ContentKind): TagScope => kind === 'diary' || kind === 'memo' ? kind : 'blog';
+function writingError(value: unknown) {
+  return privateMediaWritesPaused(value) ? '私密图片写入暂时暂停，本地稿件已保留，请稍后重试' : apiErrorMessage(value);
+}
 
 // 写作页面
 export function WritingPage({ id }: { id?: number }) {
@@ -108,6 +111,9 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   const scope = tagScope(kind);
   const privateMode = kind === 'diary' || kind === 'memo';
   const usePrivateUpload = privateMode || !recordWasPublic;
+  const [retryPrivateMedia, setRetryPrivateMedia] = useState(0);
+  const privateMediaStatus = usePrivateMediaAvailability(recordLoaded && usePrivateUpload, retryPrivateMedia);
+  const privateUploadStatus = usePrivateUpload ? privateMediaWriteMessage(privateMediaStatus) : undefined;
   const ownsRecord = recordLoaded && (recordOwner === undefined || recordOwner === ownerId);
   const uploadRef = useRef<HTMLInputElement>(null);
   const publicUploadSelected = useRef(false);
@@ -190,10 +196,10 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
       let publishedId = currentId;
       if (currentId !== undefined) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
-        if (error) throw new Error(typeof error.value === 'string' ? error.value : JSON.stringify(error.value));
+        if (error) throw new Error(writingError(error.value));
       } else {
         const { data, error } = await client.feed.post(payload, { headers: headersWithAuth() });
-        if (error || !data || typeof data === 'string') throw new Error(error ? JSON.stringify(error.value) : '发布失败');
+        if (error || !data || typeof data === 'string') throw new Error(error ? writingError(error.value) : '发布失败');
         publishedId = data.insertedId;
       }
       if (!isCurrent()) return;
@@ -226,10 +232,10 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
       let savedId = currentId;
       if (currentId !== undefined) {
         const { error } = await client.feed({ id: currentId }).post(payload, { headers: headersWithAuth() });
-        if (error) throw new Error(String(error.value));
+        if (error) throw new Error(writingError(error.value));
       } else {
         const { data, error } = await client.feed.post(payload, { headers: headersWithAuth() });
-        if (error || !data || typeof data === 'string') throw new Error(error ? String(error.value) : '草稿保存失败');
+        if (error || !data || typeof data === 'string') throw new Error(error ? writingError(error.value) : '草稿保存失败');
         savedId = data.insertedId;
       }
       if (!isCurrent()) return;
@@ -306,6 +312,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
 
   const uploadImages = async (files: File[], explicitlyPublic = false) => {
     if (!files.length || uploadJob.current || publishing || !recordLoaded) return;
+    if (privateMode && explicitlyPublic) return;
     const editor = editorRef.current, model = editor?.getModel();
     const token = getCookie('token');
     const position = editor?.getPosition();
@@ -326,6 +333,11 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
     const images: string[] = [];
     let failure: unknown;
     try {
+      if (uploadPrivately) {
+        const status = await readPrivateMediaAvailability();
+        if (!current()) return;
+        if (status !== 'ready') throw new Error(privateMediaWriteMessage(status));
+      }
       for (const file of files) {
         if (!current()) return;
         let url: string;
@@ -371,6 +383,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
     }
   };
   const chooseImages = (forPublic = false) => {
+    if (forPublic ? privateMode : Boolean(privateUploadStatus)) return;
     publicUploadSelected.current = forPublic;
     uploadRef.current?.click();
   };
@@ -544,7 +557,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
               <div className={`grid grid-cols-1 ${preview === 'comparison' ? "sm:grid-cols-2" : ""}`}>
                 <div className={"flex flex-col " + (preview === 'preview' ? "hidden" : "")}>
                   <div className="flex flex-row justify-start mb-2">
-                    <button type="button" aria-label={usePrivateUpload ? '上传私密图片' : '上传公开配图'} disabled={uploading || publishing || !recordLoaded} onClick={() => chooseImages()}>
+                    <button type="button" aria-label={usePrivateUpload ? '上传私密图片' : '上传公开配图'} disabled={uploading || publishing || !recordLoaded || Boolean(privateUploadStatus)} onClick={() => chooseImages()}>
                       <i className="ri-image-add-line" />
                     </button>
                     {!privateMode && usePrivateUpload && (
@@ -567,6 +580,10 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
                       }
                     }} />
                   </div>
+                  {recordLoaded && privateUploadStatus && <div className="flex flex-wrap items-center gap-2 mb-2 text-sm t-secondary">
+                    <span role="status">{privateUploadStatus}</span>
+                    {privateMediaStatus !== 'checking' && <button type="button" className="underline" onClick={() => setRetryPrivateMedia(value => value + 1)}>重新检查</button>}
+                  </div>}
                   <div
                     className={"relative"}
                     onDropCapture={event => {

@@ -57,7 +57,17 @@ describe('framework upgrade compatibility and security boundary',()=>{
     }
     const publicResponse = await worker.fetch(new Request('http://localhost/reliability/capabilities'),workerEnv);
     expect(publicResponse.status).toBe(200);
-    expect(publicResponse.headers.get('cache-control')).toBeNull();
+    expect(publicResponse.headers.get('cache-control')).toBe('no-store');
+    expect(await publicResponse.json()).toMatchObject({
+      privateMediaV1: true, privateMediaAvailable: false, privateMediaWritesPaused: true,
+    });
+    for (const value of [undefined, 'true', 'false', 'invalid']) {
+      const configured = { ...workerEnv, PRIVATE_MEDIA: {}, PRIVATE_MEDIA_WRITES_PAUSED: value };
+      const capabilities = await worker.fetch(new Request('http://localhost/reliability/capabilities'), configured);
+      expect(await capabilities.json()).toMatchObject({
+        privateMediaV1: true, privateMediaAvailable: true, privateMediaWritesPaused: value !== 'false',
+      });
+    }
     const token = await new SignJWT({id:1}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
     const profile = await worker.fetch(new Request('http://localhost/user/profile',{
       headers: { Authorization: 'Bearer '+token },

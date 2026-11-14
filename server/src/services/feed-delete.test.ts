@@ -5,7 +5,7 @@ vi.mock('../setup',async()=>{
   const {default:Elysia}=await import('elysia');
   return {setup:()=>new Elysia({aot:false}).derive({as:'global'},()=>({uid:state.uid,writer:state.writer,admin:state.admin}))};
 });
-vi.mock('../utils/di',()=>({getDB:()=>({query:{feeds:{findFirst:async()=>({id:8,uid:1,draft:1,alias:null})}}}),getEnv:()=>({DB:{}})}));
+vi.mock('../utils/di',()=>({getDB:()=>({query:{feeds:{findFirst:async()=>({id:8,uid:1,draft:1,alias:null,writeRevision:'fixture-revision'})}}}),getEnv:()=>({DB:{}})}));
 vi.mock('../utils/cache',()=>({PublicCache:()=>({deletePrefix:state.invalidate,delete:state.invalidate}),ClientConfig:()=>({})}));
 vi.mock('../utils/post-create',async importOriginal=>({
   ...await importOriginal<typeof import('../utils/post-create')>(),
@@ -19,13 +19,13 @@ it('accepts the optional draft guard, returns conflict without invalidating cach
   const conflict=await request('?draftOnly=1');
   expect(conflict.status).toBe(409);
   expect(await conflict.text()).toContain('草稿状态已变化');
-  expect(state.remove.mock.calls[0].slice(1)).toEqual([1,8,true]);
+  expect(state.remove.mock.calls[0].slice(1)).toEqual([1,8,'fixture-revision',true]);
   expect(state.invalidate).not.toHaveBeenCalled();
   state.deleted=true;
   expect((await request('?draftOnly=1')).status).toBe(200);
   expect(state.invalidate).toHaveBeenCalled();
   expect((await request()).status).toBe(200);
-  expect(state.remove.mock.calls[2].slice(1)).toEqual([1,8,false]);
+  expect(state.remove.mock.calls[2].slice(1)).toEqual([1,8,'fixture-revision',false]);
   expect((await request('?draftOnly=0')).status).toBe(422);
   expect(state.remove).toHaveBeenCalledTimes(3);
 });
@@ -39,5 +39,5 @@ it('retains owner, trusted-writer and administrator authorization before conditi
   expect(state.remove).not.toHaveBeenCalled();
   state.uid=2;state.admin=true;
   expect((await request('?draftOnly=1')).status).toBe(200);
-  expect(state.remove.mock.calls[0].slice(1)).toEqual([1,8,true]);
+  expect(state.remove.mock.calls[0].slice(1)).toEqual([1,8,'fixture-revision',true]);
 });

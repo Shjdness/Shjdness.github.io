@@ -29,6 +29,19 @@ const S3_FOLDER = renv("S3_FOLDER", 'images/')
 const S3_REGION = renv("S3_REGION", "auto")
 const S3_FORCE_PATH_STYLE = env("S3_FORCE_PATH_STYLE", "false")
 const WEBHOOK_URL = env("WEBHOOK_URL", "")
+const privateMediaBucket = env("PRIVATE_MEDIA_R2_BUCKET")
+const privateMediaWritesPaused = env("PRIVATE_MEDIA_WRITES_PAUSED", "true")
+if (privateMediaWritesPaused !== "true" && privateMediaWritesPaused !== "false") {
+    throw new Error("PRIVATE_MEDIA_WRITES_PAUSED must be true or false")
+}
+if (privateMediaBucket && (
+    privateMediaBucket.trim() !== privateMediaBucket || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(privateMediaBucket)
+)) {
+    throw new Error("PRIVATE_MEDIA_R2_BUCKET must be a valid R2 bucket name")
+}
+if (privateMediaBucket && privateMediaBucket === S3_BUCKET) {
+    throw new Error("Private media requires a bucket separate from S3_BUCKET")
+}
 
 // Secrets
 const accessKeyId = env("S3_ACCESS_KEY_ID")
@@ -39,12 +52,14 @@ const githubClientSecret = env("RIN_GITHUB_CLIENT_SECRET")
 const guestAccessCode = env("GUEST_ACCESS_CODE")
 const rssSyncToken = env("RSS_SYNC_TOKEN")
 
-Bun.write('wrangler.toml', stripIndent(`
+const workerConfig = stripIndent(`
 #:schema node_modules/wrangler/config-schema.json
 name = "${WORKER_NAME}"
 main = "server/src/_worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+# Preserve runtime variables managed in the dashboard, such as report delivery.
+keep_vars = true
 
 [vars]
 FRONTEND_URL = "${FRONTEND_URL}"
@@ -57,19 +72,45 @@ S3_ACCESS_HOST = "${S3_ACCESS_HOST}"
 S3_BUCKET = "${S3_BUCKET}"
 S3_FORCE_PATH_STYLE = "${S3_FORCE_PATH_STYLE}"
 WEBHOOK_URL = "${WEBHOOK_URL}"
+PRIVATE_MEDIA_WRITES_PAUSED = "${privateMediaWritesPaused}"
 
 [placement]
 mode = "smart"
 
 [triggers]
 crons = ["*/5 * * * *"]
-`))
+`)
+const privateMediaBinding = privateMediaBucket ? `
+[[r2_buckets]]
+binding = "PRIVATE_MEDIA"
+bucket_name = "${privateMediaBucket}"
+` : ""
+await Bun.write("wrangler.toml", workerConfig + privateMediaBinding)
 
 type D1Item = {
     uuid: string,
     name: string,
     version: string,
     created_at: string,
+}
+
+type D1Column = { name: string; type: string; notnull: number; dflt_value: string | null; pk: number }
+
+async function querySchema<T>(sql: string): Promise<T[]> {
+    const output = await $`bunx wrangler d1 execute ${DB_NAME} --remote --command ${sql} --json`.quiet().text()
+    const rows = (JSON.parse(output) as Array<{ success?: boolean; results?: T[] }>)[0]
+    if (!rows?.success || !Array.isArray(rows.results)) throw new Error("D1 schema inspection failed")
+    return rows.results
+}
+
+async function hasFeedWriteRevision() {
+    const columns = await querySchema<D1Column>("PRAGMA table_info('feeds')")
+    const column = columns.find(({ name }) => name === "write_revision")
+    if (!column) return false
+    if (column.type.toUpperCase() !== "TEXT" || column.notnull !== 0 || column.dflt_value !== null || column.pk !== 0) {
+        throw new Error("Existing feeds.write_revision does not match migration 0043")
+    }
+    return true
 }
 
 const { exitCode, stderr, stdout } = await $`bunx wrangler d1 create ${DB_NAME}`.quiet().nothrow()
@@ -182,6 +223,11 @@ try {
         return JSON.stringify(rows);
     };
     for (const file of sqlFiles) {
+        if (file === '0043-feed-write-revision.sql' && await hasFeedWriteRevision()) {
+            // A previous deploy may have added this column before recording its version.
+            console.log('Migration 0043 column already present; verified compatible shape.')
+            continue
+        }
         const beforeNotes = file.startsWith('0026-') ? await noteSnapshot() : null;
         const beforeTodos = file.startsWith('0024-') ? await todoSnapshot() : null;
         const beforeRss = file.startsWith('0025-') ? await rssSnapshot() : null;
@@ -199,6 +245,15 @@ try {
             console.log(`RSS preservation audit passed: ${JSON.parse(beforeRss).length} unique videos retained with reading states.`);
         }
         console.log(`Migrated ${file}`)
+    }
+    const mediaSchema = await querySchema<{ name: string }>(`
+        SELECT name FROM sqlite_master
+        WHERE (type = 'trigger' AND tbl_name = 'feeds' AND name IN (
+            'feeds_private_media_before_insert', 'feeds_private_media_before_update'
+        )) OR (type = 'table' AND name = 'private_media_budget')
+    `)
+    if (mediaSchema.length !== 3 || !await hasFeedWriteRevision()) {
+        throw new Error("Private media migration schema is incomplete; Worker deployment stopped")
     }
     if (ownerRepairExpected) {
         const verifySql = `SELECT
@@ -280,7 +335,8 @@ await putSecret('RSS_SYNC_TOKEN', rssSyncToken)
 console.log(`Put Done.`)
 console.log(`----------------------------`)
 console.log(`Deploying`)
-await $`echo -e "n\ny\n" | bunx wrangler deploy`
+// Bind only resources that already exist. A typo must not provision an R2 bucket.
+await $`echo -e "n\ny\n" | bunx wrangler deploy --experimental-provision=false`
 console.log(`Deployed`)
 console.log(`----------------------------`)
 console.log(`🎉All Done.`)

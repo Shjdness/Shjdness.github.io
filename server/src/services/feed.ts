@@ -12,6 +12,7 @@ import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed, isPrivateFeed } from "../utils/feed-permissions";
 import { privateMediaReferencesAvailable } from '../utils/private-media-reference';
 import { githubSubject } from '../utils/github-subject';
+import { privateMediaPaused, privateMediaWritesPaused } from '../utils/private-media-maintenance';
 import { normalizeTagNames, prepareTagIds } from "./tag";
 import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts, updatePostWithTags } from '../utils/post-create';
 
@@ -295,6 +296,7 @@ export function FeedService() {
           async ({
             writer,
             set,
+            status,
             uid,
             mediaSubject,
             body: {
@@ -329,7 +331,8 @@ export function FeedService() {
             if (!isPrivateFeed({draft,kind:normalizedKind}) && hasPrivateReference(content, summary, title, alias)) {
               set.status = 409; return privateMediaPublicationMessage;
             }
-            if (!mediaSubject && hasPrivateReference(content)) {
+            const includesMedia = hasPrivateReference(content);
+            if (!mediaSubject && includesMedia) {
               set.status = 403; return mediaSignInMessage;
             }
             const operation=clientKey?{ownerId:uid,clientKey,requestHash:await postRequestHash({
@@ -340,6 +343,7 @@ export function FeedService() {
               try{const saved=await findPostCreate(getEnv().DB,operation);if(saved){await PublicCache().deletePrefix('feeds_');return saved;}}
               catch(error){if(error instanceof PostCreateConflictError){set.status=409;return error.message;}throw error;}
             }
+            if (includesMedia && privateMediaWritesPaused(getEnv())) return status(503, privateMediaPaused);
             // check exist
             const exist = draft
               ? null
@@ -356,7 +360,7 @@ export function FeedService() {
               set.status = 400;
               return "Content already exists";
             }
-            if (hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, mediaSubject, getEnv().PRIVATE_MEDIA)) {
+            if (includesMedia && !await privateMediaReferencesAvailable(content, mediaSubject, getEnv().PRIVATE_MEDIA)) {
               set.status = 409; return unavailableMediaMessage;
             }
             const date = createdAt ? new Date(createdAt) : new Date();
@@ -468,6 +472,7 @@ export function FeedService() {
             admin,
             writer,
             set,
+            status,
             uid,
             mediaSubject,
             params: { id },
@@ -510,6 +515,7 @@ export function FeedService() {
             }
             if (hasPrivateReference(feed.content, content)) {
               if (!mediaSubject) { set.status = 403; return mediaSignInMessage; }
+              if (privateMediaWritesPaused(getEnv())) return status(503, privateMediaPaused);
               if (content !== undefined && hasPrivateReference(content)) {
                 const subject = await githubSubject(feed.uid, feed.user?.openid);
                 if (!await privateMediaReferencesAvailable(content, subject, getEnv().PRIVATE_MEDIA)) {
@@ -599,7 +605,7 @@ export function FeedService() {
             }),
           },
         )
-        .delete("/:id", async ({ admin, writer, set, uid, mediaSubject, params: { id }, query: {draftOnly} }) => {
+        .delete("/:id", async ({ admin, writer, set, status, uid, mediaSubject, params: { id }, query: {draftOnly} }) => {
           const id_num = parseInt(id);
           const feed = await db.query.feeds.findFirst({
             where: eq(feeds.id, id_num),
@@ -612,13 +618,16 @@ export function FeedService() {
             set.status = 403;
             return "Permission denied";
           }
-          if (!mediaSubject && hasPrivateReference(feed.content)) {
-            set.status = 403; return mediaSignInMessage;
+          if (hasPrivateReference(feed.content)) {
+            if (!mediaSubject) { set.status = 403; return mediaSignInMessage; }
+            if (privateMediaWritesPaused(getEnv())) return status(503, privateMediaPaused);
           }
-          const deleted=await deletePostWithReceipts(getEnv().DB,feed.uid,id_num,draftOnly==='1');
-          if(draftOnly==='1'&&!deleted) {
+          const deleted=await deletePostWithReceipts(getEnv().DB,feed.uid,id_num,feed.writeRevision,draftOnly==='1');
+          if(!deleted) {
             set.status=409;
-            return '草稿状态已变化，未执行删除；请保留本地内容并核对云端记录';
+            return draftOnly==='1'
+              ? '草稿状态已变化，未执行删除；请保留本地内容并核对云端记录'
+              : '稿件已变化，未执行删除；请重新读取';
           }
           await clearFeedCache(id_num, feed.alias, null);
           return "Deleted";

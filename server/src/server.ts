@@ -23,6 +23,7 @@ import { allowBurst } from './utils/rate-limit';
 import { authenticate } from './utils/authentication';
 import {getDB} from './utils/di';
 import {hasBodyLimitError} from './utils/request-body';
+import { privateMediaWritesPaused } from './utils/private-media-maintenance';
 
 export const app = () => new Elysia({ aot: false })
     .onRequest(async({request,set})=>{
@@ -66,7 +67,25 @@ export const app = () => new Elysia({ aot: false })
     .use(LifeReportsService())
     .use(ReportMailService())
     .use(LifeCheckinsService())
-    .get('/reliability/capabilities',()=>({version:2,backgroundBudget:true,conflictAcknowledgement:true,privateServerConfig:true,signedWebsub:true,requestIsolation:true,streamingBodyLimit:true,transactionalBackup:true,idempotentLifeCreates:true,wrappedQuotaErrors:true,guardedSeoSnapshots:true,durableGuestGuard:true,isolatedNotifications:true,atomicPostUpdates:true,atomicPostCreates:true,idempotentPostCreates:true,atomicTagCreation:true,conditionalDraftDelete:true,lifeReportsPreview:true,lifeReportsHistory:true,reportBackupV3:true,reportAIResults:true,reportBackupV4:true,reportSchedule:true,reportOutboundV1:true,reportBrevoV1:true,reportQQSMTPV1:true,lifeCheckinsV1:true,reportBackupV5:true,reportCheckinSnapshotsV1:true,reportSelectedAIV2:true,reportRssCaptureV1:true,dailyPlansV1:true,reportPrivateMailV1:true,reportSelectedAutomationV1:true,reportFixedCaptureV1:true,reportCaptureTime:"05:00"}))
+    .get('/reliability/capabilities', ({ set }) => {
+        const env = getEnv();
+        set.headers['Cache-Control'] = 'no-store';
+        return {
+            version: 2, backgroundBudget: true, conflictAcknowledgement: true, privateServerConfig: true,
+            signedWebsub: true, requestIsolation: true, streamingBodyLimit: true, transactionalBackup: true,
+            idempotentLifeCreates: true, wrappedQuotaErrors: true, guardedSeoSnapshots: true, durableGuestGuard: true,
+            isolatedNotifications: true, atomicPostUpdates: true, atomicPostCreates: true, idempotentPostCreates: true,
+            atomicTagCreation: true, conditionalDraftDelete: true, lifeReportsPreview: true, lifeReportsHistory: true,
+            reportBackupV3: true, reportAIResults: true, reportBackupV4: true, reportSchedule: true,
+            reportOutboundV1: true, reportBrevoV1: true, reportQQSMTPV1: true, lifeCheckinsV1: true,
+            reportBackupV5: true, reportCheckinSnapshotsV1: true, reportSelectedAIV2: true, reportRssCaptureV1: true,
+            dailyPlansV1: true, reportPrivateMailV1: true, reportSelectedAutomationV1: true, reportFixedCaptureV1: true,
+            reportCaptureTime: "05:00",
+            privateMediaV1: true,
+            privateMediaAvailable: Boolean(env.PRIVATE_MEDIA),
+            privateMediaWritesPaused: privateMediaWritesPaused(env),
+        };
+    })
     .get('/', () => `Hi`)
     .onError(({ path, params, code, error, set }) => {
         if(hasBodyLimitError(error))return new Response('Request body is too large',{status:413,headers:{'Cache-Control':'no-store'}});

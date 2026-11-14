@@ -21,6 +21,7 @@ import "yet-another-react-lightbox/styles.css";
 import { useColorMode } from "../utils/darkModeUtils";
 import { markdownSchema } from "./markdown-schema";
 import { isPrivateMediaPreview, markPrivateMediaPreviews, PrivateMediaImage, privateMediaIdFromImage, usePrivateMediaSession, type PrivateMediaContext } from "./private-media-image";
+import { usePrivateMediaAvailability } from "../utils/private-media";
 
 const LEGACY_ASSET_ORIGIN = "https://shjdbucket.shjdshy.cc";
 const CURRENT_ASSET_ORIGIN =
@@ -59,13 +60,14 @@ const isMarkdownImageLinkAtEnd = (text: string) => {
 const ImageContext = createContext<{
   content: string;
   privateMedia?: PrivateMediaContext;
+  privateMediaStatus?: 'checking' | 'unavailable';
   showPublicImage: (src: string) => void;
 } | null>(null);
 
 function MarkdownImage({ node, src, ...props }: React.ComponentProps<'img'> & ExtraProps) {
   const context = useContext(ImageContext);
   if (!context) return null;
-  const { content, privateMedia, showPublicImage } = context;
+  const { content, privateMedia, privateMediaStatus, showPublicImage } = context;
   const offset = node?.position?.start.offset ?? 0;
   const previousContent = content.slice(0, offset);
   const rounded = countNewlinesBeforeNode(previousContent, offset) >= 1
@@ -78,7 +80,7 @@ function MarkdownImage({ node, src, ...props }: React.ComponentProps<'img'> & Ex
       {privateId ? (
         privateMedia && isPrivateMediaPreview(node)
           ? <PrivateMediaImage {...privateMedia} id={privateId} alt={props.alt} rounded={rounded} scale={scale} />
-          : <span>{props.alt || '私密图片'}</span>
+          : <span>{props.alt || '私密图片'}{privateMediaStatus === 'checking' ? '（正在检查）' : privateMediaStatus === 'unavailable' ? '（暂不可用）' : ''}</span>
       ) : normalizedSrc ? (
         <img {...props} src={normalizedSrc} data-markdown-public-image="" onClick={() => showPublicImage(normalizedSrc)}
           className={`mx-auto ${rounded ? 'rounded-xl' : ''}`} style={{ zoom: scale }} />
@@ -92,8 +94,12 @@ export function Markdown({ content, privateMedia }: { content: string; privateMe
   const [gallery, setGallery] = React.useState<{ slides: SlideImage[]; index: number }>();
   const markdown = useRef<HTMLDivElement>(null);
   const currentToken = usePrivateMediaSession(Boolean(privateMedia));
-  const visiblePrivateMedia = privateMedia?.token && privateMedia.token === currentToken
+  const scopedPrivateMedia = privateMedia?.token && privateMedia.token === currentToken
     && (privateMedia.allowStaged || privateMedia.feedId !== undefined) ? privateMedia : undefined;
+  const checkPrivateMedia = Boolean(scopedPrivateMedia && content.includes('private-media:'));
+  const availability = usePrivateMediaAvailability(checkPrivateMedia);
+  const visiblePrivateMedia = availability === 'ready' || availability === 'paused' ? scopedPrivateMedia : undefined;
+  const privateMediaStatus = checkPrivateMedia && (availability === 'checking' || availability === 'unavailable') ? availability : undefined;
   const canPreviewPrivateMedia = Boolean(visiblePrivateMedia);
   useEffect(() => { setGallery(undefined); }, [content, currentToken]);
   const Content = useMemo(() => (
@@ -360,7 +366,7 @@ export function Markdown({ content, privateMedia }: { content: string; privateMe
 
   return (
     <>
-      <ImageContext.Provider value={{ content, privateMedia: visiblePrivateMedia, showPublicImage: show }}>
+      <ImageContext.Provider value={{ content, privateMedia: visiblePrivateMedia, privateMediaStatus, showPublicImage: show }}>
         <div ref={markdown}>{Content}</div>
       </ImageContext.Provider>
       <Lightbox

@@ -23,6 +23,8 @@ export interface Env {
     S3_FORCE_PATH_STYLE: string,
     /** Dedicated bucket with no public domain. Optional until media rollout. */
     PRIVATE_MEDIA?: R2Bucket,
+    /** Require an explicit false before permitting private media writes. */
+    PRIVATE_MEDIA_WRITES_PAUSED?: string,
     GUEST_ACCESS_CODE: string,
     /** Shared secret for the lightweight GitHub YouTube feed reconciler. */
     RSS_SYNC_TOKEN: string,

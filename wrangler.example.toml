@@ -3,6 +3,7 @@ name = "shjdshy-server"
 main = "server/src/_worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+keep_vars = true
 
 [vars]
 FRONTEND_URL = "http://localhost:5173"
@@ -14,6 +15,7 @@ S3_ACCESS_HOST = "<YourS3AccessHost>"
 S3_BUCKET = "<YourS3BucketName>"
 S3_FORCE_PATH_STYLE = "false"
 WEBHOOK_URL = "https://<YourWebhookURL>"
+PRIVATE_MEDIA_WRITES_PAUSED = "true"
 
 [triggers]
 # GitHub Actions owns the single daily feed poll; WebSub remains push-driven.
@@ -23,3 +25,9 @@ crons = []
 binding = "DB"
 database_name = "shjdshy"
 database_id = "YourDatabaseID"
+
+# Optional dedicated R2 bucket. Keep the r2.dev and custom domains disabled.
+# For CI deployment, set the PRIVATE_MEDIA_R2_BUCKET repository variable.
+# [[r2_buckets]]
+# binding = "PRIVATE_MEDIA"
+# bucket_name = "private-media-bucket"

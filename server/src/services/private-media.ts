@@ -7,6 +7,7 @@ import { canReadFeed, isPrivateFeed } from '../utils/feed-permissions';
 import { imageFormat } from '../utils/image-format';
 import { githubSubject } from '../utils/github-subject';
 import { reservePrivateMediaUpload } from '../utils/private-media-budget';
+import { privateMediaPaused, privateMediaWritesPaused } from '../utils/private-media-maintenance';
 import { feedReferencesPrivateMedia, privateMediaId, privateMediaKey } from '../utils/private-media-reference';
 import { allowBurst } from '../utils/rate-limit';
 import { hasBodyLimitError, readLimitedBody } from '../utils/request-body';
@@ -33,7 +34,8 @@ function validObjectType(value: string | undefined): value is string {
 }
 
 export function PrivateMediaService() {
-    const { PRIVATE_MEDIA: bucket, DB: budgetDb } = getEnv();
+    const env = getEnv();
+    const { PRIVATE_MEDIA: bucket, DB: budgetDb } = env;
     const db = getDB();
     return new Elysia({ aot: false })
         .use(setup())
@@ -80,6 +82,7 @@ export function PrivateMediaService() {
                 if (!uid || !writer) return reply(401);
                 if (!mediaSubject) return reply(403);
                 if (!privateMediaId.test(params.id) || !new URL(request.url).pathname.endsWith(`/${params.id}`)) return reply(404);
+                if (privateMediaWritesPaused(env)) return Response.json(privateMediaPaused, { status: 503, headers: privateHeaders });
                 if (!allowBurst(`private-media-put:${uid}`, 12)) {
                     return new Response(null, { status: 429, headers: { ...privateHeaders, 'Retry-After': '60' } });
                 }

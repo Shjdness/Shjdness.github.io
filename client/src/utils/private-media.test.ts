@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fetchPrivateMedia, parsePrivateMediaReference, PrivateMediaUnavailable, uploadPrivateMedia } from './private-media';
+import { fetchPrivateMedia, parsePrivateMediaReference, PrivateMediaUnavailable, readPrivateMediaAvailability, uploadPrivateMedia } from './private-media';
 
 const account = vi.hoisted(() => ({ token: 'synthetic-token' }));
 vi.mock('typescript-cookie', () => ({ getCookie: () => account.token }));
@@ -53,4 +53,40 @@ it('shows separate retry guidance for the durable daily and burst limits', async
   fetch.mockResolvedValueOnce(new Response(null, { status: 429 }));
   await expect(uploadPrivateMedia(file, id, signal())).rejects.toThrow('北京时间 08:00');
   await expect(uploadPrivateMedia(file, id, signal())).rejects.toThrow('一分钟后');
+});
+
+it('uses only the new anonymous capability for read readiness and explicit write enablement', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  vi.stubGlobal('fetch', fetch);
+  for (const [value, expected] of [
+    [{ version: 2 }, 'unavailable'],
+    [{ privateMediaV1: true, privateMediaAvailable: false, privateMediaWritesPaused: false }, 'unavailable'],
+    [{ privateMediaV1: true, privateMediaAvailable: 'true', privateMediaWritesPaused: false }, 'unavailable'],
+    [{ privateMediaV1: true, privateMediaAvailable: true }, 'paused'],
+    [{ privateMediaV1: true, privateMediaAvailable: true, privateMediaWritesPaused: true }, 'paused'],
+    [{ privateMediaV1: true, privateMediaAvailable: true, privateMediaWritesPaused: false }, 'ready'],
+  ] as const) {
+    fetch.mockResolvedValueOnce(Response.json(value));
+    await expect(readPrivateMediaAvailability(true)).resolves.toBe(expected);
+  }
+  expect(fetch).toHaveBeenLastCalledWith(new URL('https://api.invalid/reliability/capabilities'), expect.objectContaining({
+    credentials: 'omit', cache: 'no-store', redirect: 'error',
+  }));
+  expect(fetch.mock.lastCall?.[1]?.headers).toBeUndefined();
+  await expect(readPrivateMediaAvailability()).resolves.toBe('ready');
+  expect(fetch).toHaveBeenCalledTimes(6);
+  fetch.mockRejectedValueOnce(new TypeError('offline'));
+  const first = readPrivateMediaAvailability(true);
+  expect(readPrivateMediaAvailability(true)).toBe(first);
+  await expect(first).resolves.toBe('unavailable');
+});
+
+it('reports server-side pause when it supersedes an earlier capability response', async () => {
+  const file = new File(['synthetic'], 'fixture.png');
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  vi.stubGlobal('fetch', fetch);
+  fetch.mockResolvedValueOnce(Response.json({ code: 'PRIVATE_MEDIA_WRITES_PAUSED' }, { status: 503 }));
+  await expect(uploadPrivateMedia(file, id, signal())).rejects.toThrow('已有图片仍可查看');
+  await expect(readPrivateMediaAvailability()).resolves.toBe('paused');
+  expect(fetch).toHaveBeenCalledOnce();
 });

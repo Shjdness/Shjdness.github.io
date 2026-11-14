@@ -1,12 +1,91 @@
 import { getCookie } from 'typescript-cookie';
+import { useEffect, useState } from 'react';
 import { endpoint } from '../main';
 
 const id = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const maxUploadImageBytes = 5 * 1024 * 1024;
 const privateImageTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+type PrivateMediaAvailability = 'checking' | 'unavailable' | 'paused' | 'ready';
+type CheckedAvailability = Exclude<PrivateMediaAvailability, 'checking'>;
+let readiness: { status: CheckedAvailability; expiresAt: number } | undefined;
+let checking: Promise<CheckedAvailability> | undefined;
 
 export class PrivateMediaUnavailable extends Error {
   constructor() { super('私密图片不可用'); }
+}
+
+function apiUrl(path: string) {
+  const url = new URL(path, endpoint);
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password) throw Error('私密图片服务地址无效');
+  return url;
+}
+
+function recentAvailability() {
+  return readiness && readiness.expiresAt > Date.now() ? readiness.status : undefined;
+}
+
+export function readPrivateMediaAvailability(force = false): Promise<CheckedAvailability> {
+  const cached = recentAvailability();
+  if (!force && cached) return Promise.resolve(cached);
+  if (checking) return checking;
+  checking = (async (): Promise<CheckedAvailability> => {
+    try {
+      const response = await fetch(apiUrl('/reliability/capabilities'), {
+        credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => {});
+        return 'unavailable';
+      }
+      const value = await response.json() as { privateMediaV1?: unknown; privateMediaAvailable?: unknown; privateMediaWritesPaused?: unknown } | null;
+      if (value?.privateMediaV1 === true && value.privateMediaAvailable === true) {
+        return value.privateMediaWritesPaused === false ? 'ready' : 'paused';
+      }
+    } catch { /* Compatibility, timeout and offline all fail closed. */ }
+    return 'unavailable';
+  })().then(status => {
+    readiness = { status, expiresAt: Date.now() + (status === 'ready' ? 30_000 : 5_000) };
+    return status;
+  }).finally(() => { checking = undefined; });
+  return checking;
+}
+
+export function usePrivateMediaAvailability(enabled: boolean, retry = 0): PrivateMediaAvailability {
+  const [status, setStatus] = useState<PrivateMediaAvailability>('checking');
+  useEffect(() => {
+    if (!enabled) {
+      setStatus('checking');
+      return;
+    }
+    let current = true;
+    const refresh = (force = false) => {
+      void readPrivateMediaAvailability(force).then(next => { if (current) setStatus(next); });
+    };
+    if (retry > 0) setStatus('checking');
+    refresh(retry > 0);
+    const onFocus = () => refresh();
+    const onOnline = () => refresh(true);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+    return () => {
+      current = false;
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [enabled, retry]);
+  return enabled ? status : 'checking';
+}
+
+export function privateMediaWriteMessage(status: PrivateMediaAvailability) {
+  if (status === 'checking') return '正在检查私密图片服务';
+  if (status === 'paused') return '私密图片上传已暂停，已有图片仍可查看';
+  if (status === 'unavailable') return '私密图片服务暂不可用，可继续编辑和保存文字';
+  return undefined;
+}
+
+export function privateMediaWritesPaused(value: unknown) {
+  return Boolean(value && typeof value === 'object' && 'code' in value && value.code === 'PRIVATE_MEDIA_WRITES_PAUSED');
 }
 
 export function parsePrivateMediaReference(value: string): string | null {
@@ -18,9 +97,7 @@ export function parsePrivateMediaReference(value: string): string | null {
 async function privateMediaRequest<T>(mediaId: string, feedId: number | undefined, signal: AbortSignal, upload: File | undefined, read: (response: Response) => Promise<T>) {
   const token = getCookie('token');
   if (!token || !id.test(mediaId) || (feedId !== undefined && (!Number.isSafeInteger(feedId) || feedId < 1))) throw Error('私密图片请求无效');
-  const url = new URL(`/storage/private/${mediaId}`, endpoint);
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password) throw Error('私密图片服务地址无效');
+  const url = apiUrl(`/storage/private/${mediaId}`);
   if (feedId !== undefined) url.searchParams.set('feedId', String(feedId));
   const timeout = AbortSignal.timeout(upload ? 20_000 : 10_000);
   const combined = AbortSignal.any([signal, timeout]);
@@ -31,8 +108,15 @@ async function privateMediaRequest<T>(mediaId: string, feedId: number | undefine
     credentials: 'omit', cache: 'no-store', redirect: 'error', signal: combined,
   });
   if (!response.ok) {
-    if (response.status === 429 && upload) {
+    if ((response.status === 429 || response.status === 503) && upload) {
       const reason = await response.json().catch(() => undefined) as { code?: string } | undefined;
+      if (response.status === 503) {
+        if (privateMediaWritesPaused(reason)) {
+          readiness = { status: 'paused', expiresAt: Date.now() + 5_000 };
+          throw Error(privateMediaWriteMessage('paused'));
+        }
+        throw Error('私密图片请求未完成，请重试');
+      }
       throw Error(reason?.code === 'PRIVATE_MEDIA_DAILY_LIMIT'
         ? '已达到私密图片每日上传限额，请在北京时间 08:00 额度刷新后重试'
         : '图片上传过于频繁，请一分钟后重试');

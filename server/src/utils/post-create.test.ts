@@ -5,7 +5,7 @@ const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
 function fixture() {
   const sqlite=new DatabaseSync(':memory:');
-  sqlite.exec("CREATE TABLE info(key TEXT UNIQUE NOT NULL,value TEXT NOT NULL);CREATE TABLE feeds(id INTEGER PRIMARY KEY,uid INTEGER,content TEXT,draft INTEGER DEFAULT 1);CREATE TABLE feed_hashtags(feed_id INTEGER,hashtag_id INTEGER);INSERT INTO info(rowid,key,value) VALUES(500,'unrelated-config','not JSON');INSERT INTO feeds(id,uid,content) VALUES(7,1,'original');INSERT INTO feed_hashtags(rowid,feed_id,hashtag_id) VALUES(900,7,1)");
+  sqlite.exec("CREATE TABLE info(key TEXT UNIQUE NOT NULL,value TEXT NOT NULL);CREATE TABLE feeds(id INTEGER PRIMARY KEY,uid INTEGER,content TEXT,draft INTEGER DEFAULT 1,write_revision TEXT);CREATE TABLE feed_hashtags(feed_id INTEGER,hashtag_id INTEGER);INSERT INTO info(rowid,key,value) VALUES(500,'unrelated-config','not JSON');INSERT INTO feeds(id,uid,content) VALUES(7,1,'original');INSERT INTO feed_hashtags(rowid,feed_id,hashtag_id) VALUES(900,7,1)");
   const prepare=(sql:string)=>{let args:unknown[]=[];return {bind(...values:unknown[]){args=values;return this;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async first(){return sqlite.prepare(sql).get(...args)||null;}};};
   let queue=Promise.resolve();
   const db={prepare,batch(statements:Array<{all:()=>Promise<unknown>}>) {
@@ -50,10 +50,10 @@ it('tombstones deletion atomically and rejects replay after SQLite reuses the ol
   try {
     const saved=await createPostWithTags(db,insert(),[],operation);
     sqlite.exec("CREATE TRIGGER fail_delete BEFORE DELETE ON feeds BEGIN SELECT RAISE(ABORT,'fixture delete failure'); END");
-    for(const draftOnly of [false,true])await expect(deletePostWithReceipts(db,1,saved.insertedId,draftOnly)).rejects.toThrow();
+    for(const draftOnly of [false,true])await expect(deletePostWithReceipts(db,1,saved.insertedId,null,draftOnly)).rejects.toThrow();
     expect(await findPostCreate(db,operation)).toEqual(saved);
     sqlite.exec('DROP TRIGGER fail_delete');
-    await deletePostWithReceipts(db,1,saved.insertedId);
+    await deletePostWithReceipts(db,1,saved.insertedId,null);
     const tombstone=JSON.parse(sqlite.prepare("SELECT value FROM info WHERE key LIKE 'post-create:%'").get().value);
     expect(tombstone).toMatchObject({deleted:true,insertedId:saved.insertedId});expect(tombstone).not.toHaveProperty('requestHash');
     expect(await createPostWithTags(db,insert(),[])).toEqual(saved);
@@ -76,15 +76,15 @@ it('does not delete published or wrong-owner records or tombstone their receipts
     const original=sqlite.prepare("SELECT value FROM info WHERE key LIKE 'post-create:%'").get().value;
     // A different request publishes after the route's initial permission read.
     sqlite.prepare('UPDATE feeds SET draft=0 WHERE id=?').run(saved.insertedId);
-    expect(await deletePostWithReceipts(db,1,saved.insertedId,true)).toBe(false);
+    expect(await deletePostWithReceipts(db,1,saved.insertedId,null,true)).toBe(false);
     expect(await findPostCreate(db,operation)).toEqual(saved);
     expect(sqlite.prepare("SELECT value FROM info WHERE key LIKE 'post-create:%'").get().value).toBe(original);
     sqlite.prepare('UPDATE feeds SET draft=1 WHERE id=?').run(saved.insertedId);
-    expect(await deletePostWithReceipts(db,2,saved.insertedId,true)).toBe(false);
+    expect(await deletePostWithReceipts(db,2,saved.insertedId,null,true)).toBe(false);
     expect(await findPostCreate(db,operation)).toEqual(saved);
-    expect(await deletePostWithReceipts(db,1,saved.insertedId,true)).toBe(true);
+    expect(await deletePostWithReceipts(db,1,saved.insertedId,null,true)).toBe(true);
     await expect(findPostCreate(db,operation)).rejects.toBeInstanceOf(PostCreateConflictError);
-    expect(await deletePostWithReceipts(db,1,saved.insertedId,true)).toBe(false);
+    expect(await deletePostWithReceipts(db,1,saved.insertedId,null,true)).toBe(false);
   } finally {sqlite.close();}
 });
 
@@ -93,7 +93,22 @@ it('preserves legacy generic deletion of published records when the optional dra
   try {
     const saved=await createPostWithTags(db,insert(),[],operation);
     sqlite.prepare('UPDATE feeds SET draft=0 WHERE id=?').run(saved.insertedId);
-    expect(await deletePostWithReceipts(db,1,saved.insertedId)).toBe(true);
+    expect(await deletePostWithReceipts(db,1,saved.insertedId,null)).toBe(true);
+    await expect(findPostCreate(db,operation)).rejects.toBeInstanceOf(PostCreateConflictError);
+  } finally {sqlite.close();}
+});
+
+it('leaves a concurrently edited post and its creation receipt intact', async () => {
+  const {sqlite,db,operation,insert}=fixture();
+  try {
+    const saved=await createPostWithTags(db,insert(),[],operation);
+    sqlite.prepare("UPDATE feeds SET write_revision='next',content='attachment edit' WHERE id=?").run(saved.insertedId);
+    for(const draftOnly of [false,true]) {
+      expect(await deletePostWithReceipts(db,1,saved.insertedId,null,draftOnly)).toBe(false);
+      expect(await findPostCreate(db,operation)).toEqual(saved);
+      expect(sqlite.prepare('SELECT content FROM feeds WHERE id=?').get(saved.insertedId)).toEqual({content:'attachment edit'});
+    }
+    expect(await deletePostWithReceipts(db,1,saved.insertedId,'next',true)).toBe(true);
     await expect(findPostCreate(db,operation)).rejects.toBeInstanceOf(PostCreateConflictError);
   } finally {sqlite.close();}
 });

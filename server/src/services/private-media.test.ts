@@ -6,6 +6,12 @@ import worker from '../_worker';
 import type { Env } from '../db/db';
 import { githubSubject } from '../utils/github-subject';
 import { privateMediaKey } from '../utils/private-media-reference';
+import { readLimitedBody } from '../utils/request-body';
+
+vi.mock('../utils/request-body', async (importOriginal) => {
+    const module = await importOriginal<typeof import('../utils/request-body')>();
+    return { ...module, readLimitedBody: vi.fn(module.readLimitedBody) };
+});
 
 const id = '784f0bfa-6d25-4a21-9f5c-f410fdb7822a';
 const png = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -52,7 +58,7 @@ function fixture() {
         }),
     };
     const env = {
-        DB: { prepare }, PRIVATE_MEDIA: bucket, JWT_SECRET: secret,
+        DB: { prepare }, PRIVATE_MEDIA: bucket, PRIVATE_MEDIA_WRITES_PAUSED: 'false', JWT_SECRET: secret,
         RIN_GITHUB_CLIENT_ID: 'fixture-client', RIN_GITHUB_CLIENT_SECRET: 'fixture-secret',
         FRONTEND_URL: origin, S3_ACCESS_HOST: 'https://public.invalid', S3_REGION: 'auto',
     } as unknown as Env;
@@ -78,6 +84,28 @@ function fixture() {
 }
 
 describe('isolated private media Worker integration', () => {
+    it('fails closed unless writes explicitly enabled and leaves reads available during recovery', async () => {
+        const f = fixture();
+        const owner = await f.token(1);
+        expect((await f.call({ token: owner, method: 'PUT', body: png })).status).toBe(201);
+        const snapshots = f.reserve.mock.calls.length;
+        f.bucket.head.mockClear();
+        f.bucket.put.mockClear();
+        vi.mocked(readLimitedBody).mockClear();
+        for (const value of [undefined, 'true', 'invalid']) {
+            const env = { ...f.env, PRIVATE_MEDIA_WRITES_PAUSED: value };
+            const denied = await f.call({ env, token: owner, method: 'PUT', body: png });
+            expect(denied.status).toBe(503);
+            expect(denied.headers.get('cache-control')).toBe('private, no-store');
+            expect(await denied.json()).toMatchObject({ code: 'PRIVATE_MEDIA_WRITES_PAUSED' });
+            expect((await f.call({ env, token: owner })).status).toBe(200);
+        }
+        expect(f.reserve).toHaveBeenCalledTimes(snapshots);
+        expect(readLimitedBody).not.toHaveBeenCalled();
+        expect(f.bucket.head).not.toHaveBeenCalled();
+        expect(f.bucket.put).not.toHaveBeenCalled();
+    });
+
     it('enforces current authentication, object ownership, no-store and exact CORS', async () => {
         const f = fixture();
         const [owner, other, member, expired] = await Promise.all([f.token(1), f.token(2), f.token(3), f.token(1, '-1m')]);
