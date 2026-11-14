@@ -1,6 +1,6 @@
 import "katex/dist/katex.min.css";
-import React, { cloneElement, isValidElement, useEffect, useMemo, useRef } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { cloneElement, createContext, isValidElement, useContext, useEffect, useMemo, useRef } from "react";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import {
   base16AteliersulphurpoolLight,
@@ -20,6 +20,7 @@ import Zoom from "yet-another-react-lightbox/plugins/zoom";
 import "yet-another-react-lightbox/styles.css";
 import { useColorMode } from "../utils/darkModeUtils";
 import { markdownSchema } from "./markdown-schema";
+import { isPrivateMediaPreview, markPrivateMediaPreviews, PrivateMediaImage, privateMediaIdFromImage, usePrivateMediaSession, type PrivateMediaContext } from "./private-media-image";
 
 const LEGACY_ASSET_ORIGIN = "https://shjdbucket.shjdshy.cc";
 const CURRENT_ASSET_ORIGIN =
@@ -55,67 +56,54 @@ const isMarkdownImageLinkAtEnd = (text: string) => {
   return false;
 };
 
-export function Markdown({ content }: { content: string }) {
+const ImageContext = createContext<{
+  content: string;
+  privateMedia?: PrivateMediaContext;
+  showPublicImage: (src: string) => void;
+} | null>(null);
+
+function MarkdownImage({ node, src, ...props }: React.ComponentProps<'img'> & ExtraProps) {
+  const context = useContext(ImageContext);
+  if (!context) return null;
+  const { content, privateMedia, showPublicImage } = context;
+  const offset = node?.position?.start.offset ?? 0;
+  const previousContent = content.slice(0, offset);
+  const rounded = countNewlinesBeforeNode(previousContent, offset) >= 1
+    || previousContent.trim().length === 0 || isMarkdownImageLinkAtEnd(previousContent);
+  const scale = rounded ? '0.75' : '0.5';
+  const privateId = privateMediaIdFromImage(content, node?.position);
+  const normalizedSrc = normalizeAssetUrl(src);
+  return (
+    <span className={rounded ? 'block w-full text-center my-4' : 'inline-block align-middle mx-1'}>
+      {privateId ? (
+        privateMedia && isPrivateMediaPreview(node)
+          ? <PrivateMediaImage {...privateMedia} id={privateId} alt={props.alt} rounded={rounded} scale={scale} />
+          : <span>{props.alt || '私密图片'}</span>
+      ) : normalizedSrc ? (
+        <img {...props} src={normalizedSrc} data-markdown-public-image="" onClick={() => showPublicImage(normalizedSrc)}
+          className={`mx-auto ${rounded ? 'rounded-xl' : ''}`} style={{ zoom: scale }} />
+      ) : props.alt ? <span>{props.alt}</span> : null}
+    </span>
+  );
+}
+
+export function Markdown({ content, privateMedia }: { content: string; privateMedia?: PrivateMediaContext }) {
   const colorMode = useColorMode();
-  const [index, setIndex] = React.useState(-1);
-  const slides = useRef<SlideImage[]>();
-
-  useEffect(() => {
-    slides.current = undefined;
-  }, [content]);
-
-
-
+  const [gallery, setGallery] = React.useState<{ slides: SlideImage[]; index: number }>();
+  const markdown = useRef<HTMLDivElement>(null);
+  const currentToken = usePrivateMediaSession(Boolean(privateMedia));
+  const visiblePrivateMedia = privateMedia?.token && privateMedia.token === currentToken
+    && (privateMedia.allowStaged || privateMedia.feedId !== undefined) ? privateMedia : undefined;
+  const canPreviewPrivateMedia = Boolean(visiblePrivateMedia);
+  useEffect(() => { setGallery(undefined); }, [content, currentToken]);
   const Content = useMemo(() => (
     <ReactMarkdown
       className="toc-content dark:text-neutral-300"
       remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert]}
       children={content}
-      rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeKatex]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeKatex, ...(canPreviewPrivateMedia ? [markPrivateMediaPreviews(content)] : [])]}
       components={{
-        img({ node, src, ...props }) {
-          const normalizedSrc = normalizeAssetUrl(src);
-          const offset = node!.position!.start.offset!;
-          const previousContent = content.slice(0, offset);
-          const newlinesBefore = countNewlinesBeforeNode(
-            previousContent,
-            offset
-          );
-          const Image = ({
-            rounded,
-            scale,
-          }: {
-            rounded: boolean;
-            scale: string;
-          }) => (
-            <img
-              src={normalizedSrc}
-              {...props}
-              onClick={() => {
-                show(normalizedSrc)
-              }}
-              className={`mx-auto ${rounded ? "rounded-xl" : ""}`}
-              style={{ zoom: scale }}
-            />
-          );
-          if (
-            newlinesBefore >= 1 ||
-            previousContent.trim().length === 0 ||
-            isMarkdownImageLinkAtEnd(previousContent)
-          ) {
-            return (
-              <span className="block w-full text-center my-4">
-                <Image scale="0.75" rounded={true} />
-              </span>
-            );
-          } else {
-            return (
-              <span className="inline-block align-middle mx-1 ">
-                <Image scale="0.5" rounded={false} />
-              </span>
-            );
-          }
-        },
+        img: MarkdownImage,
         code(props) {
           const [copied, setCopied] = React.useState(false);
           const { children, className, node, ...rest } = props;
@@ -351,47 +339,36 @@ export function Markdown({ content }: { content: string }) {
           return <div {...props}>{children}</div>;
         },
       }}
-    />), [content])
+    />), [content, colorMode, canPreviewPrivateMedia]);
 
 
 
-  const show = (src: string | undefined) => {
-    let slidesLocal = slides.current;
-    if (!slidesLocal) {
-      const parent = document.getElementsByClassName("toc-content")[0];
-      if (!parent) return;
-      const images = parent.querySelectorAll("img");
-      slidesLocal = Array.from(images)
-        .map((image) => {
-          const url = image.getAttribute("src") || "";
-          const filename = url.split("/").pop() || "";
-          const alt = image.getAttribute("alt") || "";
-          return {
-            src: url,
-            alt: alt,
-            imageFit: "contain" as const,
-            download: {
-              url: url,
-              filename: filename,
-            },
-          };
-        })
-        .filter((slide) => slide.src !== "");
-      slides.current = (slidesLocal);
-    }
-    const index = slidesLocal?.findIndex((slide) => slide.src === src) ?? -1;
-    setIndex(index);
-  };
+  function show(src: string) {
+    if (!markdown.current) return;
+    const slides = Array.from(markdown.current.querySelectorAll("img[data-markdown-public-image]")).flatMap(image => {
+      const url = image.getAttribute("src");
+      return url ? [{
+        src: url,
+        alt: image.getAttribute("alt") || "",
+        imageFit: "contain" as const,
+        download: { url, filename: url.split("/").pop() || "" },
+      }] : [];
+    });
+    const index = slides.findIndex(slide => slide.src === src);
+    if (index >= 0) setGallery({ slides, index });
+  }
 
   return (
     <>
-      {Content}
+      <ImageContext.Provider value={{ content, privateMedia: visiblePrivateMedia, showPublicImage: show }}>
+        <div ref={markdown}>{Content}</div>
+      </ImageContext.Provider>
       <Lightbox
         plugins={[Download, Zoom, Counter]}
-        index={index}
-        slides={slides.current}
-        open={index >= 0}
-        close={() => setIndex(-1)}
+        index={gallery?.index ?? 0}
+        slides={gallery?.slides}
+        open={Boolean(gallery)}
+        close={() => setGallery(undefined)}
       />
     </>
   );

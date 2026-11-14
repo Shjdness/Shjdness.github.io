@@ -39,7 +39,7 @@ function extractImageUrls(content: string) {
   for (const match of content.matchAll(markdownImage)) urls.push(match[1])
   for (const match of content.matchAll(htmlImage)) urls.push(match[1])
 
-  return [...new Set(urls.map(normalizeAssetUrl))]
+  return [...new Set(urls.filter(url => !url.startsWith('private-media:')).map(normalizeAssetUrl))]
 }
 
 const featuredImages: GalleryImage[] = [

@@ -2,11 +2,13 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { Helmet } from "react-helmet";
 import { useTranslation } from "react-i18next";
 import Popup from "reactjs-popup";
+import { getCookie } from "typescript-cookie";
 import { Link, useLocation } from "wouter";
 import { useAlert, useConfirm } from "../components/dialog";
 import { HashTag } from "../components/hashtag";
 import { Waiting } from "../components/loading";
 import { Markdown } from "../components/markdown";
+import { usePrivateMediaSession } from "../components/private-media-image";
 import { client } from "../main";
 import { ClientConfigContext } from "../state/config";
 import { ProfileContext } from "../state/profile";
@@ -23,6 +25,8 @@ type Feed = {
   title: string | null;
   content: string;
   uid: number;
+  kind: string;
+  draft: number;
   createdAt: Date;
   updatedAt: Date;
   hashtags: {
@@ -41,10 +45,14 @@ type Feed = {
 export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Element, clean: (id: string) => void }) {
   const { t } = useTranslation();
   const profile = useContext(ProfileContext);
-  const [feed, setFeed] = useState<Feed>();
-  const [error, setError] = useState<string>();
-  const [headImage, setHeadImage] = useState<string>();
-  const ref = useRef("");
+  const token = usePrivateMediaSession();
+  const [result, setResult] = useState<{ id: string; token?: string; feed?: Feed; error?: string }>();
+  const currentResult = result?.id === id && result.token === token && getCookie('token') === token ? result : undefined;
+  const { feed, error } = currentResult ?? {};
+  const isPrivate = feed?.draft === 1 || feed?.kind === 'diary' || feed?.kind === 'memo';
+  const privateMedia = feed && isPrivate && token && Number.isSafeInteger(feed.id) && feed.id > 0
+    ? { feedId: feed.id, token } : undefined;
+  const cleanRef = useRef(clean);
   const [_, setLocation] = useLocation();
   const { showAlert, AlertUI } = useAlert();
   const { showConfirm, ConfirmUI } = useConfirm();
@@ -100,35 +108,33 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
           });
       })
   }
+  useEffect(() => { cleanRef.current = clean; }, [clean]);
   useEffect(() => {
-    if (ref.current == id) return;
-    setFeed(undefined);
-    setError(undefined);
-    setHeadImage(undefined);
-    client
-      .feed({ id })
-      .get({
-        headers: headersWithAuth(),
-      })
-      .then(({ data, error }) => {
-        if (error) {
-          setError(apiErrorMessage(error.value));
-        } else if (data && typeof data !== "string") {
-          setTimeout(() => {
-            setFeed(data);
-            setTop(data.top);
-            // Extract head image
-            const img_reg = /!\[.*?\]\((.*?)\)/;
-            const img_match = img_reg.exec(data.content);
-            if (img_match) {
-              setHeadImage(img_match[1]);
-            }
-            clean(id);
-          }, 0);
+    const abort = new AbortController();
+    const current = () => !abort.signal.aborted && getCookie('token') === token;
+    const load = async () => {
+      try {
+        const { data, error } = await client.feed({ id }).get({
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          fetch: { signal: abort.signal, cache: 'no-store' },
+        });
+        if (!current()) return;
+        if (error || !data || typeof data === 'string') {
+          setResult({ id, token, error: apiErrorMessage(error?.value) });
+          return;
         }
-      });
-    ref.current = id;
-  }, [id]);
+        setTop(data.top);
+        setResult({ id, token, feed: data });
+      } catch {
+        if (current()) setResult({ id, token, error: apiErrorMessage(undefined) });
+      }
+    };
+    void load();
+    return () => { abort.abort(); };
+  }, [id, token]);
+  useEffect(() => {
+    if (feed) cleanRef.current(id);
+  }, [id, feed]);
   useEffect(() => {
     const defaults = document.querySelectorAll<HTMLElement>("pre.mermaid_default");
     if (!defaults.length) return;
@@ -165,13 +171,21 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
   }, [feed]);
 
   const stats = readingStats(feed?.content || "");
+  const firstImage = !isPrivate && feed ? /!\[.*?\]\((.*?)\)/.exec(feed.content)?.[1] : undefined;
+  const headImage = firstImage?.includes('private-media:') ? undefined : firstImage;
 
   return (
     <Waiting for={feed || error}>
       <div className="reading-progress" aria-hidden="true">
         <span style={{ width: `${readingProgress}%` }} />
       </div>
-      {feed && (
+      {feed && isPrivate && (
+        <Helmet>
+          <title>{`${feed.title ?? "Unnamed"} - ${process.env.NAME}`}</title>
+          <meta name="robots" content="noindex, nofollow" />
+        </Helmet>
+      )}
+      {feed && !isPrivate && (
         <Helmet>
           <title>{`${feed.title ?? "Unnamed"} - ${process.env.NAME}`}</title>
           <meta property="og:site_name" content={siteName} />
@@ -299,7 +313,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
                     )}
                   </div>
                 </div>
-                <Markdown content={feed.content} />
+                <Markdown content={feed.content} privateMedia={privateMedia} />
                 <div className="mt-6 flex flex-col gap-2">
                   {feed.hashtags.length > 0 && (
                     <div className="flex flex-row flex-wrap gap-x-2">

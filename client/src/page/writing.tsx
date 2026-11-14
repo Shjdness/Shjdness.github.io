@@ -1,5 +1,4 @@
 import Editor from '@monaco-editor/react';
-import i18n from 'i18next';
 import _ from 'lodash';
 import { editor } from 'monaco-editor';
 import { Calendar } from 'primereact/calendar';
@@ -9,11 +8,11 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Helmet } from "react-helmet";
 import { useTranslation } from "react-i18next";
 import Loading from 'react-loading';
-import { ShowAlertType, useAlert, useConfirm } from '../components/dialog';
+import { useAlert, useConfirm } from '../components/dialog';
 import { Input } from "../components/input";
 import { Markdown } from "../components/markdown";
 import { client } from "../main";
-import { headersWithAuth } from "../utils/auth";
+import { apiErrorMessage, headersWithAuth } from "../utils/auth";
 import { Cache, useCache } from '../utils/cache';
 import { siteName } from "../utils/constants";
 import { useColorMode } from "../utils/darkModeUtils";
@@ -24,38 +23,11 @@ import { ProfileContext } from '../state/profile';
 import { writingAccountId } from '../utils/writing-access';
 import { createWritingRevision, loadWritingRecord } from '../utils/writing-load';
 import { completeWritingSave, confirmWritingDraftDeletion } from '../utils/writing-save';
+import { maxUploadImageBytes, uploadPrivateMedia } from '../utils/private-media';
 
 type ContentKind = 'article' | 'essay' | 'diary' | 'memo';
 type TagScope = 'blog' | 'diary' | 'memo';
 const tagScope = (kind: ContentKind): TagScope => kind === 'diary' || kind === 'memo' ? kind : 'blog';
-
-function uploadImage(file: File, onSuccess: (url: string) => void, showAlert: ShowAlertType) {
-  const t = i18n.t
-  client.storage
-    .post(
-      {
-        key: file.name,
-        file: file,
-      },
-      {
-        headers: headersWithAuth(),
-      }
-    )
-    .then(({ data, error }) => {
-      if (error) {
-        showAlert(t("upload.failed", { error: error.value }));
-      }
-      if (data) {
-        onSuccess(data);
-      }
-    })
-    .catch((e: any) => {
-      console.error(e);
-      showAlert(t("upload.failed", { error: e.message }));
-    });
-}
-
-
 
 // 写作页面
 export function WritingPage({ id }: { id?: number }) {
@@ -70,6 +42,7 @@ export function WritingPage({ id }: { id?: number }) {
 function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   const { t } = useTranslation();
   const profile = React.useContext(ProfileContext);
+  const editorSession = getCookie('token');
   const colorMode = useColorMode();
   const cache = Cache.forAccount(ownerId, id);
   const revision = useRef(createWritingRevision()).current;
@@ -104,6 +77,8 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [loadedDraft, setLoadedDraft] = useState(false)
+  const [recordWasPublic, setRecordWasPublic] = useState(false);
+  const [recordOwner, setRecordOwner] = useState<number>();
   const { showAlert, AlertUI } = useAlert()
   const { showConfirm, ConfirmUI } = useConfirm()
   const restoreLegacy = () => {
@@ -132,6 +107,14 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   const selectedTagNames = tags.split('#').map(tag => tag.trim()).filter(Boolean);
   const scope = tagScope(kind);
   const privateMode = kind === 'diary' || kind === 'memo';
+  const usePrivateUpload = privateMode || !recordWasPublic;
+  const ownsRecord = recordLoaded && (recordOwner === undefined || recordOwner === ownerId);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const publicUploadSelected = useRef(false);
+  const uploadJob = useRef<AbortController>();
+  const uploadIds = useRef(new WeakMap<File, string>());
+  const failedUploadIds = useRef(new Map<string, string>());
+  useEffect(() => () => { uploadJob.current?.abort(); }, [kind, currentId, recordWasPublic]);
   const saveTagNames = (names: string[]) => {
     const unique = [...new Set(names.map(name => name.trim().replace(/^#/, '')).filter(name => name && name.length <= 64 && !name.includes('#')))];
     const next = unique.map(name => `#${name}`).join(' ');
@@ -139,6 +122,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
     setTags(next);
   };
   const changeKind = (next: ContentKind) => {
+    uploadJob.current?.abort();
     tagsByScope.current[scope] = tags;
     setKind(next);
     setTags(tagsByScope.current[tagScope(next)]);
@@ -182,7 +166,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
     currentEditor.focus()
   }
   async function publishButton() {
-    if (publishing) return;
+    if (publishing || uploadJob.current) return;
     if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请使用原页重试'); return; }
     const tagsplit =
       tags
@@ -191,6 +175,10 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
         .map((tag) => tag.trim()) || [];
     if (!title.trim()) { showAlert(t("title_empty")); return; }
     if (!content.trim()) { showAlert(t("content.empty")); return; }
+    if (!privateMode && [title, content, summary].some(value => value.includes('private-media:'))) {
+      showAlert('公开文章不能引用私密图片。请移除对应引用，并在需要时用「上传公开配图」重新上传。');
+      return;
+    }
     const token = getCookie('token');
     const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
     if (!isCurrent()) return;
@@ -211,6 +199,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
       if (!isCurrent()) return;
       setCurrentId(publishedId);
       setLoadedDraft(false);
+      setRecordWasPublic(!privateMode);
       if (!unchanged()) { keepEdited(); return; }
       const destination = kind === 'memo' ? '/blog/memos' : kind === 'diary' ? '/blog/diary' : `/blog/feed/${publishedId}`;
       showAlert(currentId === undefined ? t('publish.success') : t('update.success'), () => completeWritingSave({
@@ -225,7 +214,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   }
 
   async function saveDraftToCloud() {
-    if (publishing) return;
+    if (publishing || uploadJob.current) return;
     if (!recordLoaded) { setSaveState('原记录尚未成功载入，本地稿已保留，请使用原页重试'); return; }
     const token = getCookie('token');
     const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
@@ -246,6 +235,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
       if (!isCurrent()) return;
       setCurrentId(savedId);
       setLoadedDraft(true);
+      setRecordWasPublic(false);
       completeWritingSave({
         isCurrent, unchanged, clear: () => cache.clear(),
         leave: () => { window.location.href = '/blog/writing'; },
@@ -262,6 +252,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
 
   function clearWriting() {
     showConfirm('清空写作内容', '标题、正文、摘要和标签都会从当前编辑器中清空。云端草稿不会被删除，除非你另外点击“删除草稿”。', () => {
+      uploadJob.current?.abort();
       setTitle('');
       setContent('');
       setSummary('');
@@ -275,7 +266,7 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   }
 
   function deleteCurrentDraft() {
-    if (publishing || currentId === undefined || !loadedDraft) return;
+    if (publishing || uploadJob.current || currentId === undefined || !loadedDraft) return;
     const token = getCookie('token');
     const isCurrent = () => live.current && getCookie('token') === token && writingAccountId(profile, token) !== null;
     const unchanged = revision.checkpoint();
@@ -294,7 +285,9 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
           },
           afterDeleted: () => {
             setLoadedDraft(false);
+            setRecordWasPublic(false);
             setCurrentId(undefined);
+            setRecordOwner(undefined);
             completeWritingSave({
               isCurrent, unchanged, clear: () => cache.clear(),
               leave: () => { window.location.href = '/blog/drafts'; },
@@ -311,68 +304,76 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
   }
 
 
-  const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
-    // Access the clipboard data using event.clipboardData
-    const clipboardData = event.clipboardData;
-    // only if clipboard payload is file
-    if (clipboardData.files.length === 1) {
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.trigger(undefined, "undo", undefined);
-      setUploading(true)
-      const myfile = clipboardData.files[0] as File;
-      uploadImage(myfile, (url) => {
-        const selection = editor.getSelection();
-        if (!selection) return;
-        editor.executeEdits(undefined, [{
-          range: selection,
-          text: `![${myfile.name}](${url})\n`,
+  const uploadImages = async (files: File[], explicitlyPublic = false) => {
+    if (!files.length || uploadJob.current || publishing || !recordLoaded) return;
+    const editor = editorRef.current, model = editor?.getModel();
+    const token = getCookie('token');
+    const position = editor?.getPosition();
+    if (!editor || !model || !position || !token || editorSession !== token || writingAccountId(profile, token) !== ownerId) return;
+    const uploadPrivately = usePrivateUpload && !explicitlyPublic;
+    if (uploadPrivately && !ownsRecord) {
+      showAlert('请由稿件所属账号上传私密图片'); return;
+    }
+    if (files.length > 12 || files.some(file => !file.size || file.size > maxUploadImageBytes)) {
+      showAlert('每次请选择 1 至 12 张图片，单张不超过 5 MiB'); return;
+    }
+    const controller = new AbortController();
+    uploadJob.current = controller;
+    setUploading(true);
+    const current = () => live.current && !controller.signal.aborted && getCookie('token') === token
+      && editorRef.current === editor && editor.getModel() === model;
+    const initialVersion = model.getVersionId();
+    const images: string[] = [];
+    let failure: unknown;
+    try {
+      for (const file of files) {
+        if (!current()) return;
+        let url: string;
+        if (uploadPrivately) {
+          // A picker retry may return a different File instance for the same file.
+          // Use its bytes to resume an unconfirmed write within this editor.
+          const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), value => value.toString(16).padStart(2, '0')).join('');
+          if (!current()) return;
+          const operationId = uploadIds.current.get(file) ?? failedUploadIds.current.get(fingerprint) ?? crypto.randomUUID();
+          uploadIds.current.set(file, operationId);
+          failedUploadIds.current.set(fingerprint, operationId);
+          url = await uploadPrivateMedia(file, operationId, controller.signal);
+          failedUploadIds.current.delete(fingerprint);
+        } else {
+          const { data, error } = await client.storage.post({ key: file.name, file }, {
+            headers: headersWithAuth(), fetch: { signal: controller.signal },
+          });
+          if (error || !data) throw Error(apiErrorMessage(error?.value));
+          url = data;
+        }
+        if (!current()) return;
+        const alt = file.name.replace(/[\[\]\r\n\\]/g, ' ').slice(0, 240);
+        images.push(`![${alt}](${url})\n`);
+      }
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (current() && images.length) {
+        const insertion = model.getVersionId() === initialVersion ? position : model.getPositionAt(model.getValueLength());
+        const { lineNumber, column } = insertion;
+        const prefix = column > 1 ? '\n' : '';
+        editor.executeEdits('image-upload', [{
+          range: { startLineNumber: lineNumber, startColumn: column, endLineNumber: lineNumber, endColumn: column },
+          text: prefix + images.join(''),
         }]);
-        setUploading(false)
-      }, showAlert);
+      }
+      if (current() && failure) {
+        const message = failure instanceof Error ? failure.message : '图片上传未完成，请重试';
+        showAlert(images.length ? `已插入 ${images.length} 张图片。其余图片未完成，请仅重选未插入的图片。\n${message}` : message);
+      }
+      if (uploadJob.current === controller) uploadJob.current = undefined;
+      if (live.current) setUploading(false);
     }
   };
-
-  function UploadImageButton() {
-    const { showAlert, AlertUI } = useAlert();
-    const uploadRef = useRef<HTMLInputElement>(null);
-    const t = i18n.t
-    const upChange = (event: any) => {
-      for (let i = 0; i < event.currentTarget.files.length; i++) {
-        const file = event.currentTarget.files[i]; ///获得input的第一个图片
-        if (file.size > 5 * 1024000) {
-          showAlert(t("upload.failed$size", { size: 5 }))
-          uploadRef.current!.value = "";
-        } else {
-          const editor = editorRef.current;
-          if (!editor) return;
-          const selection = editor.getSelection();
-          if (!selection) return;
-          setUploading(true)
-          uploadImage(file, (url) => {
-            setUploading(false)
-            editor.executeEdits(undefined, [{
-              range: selection,
-              text: `![${file.name}](${url})\n`,
-            }]);
-          }, showAlert);
-        }
-      }
-    };
-    return (
-      <button onClick={() => uploadRef.current?.click()}>
-        <input
-          ref={uploadRef}
-          onChange={upChange}
-          className="hidden"
-          type="file"
-          accept="image/gif,image/jpeg,image/jpg,image/png"
-        />
-        <i className="ri-image-add-line" />
-        <AlertUI />
-      </button>
-    )
-  }
+  const chooseImages = (forPublic = false) => {
+    publicUploadSelected.current = forPublic;
+    uploadRef.current?.click();
+  };
   useEffect(() => {
     let live = true;
     const cancelled = new AbortController();
@@ -398,6 +399,8 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
           if (fieldUnchanged('kind')) storeKind((['article', 'essay', 'diary', 'memo'].includes(data.kind) ? data.kind : 'article') as ContentKind);
           if (fieldUnchanged('createdAt')) storeCreatedAt(new Date(data.createdAt));
           setLoadedDraft(data.draft === 1);
+          setRecordWasPublic(data.draft !== 1 && data.kind !== 'diary' && data.kind !== 'memo');
+          setRecordOwner(data.uid);
           setRecordLoaded(true);
           if (!hadEdits) setSaveState(data.draft === 1 ? '已从云端载入草稿' : '已从云端载入');
         },
@@ -541,29 +544,43 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
               <div className={`grid grid-cols-1 ${preview === 'comparison' ? "sm:grid-cols-2" : ""}`}>
                 <div className={"flex flex-col " + (preview === 'preview' ? "hidden" : "")}>
                   <div className="flex flex-row justify-start mb-2">
-                    <UploadImageButton />
+                    <button type="button" aria-label={usePrivateUpload ? '上传私密图片' : '上传公开配图'} disabled={uploading || publishing || !recordLoaded} onClick={() => chooseImages()}>
+                      <i className="ri-image-add-line" />
+                    </button>
+                    {!privateMode && usePrivateUpload && (
+                      <button type="button" className="ml-2 px-2 text-sm" disabled={uploading || publishing || !recordLoaded} onClick={() => chooseImages(true)}>
+                        上传公开配图
+                      </button>
+                    )}
+                    <input ref={uploadRef} type="file" className="hidden" accept="image/gif,image/jpeg,image/png,image/webp,image/avif" multiple onChange={event => {
+                      const input = event.currentTarget;
+                      const files = Array.from(input.files ?? []);
+                      input.value = '';
+                      if (!files.length) return;
+                      if (publicUploadSelected.current && !privateMode) {
+                        const unchanged = revision.checkpoint();
+                        showConfirm('上传公开配图', '图片上传后可通过链接公开访问，即使当前稿件仍是草稿。', () => {
+                          if (unchanged()) void uploadImages(files, true);
+                        });
+                      } else {
+                        void uploadImages(files);
+                      }
+                    }} />
                   </div>
                   <div
                     className={"relative"}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const editor = editorRef.current;
-                      if (!editor) return;
-                      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                        const selection = editor.getSelection();
-                        if (!selection) return;
-                        const file = e.dataTransfer.files[i];
-                        setUploading(true)
-                        uploadImage(file, (url) => {
-                          setUploading(false)
-                          editor.executeEdits(undefined, [{
-                            range: selection,
-                            text: `![${file.name}](${url})\n`,
-                          }]);
-                        }, showAlert);
-                      }
+                    onDropCapture={event => {
+                      if (!event.dataTransfer.files.length) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void uploadImages(Array.from(event.dataTransfer.files));
                     }}
-                    onPaste={handlePaste}
+                    onPasteCapture={event => {
+                      if (!event.clipboardData.files.length) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void uploadImages(Array.from(event.clipboardData.files));
+                    }}
                   >
                     <Editor
                       onMount={(editor, _) => {
@@ -573,7 +590,6 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
                       defaultLanguage="markdown"
                       className=""
                       value={content}
-                      // onPaste={handlePaste}
                       onChange={(data, _) => {
                         cache.set("content", data ?? "");
                         setContent(data ?? "");
@@ -599,7 +615,10 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
                 <div
                   className={"px-4 h-[600px] overflow-y-scroll " + (preview !== 'edit' ? "" : "hidden")}
                 >
-                  <Markdown content={content ? content : "> No content now. Write on the left side."} />
+                  <Markdown
+                    content={content ? content : "> No content now. Write on the left side."}
+                    privateMedia={preview !== 'edit' && recordLoaded && editorSession && content.includes('private-media:') ? { token: editorSession, feedId: currentId, allowStaged: ownsRecord } : undefined}
+                  />
                 </div>
               </div>
             </div>
@@ -612,11 +631,11 @@ function WritingEditor({ id, ownerId }: { id?: number; ownerId: number }) {
           {recordLoadFailed && !recordLoaded && <button type="button" className="writing-save-draft mx-8" onClick={() => setLoadAttempt(value => value + 1)}>重试载入原记录（保留本地修改）</button>}
           <div className="writing-actions mt-4 mx-8">
             <button onClick={clearWriting} className="writing-clear">清空</button>
-            <button onClick={deleteCurrentDraft} disabled={publishing || !loadedDraft} className="writing-delete-draft">删除草稿</button>
-            <button onClick={() => void saveDraftToCloud()} disabled={publishing || !recordLoaded} className="writing-save-draft">保存草稿</button>
+            <button onClick={deleteCurrentDraft} disabled={uploading || publishing || !loadedDraft} className="writing-delete-draft">删除草稿</button>
+            <button onClick={() => void saveDraftToCloud()} disabled={uploading || publishing || !recordLoaded} className="writing-save-draft">保存草稿</button>
             <button
               onClick={publishButton}
-              disabled={publishing || !recordLoaded}
+              disabled={uploading || publishing || !recordLoaded}
               className="writing-publish bg-theme text-white rounded-full shadow-xl shadow-light flex flex-row justify-center items-center space-x-2"
             >
               {publishing &&
