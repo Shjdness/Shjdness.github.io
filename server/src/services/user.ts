@@ -9,6 +9,7 @@ import { frontendOrigin } from "../utils/frontend-origin";
 import {GitHub,generateState} from 'arctic';
 import {GuestLimitError,reserveGuestAttempt} from '../utils/guest-guard';
 import {allowBurst} from '../utils/rate-limit';
+import { githubSubject } from '../utils/github-subject';
 
 const GUEST_OPENID = "guest:beiruoxi";
 const GUEST_NAME = "悲若兮";
@@ -76,7 +77,7 @@ export function UserService() {
                     // this record on sign-in also repairs an owner whose legacy row
                     // was previously created with reader permissions.
                     const isOwner = Boolean(ownerGithubId) && profile.openid === ownerGithubId;
-                    let issuedToken = "";
+                    let accountId: number;
                     // Earlier deployments passed GitHub's numeric ID into a TEXT
                     // column. D1 stored those values as e.g. "121328491.0".
                     // Prefer that original account when both spellings exist so
@@ -93,13 +94,16 @@ export function UserService() {
                         // already split account is being repaired.
                         const keepLegacyOpenid = legacyUser && canonicalUser && legacyUser.id !== canonicalUser.id;
                         await db.update(users).set({ ...profile, openid: keepLegacyOpenid ? legacyOpenid : profile.openid }).where(eq(users.id, existingUser.id));
-                        issuedToken = await jwt.sign({ id: existingUser.id });
+                        accountId = existingUser.id;
                     } else {
                         if (isOwner) profile.permission = 1;
                         const result = await db.insert(users).values(profile).returning({ insertedId: users.id });
                         if (!result?.length) throw new Error('Failed to register');
-                        issuedToken = await jwt.sign({ id: result[0].insertedId });
+                        accountId = result[0].insertedId;
                     }
+                    const sub = await githubSubject(accountId, profile.openid);
+                    if (!sub) throw Error('Invalid GitHub account identity');
+                    const issuedToken = await jwt.sign({ id: accountId, sub });
                     const redirect_url = `${redirectOrigin}/callback#token=${encodeURIComponent(issuedToken)}`;
                     set.headers = {
                         'Cache-Control': 'no-store',

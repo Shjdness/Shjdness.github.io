@@ -5,6 +5,7 @@ import { setup } from '../setup';
 import { getDB, getEnv } from '../utils/di';
 import { canReadFeed, isPrivateFeed } from '../utils/feed-permissions';
 import { imageFormat } from '../utils/image-format';
+import { githubSubject } from '../utils/github-subject';
 import { reservePrivateMediaUpload } from '../utils/private-media-budget';
 import { feedReferencesPrivateMedia, privateMediaId, privateMediaKey } from '../utils/private-media-reference';
 import { allowBurst } from '../utils/rate-limit';
@@ -37,27 +38,31 @@ export function PrivateMediaService() {
     return new Elysia({ aot: false })
         .use(setup())
         .group('/storage/private', group => group
-            .get('/:id', async ({ uid, writer, admin, params, request }) => {
+            .get('/:id', async ({ uid, writer, admin, mediaSubject, params, request }) => {
                 if (!bucket) return reply(404);
                 if (!uid || !writer) return reply(401);
+                if (!mediaSubject) return reply(403);
                 const url = new URL(request.url);
                 if (!privateMediaId.test(params.id) || !url.pathname.endsWith(`/${params.id}`)) return reply(404);
                 try {
                     // Without a feed ID, access is limited to the upload owner's staging namespace.
-                    let ownerId = uid;
+                    let subject = mediaSubject;
                     const feedIds = url.searchParams.getAll('feedId');
                     if (feedIds.length) {
                         const feedId = Number(feedIds[0]);
                         if (feedIds.length !== 1 || !Number.isSafeInteger(feedId) || feedId < 1 || String(feedId) !== feedIds[0]) return reply(404);
                         const feed = await db.query.feeds.findFirst({
                             columns: { uid: true, draft: true, kind: true, content: true },
+                            with: { user: { columns: { openid: true } } },
                             where: eq(feeds.id, feedId),
                         });
                         if (!feed || !isPrivateFeed(feed) || !canReadFeed({ ownerId: feed.uid, viewerId: uid, admin, draft: feed.draft, kind: feed.kind })) return reply(404);
                         if (!feedReferencesPrivateMedia(feed.content, params.id)) return reply(404);
-                        ownerId = feed.uid;
+                        const ownerSubject = await githubSubject(feed.uid, feed.user?.openid);
+                        if (!ownerSubject) return reply(404);
+                        subject = ownerSubject;
                     }
-                    const object = await bucket.get(privateMediaKey(ownerId, params.id));
+                    const object = await bucket.get(privateMediaKey(subject, params.id));
                     if (!object) return reply(404);
                     const type = object.httpMetadata?.contentType;
                     if (!validObjectType(type) || object.size < 1 || object.size > maxImageBytes) {
@@ -70,9 +75,10 @@ export function PrivateMediaService() {
                     });
                 } catch { return reply(503); }
             })
-            .put('/:id', async ({ uid, writer, params, request }) => {
+            .put('/:id', async ({ uid, writer, mediaSubject, params, request }) => {
                 if (!bucket) return reply(404);
                 if (!uid || !writer) return reply(401);
+                if (!mediaSubject) return reply(403);
                 if (!privateMediaId.test(params.id) || !new URL(request.url).pathname.endsWith(`/${params.id}`)) return reply(404);
                 if (!allowBurst(`private-media-put:${uid}`, 12)) {
                     return new Response(null, { status: 429, headers: { ...privateHeaders, 'Retry-After': '60' } });
@@ -82,7 +88,7 @@ export function PrivateMediaService() {
                     const format = imageFormat(bytes);
                     if (!format) return reply(415);
                     const digest = digestHex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
-                    const key = privateMediaKey(uid, params.id);
+                    const key = privateMediaKey(mediaSubject, params.id);
                     const receipt = (status: number) => Response.json({ id: params.id }, { status, headers: privateHeaders });
                     const matches = (object: Pick<R2Object, 'size' | 'customMetadata' | 'httpMetadata'>) =>
                         object.size === bytes.length && object.customMetadata?.digest === digest && object.httpMetadata?.contentType === format.contentType;

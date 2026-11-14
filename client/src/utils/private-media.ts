@@ -39,6 +39,7 @@ async function privateMediaRequest<T>(mediaId: string, feedId: number | undefine
     }
     void response.body?.cancel().catch(() => {});
     if (response.status === 404) throw new PrivateMediaUnavailable();
+    if (response.status === 403) throw Error('请使用 GitHub 账号重新登录，访客账号不支持私密图片');
     throw Error('私密图片请求未完成，请重试');
   }
   const result = await read(response);

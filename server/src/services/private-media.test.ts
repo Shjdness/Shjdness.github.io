@@ -4,6 +4,8 @@ import { SignJWT } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../_worker';
 import type { Env } from '../db/db';
+import { githubSubject } from '../utils/github-subject';
+import { privateMediaKey } from '../utils/private-media-reference';
 
 const id = '784f0bfa-6d25-4a21-9f5c-f410fdb7822a';
 const png = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
@@ -18,18 +20,20 @@ function fixture() {
     sqlite.exec(budgetMigration);
     const reserve = vi.fn((sql: string, params: Array<string | number>) => sqlite.prepare(sql).all(...params));
     const users = new Map([[1, 1], [2, 2], [3, 0]]);
+    const openids = new Map([[1, '101'], [2, '102.0'], [3, '103']]);
     const feeds = new Map<number, { uid: number; draft: number; kind: string; content: string }>();
     const prepare = vi.fn((sql: string) => ({ bind: (id: number, ...params: Array<string | number>) => ({
         all: async () => ({ results: reserve(sql, [id, ...params]) }),
         raw: async () => {
         if (sql.includes('"info"')) return [['private:server.config:v1', '{}']];
         if (sql.includes('"feeds"')) {
-            const feed = feeds.get(id);
-            return feed ? [[feed.uid, feed.draft, feed.kind, feed.content]] : [];
+            // Drizzle binds the nested user limit before the outer feed ID.
+            const feed = feeds.get(Number(params[0]));
+            return feed ? [[feed.uid, feed.draft, feed.kind, feed.content, JSON.stringify([openids.get(feed.uid)])]] : [];
         }
         if (!sql.includes('"users"')) throw Error('Unexpected database read');
         const role = users.get(id);
-        return role === undefined ? [] : [[id, 'fixture', 'fixture', '', role, null, 0, 0]];
+        return role === undefined ? [] : [[id, 'fixture', openids.get(id), '', role, null, 0, 0]];
     } }) }));
     type Stored = { bytes: Uint8Array; size: number; httpMetadata: { contentType: string }; customMetadata: { digest: string } };
     const objects = new Map<string, Stored>();
@@ -52,8 +56,11 @@ function fixture() {
         RIN_GITHUB_CLIENT_ID: 'fixture-client', RIN_GITHUB_CLIENT_SECRET: 'fixture-secret',
         FRONTEND_URL: origin, S3_ACCESS_HOST: 'https://public.invalid', S3_REGION: 'auto',
     } as unknown as Env;
-    const token = (id: number, lifetime = '1h') => new SignJWT({ id }).setProtectedHeader({ alg: 'HS256' })
-        .setExpirationTime(lifetime).sign(new TextEncoder().encode(secret));
+    const token = async (id: number, lifetime = '1h', bound = true) => {
+        const sub = bound ? await githubSubject(id, openids.get(id)) : undefined;
+        return new SignJWT({ id, sub }).setProtectedHeader({ alg: 'HS256' })
+            .setExpirationTime(lifetime).sign(new TextEncoder().encode(secret));
+    };
     const call = (options: { token?: string; path?: string; method?: string; body?: BodyInit; env?: Env; origin?: string } = {}) => {
         const headers = new Headers({ Origin: options.origin ?? origin });
         if (options.token) headers.set('Authorization', `Bearer ${options.token}`);
@@ -66,7 +73,8 @@ function fixture() {
         if (options.body instanceof ReadableStream) init.duplex = 'half';
         return worker.fetch(new Request(`https://worker.invalid/storage/private/${options.path ?? id}`, init), options.env ?? env);
     };
-    return { users, feeds, bucket, objects, env, token, call, reserve, sqlite };
+    const key = async (uid: number) => privateMediaKey((await githubSubject(uid, openids.get(uid)))!, id);
+    return { users, openids, feeds, bucket, objects, env, token, call, reserve, sqlite, key };
 }
 
 describe('isolated private media Worker integration', () => {
@@ -97,7 +105,7 @@ describe('isolated private media Worker integration', () => {
         expect(own.headers.get('access-control-allow-origin')).toBe(origin);
         expect(new Uint8Array(await own.arrayBuffer())).toEqual(png);
         expect((await f.call({ token: other, path: `${id}?owner=1` })).status).toBe(404);
-        expect(f.bucket.get).toHaveBeenLastCalledWith(`owner/2/${id}`);
+        expect(f.bucket.get).toHaveBeenLastCalledWith(await f.key(2));
         f.users.set(1, 0);
         f.bucket.get.mockClear();
         expect((await f.call({ token: owner })).status).toBe(401);
@@ -116,8 +124,8 @@ describe('isolated private media Worker integration', () => {
         const first = await Promise.all([put(png), put(png)]);
         expect(first.map(result => result.status).sort()).toEqual([200, 201]);
         expect((await put(Uint8Array.of(...png, 0))).status).toBe(409);
-        expect([...f.objects.keys()]).toEqual([`owner/1/${id}`]);
-        expect(f.objects.get(`owner/1/${id}`)?.bytes).toEqual(png);
+        expect([...f.objects.keys()]).toEqual([await f.key(1)]);
+        expect(f.objects.get(await f.key(1))?.bytes).toEqual(png);
     });
 
     it('uses the authorized current draft to resolve attachments for other users', async () => {
@@ -130,7 +138,7 @@ describe('isolated private media Worker integration', () => {
         const bound = await f.call({ token: admin, path });
         expect(bound.status).toBe(200);
         expect(new Uint8Array(await bound.arrayBuffer())).toEqual(png);
-        expect(f.bucket.get).toHaveBeenLastCalledWith(`owner/2/${id}`);
+        expect(f.bucket.get).toHaveBeenLastCalledWith(await f.key(2));
         expect((await f.call({ token: admin })).status).toBe(404);
         f.bucket.get.mockClear();
         expect((await f.call({ token: admin, path: `${path}&feedId=9` })).status).toBe(404);
@@ -145,7 +153,30 @@ describe('isolated private media Worker integration', () => {
         expect((await f.call({ token: admin, path })).status).toBe(404);
         f.feeds.set(7, { uid: 1, draft: 0, kind: 'memo', content });
         expect((await f.call({ token: admin, path })).status).toBe(404);
-        expect(f.bucket.get.mock.calls).toEqual([[`owner/1/${id}`]]);
+        expect(f.bucket.get.mock.calls).toEqual([[await f.key(1)]]);
+    });
+
+    it('rejects legacy media sessions, shared guests and numeric owner reuse while preserving the GitHub identity', async () => {
+        const f = fixture();
+        const original = await f.token(2);
+        expect((await f.call({ token: original, method: 'PUT', body: png })).status).toBe(201);
+        f.openids.set(2, '102');
+        expect((await f.call({ token: original })).status).toBe(200);
+        f.openids.set(2, '3102');
+        const replacement = await f.token(2);
+        const legacy = await f.token(2, '1h', false);
+        const boundPath = `${id}?feedId=7`;
+        f.feeds.set(7, { uid: 2, draft: 1, kind: 'article', content: `![](private-media:${id})` });
+        for (const path of [id, boundPath]) {
+            expect((await f.call({ token: original, path })).status).toBe(401);
+            expect((await f.call({ token: legacy, path })).status).toBe(403);
+            expect((await f.call({ token: replacement, path })).status).toBe(404);
+        }
+        f.openids.set(3, 'guest:fixture');
+        f.users.set(3, 2);
+        const guest = await f.token(3);
+        expect((await f.call({ token: guest, method: 'PUT', body: png })).status).toBe(403);
+        expect(f.objects.size).toBe(1);
     });
 
     it('admits both limits atomically and leaves exhausted accounts able to confirm old uploads', async () => {

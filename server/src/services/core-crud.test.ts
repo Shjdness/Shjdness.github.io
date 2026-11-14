@@ -12,6 +12,8 @@ import {ServerConfig} from '../utils/cache';
 import {validateBackup,encryptBackup,decryptBackup} from '../../../client/src/features/life/backup-format';
 import {reportAIRequestKey,reportDigest} from '../utils/report-analysis-format';
 import {reportWindow,reportSnapshot} from '../utils/life-report';
+import { githubSubject } from '../utils/github-subject';
+import { privateMediaKey } from '../utils/private-media-reference';
 vi.mock('../utils/s3',()=>({createS3Client:()=>({send:vi.fn(async()=>({}))})}));
 const {DatabaseSync}=createRequire(import.meta.url)('node:sqlite');
 
@@ -22,7 +24,7 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
     sqlite.exec(readFileSync(new URL(file,folder),'utf8'));
     if(file==='0002.sql')sqlite.exec('ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0');
   }
-  sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'test-owner','test-owner',1)");
+  sqlite.exec("INSERT INTO users(id,username,openid,permission) VALUES(1,'test-owner','101',1)");
   let staleReceiptRead=false;
   const prepare=(sql:string)=>{
     let values:unknown[]=[];
@@ -43,7 +45,8 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   const raw={prepare,batch} as any;
   const db=drizzle(raw,{schema});
   const env={DB:raw,JWT_SECRET:'test-only-signing-secret-at-least-32-characters',RIN_GITHUB_CLIENT_ID:'test-client',RIN_GITHUB_CLIENT_SECRET:'test-secret',FRONTEND_URL:'https://site.invalid',S3_ACCESS_HOST:'https://assets.invalid',S3_CACHE_FOLDER:'cache/',S3_ENDPOINT:'https://r2.invalid',S3_BUCKET:'test',S3_ACCESS_KEY_ID:'test-only',S3_SECRET_ACCESS_KEY:'test-only',S3_REGION:'auto'} as any;
-  const privateHead=vi.fn(async (key:string)=>key.startsWith('owner/1/')?{}:null);
+  let privateSubject = '';
+  const privateHead=vi.fn(async (key:string)=>key.startsWith(`github-v1/${privateSubject}/`)?{}:null);
   env.PRIVATE_MEDIA={head:privateHead};
   const service=runRequestContext(env,db,()=>app());
   const fetcher:typeof fetch=Object.assign((input:Parameters<typeof fetch>[0],init?:Parameters<typeof fetch>[1])=>runRequestContext(env,db,()=>service.handle(new Request(input,init))),{preconnect:()=>{}});
@@ -254,11 +257,18 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect((await api.feed.post(stablePayload,{headers})).status).toBe(409);
 
   const marker='![private](private-media:784f0bfa-6d25-4a21-9f5c-f410fdb7822a)';
-  const allowedMedia=await api.feed.post({title:'owned staged media',content:marker,summary:'',draft:true,kind:'article',tags:[]},{headers});
+  privateSubject = (await githubSubject(1, '101'))!;
+  const mediaToken = await new SignJWT({id:1, sub:privateSubject}).setProtectedHeader({alg:'HS256'}).setExpirationTime('1h').sign(new TextEncoder().encode(env.JWT_SECRET));
+  const mediaHeaders = {Authorization:'Bearer '+mediaToken};
+  const requestWithImage = {title:'owned staged media',content:marker,summary:'',draft:true,kind:'article' as const,tags:[]};
+  expect((await api.feed.post(requestWithImage,{headers})).status).toBe(403);
+  const allowedMedia=await api.feed.post(requestWithImage,{headers:mediaHeaders});
   expect(allowedMedia.status).toBe(200);
-  expect(privateHead).toHaveBeenLastCalledWith('owner/1/784f0bfa-6d25-4a21-9f5c-f410fdb7822a');
+  expect(privateHead).toHaveBeenLastCalledWith(privateMediaKey(privateSubject,'784f0bfa-6d25-4a21-9f5c-f410fdb7822a'));
+  if (!allowedMedia.data || typeof allowedMedia.data === 'string') throw Error('Missing private draft');
+  expect((await api.feed({id:allowedMedia.data.insertedId}).delete(null,{headers})).status).toBe(403);
   const forgedMedia=await api.feed.post({title:'unowned staged media',content:marker,summary:'',draft:true,kind:'article',tags:[]},{headers:guestHeaders});
-  expect(forgedMedia.status).toBe(409);
+  expect(forgedMedia.status).toBe(403);
   expect(sqlite.prepare('SELECT id FROM feeds WHERE title=?').get('unowned staged media')).toBeUndefined();
   const draft=await api.feed.post({title:'media race',content:'plain draft',summary:'',draft:true,kind:'article',tags:['unchanged']},{headers});
   if(!draft.data||typeof draft.data==='string')throw Error('Missing media fixture');
@@ -271,9 +281,10 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
   expect(publish.status).toBe(409);
   expect(sqlite.prepare('SELECT draft,content FROM feeds WHERE id=?').get(mediaId)).toEqual({draft:1,content:marker});
   expect(sqlite.prepare('SELECT h.name FROM hashtags h JOIN feed_hashtags f ON f.hashtag_id=h.id WHERE f.feed_id=?').all(mediaId)).toEqual([{name:'unchanged'}]);
-  expect((await api.feed({id:mediaId}).post({draft:false,kind:'memo'},{headers})).status).toBe(200);
+  expect((await api.feed({id:mediaId}).post({draft:false,kind:'memo'},{headers})).status).toBe(403);
+  expect((await api.feed({id:mediaId}).post({draft:false,kind:'memo'},{headers:mediaHeaders})).status).toBe(200);
   expect((await api.feed({id:mediaId}).post({kind:'essay'},{headers})).status).toBe(409);
-  expect((await api.feed({id:mediaId}).post({kind:'article',content:'public replacement'},{headers})).status).toBe(200);
+  expect((await api.feed({id:mediaId}).post({kind:'article',content:'public replacement'},{headers:mediaHeaders})).status).toBe(200);
   expect((await api.feed({id:mediaId}).post({summary:marker},{headers})).status).toBe(409);
   expect((await api.feed.post({title:'blocked marker',content:marker,summary:'',draft:false,kind:'article',tags:[]},{headers})).status).toBe(409);
   expect(()=>sqlite.prepare("INSERT INTO feeds (uid,title,content,draft,listed,kind) VALUES (1,'unlisted',?,0,0,'article')").run(marker)).toThrow('PRIVATE_MEDIA_PUBLICATION_BLOCKED');
@@ -290,7 +301,7 @@ it('keeps actual SQLite CRUD, scoped tags, public visibility, upload and backup 
     sqlite.prepare("INSERT INTO feeds (id,uid,title,content,draft,listed,kind,write_revision) VALUES (?,1,'recreated','separate draft',1,0,'article','new-incarnation')").run(mediaId);
     sqlite.prepare("INSERT INTO feed_hashtags (feed_id,hashtag_id) SELECT ?,id FROM hashtags WHERE name='unchanged'").run(mediaId);
   };
-  expect((await api.feed({id:mediaId}).post({content:marker,tags:['unrelated tag']},{headers})).status).toBe(409);
+  expect((await api.feed({id:mediaId}).post({content:marker,tags:['unrelated tag']},{headers:mediaHeaders})).status).toBe(409);
   expect(sqlite.prepare('SELECT title,content,draft FROM feeds WHERE id=?').get(mediaId)).toEqual({title:'recreated',content:'separate draft',draft:1});
   expect(sqlite.prepare('SELECT h.name FROM hashtags h JOIN feed_hashtags f ON f.hashtag_id=h.id WHERE f.feed_id=?').all(mediaId)).toEqual([{name:'unchanged'}]);
   sqlite.close();

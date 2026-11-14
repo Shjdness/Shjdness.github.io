@@ -11,12 +11,14 @@ import { sql } from 'drizzle-orm';
 import { extractImage } from "../utils/image";
 import { canMutateFeed, canReadFeed, isPrivateFeed } from "../utils/feed-permissions";
 import { privateMediaReferencesAvailable } from '../utils/private-media-reference';
+import { githubSubject } from '../utils/github-subject';
 import { normalizeTagNames, prepareTagIds } from "./tag";
 import { createPostWithTags,findPostCreate,postRequestHash,PostCreateConflictError,deletePostWithReceipts, updatePostWithTags } from '../utils/post-create';
 
 const hasPrivateReference = (...fields: Array<string | null | undefined>) => fields.some(field => field?.includes('private-media:'));
 const privateMediaPublicationMessage = '公开发布前请移除私密图片引用';
 const unavailableMediaMessage = '无法确认私密图片属于此稿件账号，或图片数量超过上限';
+const mediaSignInMessage = '请重新使用 GitHub 登录后操作私密图片';
 
 function privateMediaPublicationBlocked(error: unknown) {
   for (let depth = 0; depth < 5 && error instanceof Error; depth++, error = error.cause) {
@@ -294,6 +296,7 @@ export function FeedService() {
             writer,
             set,
             uid,
+            mediaSubject,
             body: {
               title,
               alias,
@@ -326,6 +329,9 @@ export function FeedService() {
             if (!isPrivateFeed({draft,kind:normalizedKind}) && hasPrivateReference(content, summary, title, alias)) {
               set.status = 409; return privateMediaPublicationMessage;
             }
+            if (!mediaSubject && hasPrivateReference(content)) {
+              set.status = 403; return mediaSignInMessage;
+            }
             const operation=clientKey?{ownerId:uid,clientKey,requestHash:await postRequestHash({
               title:title||'未命名草稿',content:content||'',summary,alias:alias??null,draft,kind:normalizedKind,
               tags:[...normalizedTags].sort(),createdAt:createdAt?new Date(createdAt).toISOString():null,
@@ -350,7 +356,7 @@ export function FeedService() {
               set.status = 400;
               return "Content already exists";
             }
-            if (hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, uid, getEnv().PRIVATE_MEDIA)) {
+            if (hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, mediaSubject, getEnv().PRIVATE_MEDIA)) {
               set.status = 409; return unavailableMediaMessage;
             }
             const date = createdAt ? new Date(createdAt) : new Date();
@@ -463,6 +469,7 @@ export function FeedService() {
             writer,
             set,
             uid,
+            mediaSubject,
             params: { id },
             body: {
               title,
@@ -480,6 +487,7 @@ export function FeedService() {
             const feed = await db.query.feeds.findFirst({
               where: eq(feeds.id, id_num),
               with: {
+                user: { columns: { openid: true } },
                 hashtags: {
                   columns: {},
                   with: { hashtag: { columns: { name: true } } },
@@ -500,8 +508,14 @@ export function FeedService() {
             if (!isPrivateFeed({draft:draft ?? feed.draft,kind:nextKind}) && hasPrivateReference(content ?? feed.content, summary ?? feed.summary, title ?? feed.title, alias ?? feed.alias)) {
               set.status = 409; return privateMediaPublicationMessage;
             }
-            if (content !== undefined && hasPrivateReference(content) && !await privateMediaReferencesAvailable(content, feed.uid, getEnv().PRIVATE_MEDIA)) {
-              set.status = 409; return unavailableMediaMessage;
+            if (hasPrivateReference(feed.content, content)) {
+              if (!mediaSubject) { set.status = 403; return mediaSignInMessage; }
+              if (content !== undefined && hasPrivateReference(content)) {
+                const subject = await githubSubject(feed.uid, feed.user?.openid);
+                if (!await privateMediaReferencesAvailable(content, subject, getEnv().PRIVATE_MEDIA)) {
+                  set.status = 409; return unavailableMediaMessage;
+                }
+              }
             }
             const privateKind = nextKind === "diary" || nextKind === "memo";
             const writeRevision = crypto.randomUUID();
@@ -585,7 +599,7 @@ export function FeedService() {
             }),
           },
         )
-        .delete("/:id", async ({ admin, writer, set, uid, params: { id }, query: {draftOnly} }) => {
+        .delete("/:id", async ({ admin, writer, set, uid, mediaSubject, params: { id }, query: {draftOnly} }) => {
           const id_num = parseInt(id);
           const feed = await db.query.feeds.findFirst({
             where: eq(feeds.id, id_num),
@@ -597,6 +611,9 @@ export function FeedService() {
           if (!canMutateFeed({ ownerId: feed.uid, viewerId: uid, admin, writer })) {
             set.status = 403;
             return "Permission denied";
+          }
+          if (!mediaSubject && hasPrivateReference(feed.content)) {
+            set.status = 403; return mediaSignInMessage;
           }
           const deleted=await deletePostWithReceipts(getEnv().DB,feed.uid,id_num,draftOnly==='1');
           if(draftOnly==='1'&&!deleted) {
