@@ -34,6 +34,9 @@ const privateMediaWritesPaused = env("PRIVATE_MEDIA_WRITES_PAUSED", "true")
 if (privateMediaWritesPaused !== "true" && privateMediaWritesPaused !== "false") {
     throw new Error("PRIVATE_MEDIA_WRITES_PAUSED must be true or false")
 }
+if (!privateMediaBucket && privateMediaWritesPaused === "false") {
+    throw new Error("A dedicated PRIVATE_MEDIA_R2_BUCKET is required to enable private media writes")
+}
 if (privateMediaBucket && (
     privateMediaBucket.trim() !== privateMediaBucket || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(privateMediaBucket)
 )) {

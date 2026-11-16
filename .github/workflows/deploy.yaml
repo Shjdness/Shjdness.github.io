@@ -10,6 +10,7 @@ on:
       - 'bun.lock'
       - 'scripts/migrator.ts'
       - 'scripts/migrate-private-config.ts'
+      - 'scripts/private-media-bucket.mjs'
       - 'scripts/renew-websub.mjs'
       - 'wrangler.example.toml'
       - '.github/workflows/deploy.yaml'
@@ -17,12 +18,16 @@ on:
 permissions:
   contents: read
 
+env:
+  PRIVATE_MEDIA_R2_BUCKET: ${{ vars.PRIVATE_MEDIA_R2_BUCKET || 'rin-private-media' }}
+
 concurrency:
   group: worker-production
   cancel-in-progress: false
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +40,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: site
+
+      - name: Verify dedicated private media bucket
+        working-directory: site
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+        run: node scripts/private-media-bucket.mjs
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -80,7 +93,6 @@ jobs:
           S3_REGION: ${{ vars.S3_REGION }}
           S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
           WEBHOOK_URL: ${{ vars.WEBHOOK_URL }}
-          PRIVATE_MEDIA_R2_BUCKET: ${{ vars.PRIVATE_MEDIA_R2_BUCKET }}
           PRIVATE_MEDIA_WRITES_PAUSED: ${{ vars.PRIVATE_MEDIA_WRITES_PAUSED }}
         run: |
           cd site/
@@ -90,7 +102,6 @@ jobs:
         env:
           API_URL: https://rin-server.1322589722.workers.dev
           FRONTEND_URL: ${{ vars.FRONTEND_URL }}
-          PRIVATE_MEDIA_R2_BUCKET: ${{ vars.PRIVATE_MEDIA_R2_BUCKET }}
           PRIVATE_MEDIA_WRITES_PAUSED: ${{ vars.PRIVATE_MEDIA_WRITES_PAUSED }}
         run: |
           test "$(curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "$API_URL/")" = "Hi"
@@ -132,20 +143,15 @@ jobs:
             sleep 5
           done
           if [ "$private_cache_ready" != "1" ]; then echo 'Private Life denial is missing no-store'; exit 1; fi
-          media_available=false
-          media_denial=404
-          if [ -n "$PRIVATE_MEDIA_R2_BUCKET" ]; then
-            media_available=true
-            media_denial=401
-          fi
+          media_url="$API_URL/storage/private/00000000-0000-4000-8000-000000000001"
           media_ready=0
           for attempt in $(seq 1 12); do
             capabilities="$(curl --fail --silent --show-error --max-time 15 "$API_URL/reliability/capabilities" || true)"
-            if [ -n "$capabilities" ] && jq -e --argjson available "$media_available" --argjson paused "${PRIVATE_MEDIA_WRITES_PAUSED:-true}" \
-                '.privateMediaV1 == true and .privateMediaAvailable == $available and .privateMediaWritesPaused == $paused' \
+            if [ -n "$capabilities" ] && jq -e --argjson paused "${PRIVATE_MEDIA_WRITES_PAUSED:-true}" \
+                '.privateMediaV1 == true and .privateMediaAvailable == true and .privateMediaWritesPaused == $paused' \
                 <<< "$capabilities" > /dev/null; then
-              headers="$(curl --silent --show-error --max-time 15 --dump-header - --output /dev/null "$API_URL/storage/private/00000000-0000-4000-8000-000000000001" || true)"
-              if printf '%s\n' "$headers" | grep -Eq "^HTTP/[^ ]+ $media_denial([[:space:]]|$)" && printf '%s\n' "$headers" | grep -Eiq '^cache-control:.*private.*no-store'; then
+              headers="$(curl --silent --show-error --max-time 15 --dump-header - --output /dev/null "$media_url" || true)"
+              if printf '%s\n' "$headers" | grep -Eq '^HTTP/[^ ]+ 401([[:space:]]|$)' && printf '%s\n' "$headers" | grep -Eiq '^cache-control:.*private.*no-store'; then
                 media_ready=1; break
               fi
             fi
@@ -174,6 +180,23 @@ jobs:
           if [ "$cors_ready" != "1" ]; then echo 'Expected frontend CORS origin was not served' >&2; exit 1; fi
           blocked_headers="$(curl --silent --show-error --include --request OPTIONS --header 'Origin: https://example.invalid' --header 'Access-Control-Request-Method: GET' "$API_URL/life/todos")"
           if printf '%s' "$blocked_headers" | grep -qi '^access-control-allow-origin: https://example.invalid'; then exit 1; fi
+          media_preflight() {
+            curl --silent --show-error --max-time 15 --dump-header - --output /dev/null --request OPTIONS \
+              --header "Origin: $1" --header 'Access-Control-Request-Method: PUT' \
+              --header 'Access-Control-Request-Headers: authorization, content-type' "$media_url"
+          }
+          media_allowed="$(media_preflight "$frontend_origin" | tr -d '\r')"
+          printf '%s\n' "$media_allowed" | grep -Eq '^HTTP/[^ ]+ 2[0-9]{2}([[:space:]]|$)'
+          printf '%s\n' "$media_allowed" | grep -Fxiq "access-control-allow-origin: $frontend_origin"
+          printf '%s\n' "$media_allowed" | grep -Eiq '^access-control-allow-methods:([^,]+,)*[[:space:]]*put[[:space:]]*(,|$)'
+          for name in authorization content-type; do
+            printf '%s\n' "$media_allowed" | grep -Eiq "^access-control-allow-headers:([^,]+,)*[[:space:]]*$name[[:space:]]*(,|$)"
+          done
+          media_blocked="$(media_preflight 'https://example.invalid')"
+          if printf '%s\n' "$media_blocked" | grep -qi '^access-control-allow-origin:'; then
+            echo 'Private media CORS allowed an unexpected origin.' >&2
+            exit 1
+          fi
 
       - name: Renew signed WebSub leases without polling feeds
         env:

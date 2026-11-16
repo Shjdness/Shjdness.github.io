@@ -2,13 +2,13 @@
 
 ## 生产启用
 
-1. 核对 Cloudflare 上的专用 R2 桶是新建空桶或已通过校验的恢复目标。确认未开启 `r2.dev`，也未绑定开放访问的自定义域。沿用原公开桶服务现有公开图片。由有权限的维护者在 GitHub 仓库设置中填写该专用桶名 `PRIVATE_MEDIA_R2_BUCKET`，将 `PRIVATE_MEDIA_WRITES_PAUSED` 留空或设为 `true`。部署脚本只绑定已存在的资源。
-2. 首次发布前记录 D1 Time Travel 书签。Worker CI 核对 0042 的触发器、0043 的修订列和 0044 的预算表。随后检查线上 `privateMediaV1=true`、`privateMediaAvailable=true`、`privateMediaWritesPaused=true`，并确认匿名私密图片请求返回 `401` 和 `private, no-store`。Pages 在 Worker 支持该 API 后才发布。保持暂停并核对 Worker、Pages 和报告配置。
+1. 在 Cloudflare 准备专用 Standard R2 桶 `rin-private-media`。也可通过 GitHub 的 `PRIVATE_MEDIA_R2_BUCKET` 指定另一只已核验的专用桶。首次发布用空桶或已验收的恢复目标。将 `PRIVATE_MEDIA_WRITES_PAUSED` 留空或设为 `true`。Worker 每次发布前都会用现有发布权限只读核对专用桶、`r2.dev` 关闭和自定义域列表为空。
+2. 首次迁移前自动记录 D1 Time Travel 书签。Worker CI 核对 0042 的触发器、0043 的修订列和 0044 的预算表。随后检查线上 `privateMediaV1=true`、`privateMediaAvailable=true`、`privateMediaWritesPaused=true`，并确认匿名私密图片请求返回 `401` 和 `private, no-store`。Pages 等到 Worker 接入专用桶后才发布。保持暂停并核对 Worker、Pages 和报告配置。
 3. 确认绑定、迁移和前端均通过后，设置 `PRIVATE_MEDIA_WRITES_PAUSED=false`，重新运行 Worker deploy 工作流。核对新的能力响应及 CI。用户按需重新用原 GitHub 账号登录并在正常写作中使用私密上传。新私密图片功能需要绑定 GitHub 身份的会话，旧会话仍可使用原有功能。旧日记和草稿里的公开 URL 继续按原链接显示，旧对象迁移另有独立流程。
 
 前端在缺少私有桶时会阻止私密上传，文字仍可保存，草稿可单独确认公开博客配图。为避免影响日记和备忘录插图，首次正式发布安排在专用桶就绪之后。已恢复图片的可读性依赖桶绑定，暂停时应保留绑定。
 
-CI 通过 Wrangler 的 `keep_vars` 保留仪表盘维护的运行时变量。生成的配置仍负责管理显式声明的开关与专用 R2 绑定。首次启用后保留仓库中的桶名配置。
+CI 通过 Wrangler 的 `keep_vars` 保留仪表盘维护的运行时变量。生成的配置管理写入开关与专用 R2 绑定。首次启用后保留当前桶名配置。
 
 [Cloudflare R2 公开访问](https://developers.cloudflare.com/r2/buckets/public-buckets/) · [Wrangler 配置](https://developers.cloudflare.com/workers/wrangler/configuration/)
 
