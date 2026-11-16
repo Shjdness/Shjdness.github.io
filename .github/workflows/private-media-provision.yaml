@@ -1,0 +1,28 @@
+name: Prepare dedicated private R2 bucket
+
+on:
+  push:
+    branches: [ops/private-media-provision]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-production
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: github.repository == 'Shjdness/Shjdness.github.io' && github.ref == 'refs/heads/ops/private-media-provision' && github.event.deleted == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Prepare and verify one empty private bucket
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+        run: node scripts/provision-private-media-bucket.mjs
